@@ -1,0 +1,10 @@
+node_modules
+.git
+.gemini
+backend
+scratch
+*.gs
+whatsapp-bot.js
+Start_WhatsApp_Bot.bat
+Launch_Aaryan_Aqua_Billing.bat
+Start_WhatsApp_Bot_Silent.vbs

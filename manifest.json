@@ -1,0 +1,22 @@
+{
+  "name": "Aaryan Aqua Needs - GST Billing System",
+  "short_name": "AquaBilling",
+  "description": "High-Performance GST Billing & Financial Accounting Application for Aquaculture Supplies",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#06b6d4",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "lord_ganesha.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "lord_ganesha.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
