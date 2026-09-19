@@ -1,7 +1,12 @@
 # Netlify Configuration for Aaryan Aqua Billing System
 
 [build]
+  command = "exit 0"
   publish = "."
+
+[build.environment]
+  NETLIFY_SKIP_INSTALL = "true"
+  NPM_FLAGS = "--no-audit --ignore-scripts"
 
 # Client-side SPA routing fallback to index.html
 [[redirects]]

@@ -15457,9 +15457,11 @@ window.printShopUpiStand = function() {
 window.currentVerifiedInvoiceNo = null;
 
 window.getInvoiceVerificationUrl = function(invoiceNo, invoiceObj = null) {
-  const baseUrl = (window.location.origin && !window.location.origin.includes("file://"))
-    ? window.location.origin
-    : "https://aaryanaqua.netlify.app";
+  let baseUrl = "https://aaryanaqua.netlify.app";
+  if (typeof window !== "undefined" && window.location && window.location.origin && !window.location.origin.includes("file://")) {
+    const cleanPath = (window.location.pathname || "").replace(/\/index\.html.*$/i, "").replace(/\/+$/, "");
+    baseUrl = window.location.origin + cleanPath;
+  }
   
   const cleanNo = String(invoiceNo || '').trim();
   let url = `${baseUrl}/?verify_invoice=${encodeURIComponent(cleanNo)}`;
