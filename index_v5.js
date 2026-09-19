@@ -6708,7 +6708,7 @@ window.testSampleInvoiceQrUpload = function() {
 
   const testUrl = (typeof window.generateInvoiceVerificationUrl === "function")
     ? window.generateInvoiceVerificationUrl(testInv.invoiceNo, testInv)
-    : `https://aaryanaqua.netlify.app/?verify_invoice=${testInv.invoiceNo}`;
+    : `https://nenduku644-hash.github.io/fish/?verify_invoice=${testInv.invoiceNo}`;
 
   const canvas = document.createElement("canvas");
   if (typeof QRious !== "undefined") {
@@ -8162,7 +8162,7 @@ function populateA4PrintOverlay(invoice) {
   if (verifyQrImg) {
     const verifyUrl = typeof window.getInvoiceVerificationUrl === "function"
       ? window.getInvoiceVerificationUrl(invoice.invoiceNo, invoice)
-      : `https://aaryanaqua.netlify.app/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
+      : `https://nenduku644-hash.github.io/fish/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
     verifyQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(verifyUrl)}`;
   }
 }
@@ -8244,7 +8244,7 @@ function populateThermalPrintOverlay(invoice) {
   if (qrImg) {
     const verifyUrl = typeof window.getInvoiceVerificationUrl === "function"
       ? window.getInvoiceVerificationUrl(invoice.invoiceNo, invoice)
-      : `https://aaryanaqua.netlify.app/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
+      : `https://nenduku644-hash.github.io/fish/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
     qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(verifyUrl)}`;
   }
 }
@@ -15457,7 +15457,7 @@ window.printShopUpiStand = function() {
 window.currentVerifiedInvoiceNo = null;
 
 window.getInvoiceVerificationUrl = function(invoiceNo, invoiceObj = null) {
-  let baseUrl = "https://aaryanaqua.netlify.app";
+  let baseUrl = "https://nenduku644-hash.github.io/fish";
   if (typeof window !== "undefined" && window.location && window.location.origin && !window.location.origin.includes("file://")) {
     const cleanPath = (window.location.pathname || "").replace(/\/index\.html.*$/i, "").replace(/\/+$/, "");
     baseUrl = window.location.origin + cleanPath;
