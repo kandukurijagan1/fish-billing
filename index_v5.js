@@ -2717,9 +2717,9 @@ function initializeApp() {
         const origTallyPadding = element.style.padding;
         const origTallyOverflow = element.style.overflow;
 
-        element.style.height = "294mm";
-        element.style.maxHeight = "294mm";
-        element.style.padding = "6mm 8mm";
+        element.style.height = "288mm";
+        element.style.maxHeight = "288mm";
+        element.style.padding = "4.5mm 7mm";
         element.style.overflow = "hidden";
 
         const blob = await html2pdf().from(element).set(opt).toPdf().get('pdf').then(pdf => {
@@ -8034,7 +8034,8 @@ function populateA4PrintOverlay(invoice) {
     printItemsTbody.appendChild(tr);
   });
 
-  const minRows = 5;
+  // Dynamic filler rows: never inject excessive rows that cause page 2 spillover
+  const minRows = Math.min(2, Math.max(1, invoice.items.length));
   const currRows = invoice.items.length;
   if (currRows < minRows) {
     for (let i = currRows; i < minRows; i++) {
@@ -8300,9 +8301,9 @@ window.downloadInvoicePdf = function(invoiceData, btnEl = null) {
   const origTallyOverflow = tallyContainer ? tallyContainer.style.overflow : "";
 
   if (tallyContainer) {
-    tallyContainer.style.height = "294mm";
-    tallyContainer.style.maxHeight = "294mm";
-    tallyContainer.style.padding = "6mm 8mm";
+    tallyContainer.style.height = "288mm";
+    tallyContainer.style.maxHeight = "288mm";
+    tallyContainer.style.padding = "4.5mm 7mm";
     tallyContainer.style.overflow = "hidden";
   }
 
@@ -9961,22 +9962,47 @@ async function generateInvoicePdfBlob(details) {
   printWrapper.style.display = "block";
   document.body.classList.remove("printing-thermal");
 
+  const tallyContainer = printWrapper.querySelector('.tally-invoice-container');
+  const origTallyHeight = tallyContainer ? tallyContainer.style.height : "";
+  const origTallyMaxHeight = tallyContainer ? tallyContainer.style.maxHeight : "";
+  const origTallyPadding = tallyContainer ? tallyContainer.style.padding : "";
+  const origTallyOverflow = tallyContainer ? tallyContainer.style.overflow : "";
+
+  if (tallyContainer) {
+    tallyContainer.style.height = "288mm";
+    tallyContainer.style.maxHeight = "288mm";
+    tallyContainer.style.padding = "4.5mm 7mm";
+    tallyContainer.style.overflow = "hidden";
+  }
+
   const customerClean = (details.buyer?.name || 'Customer').replace(/[^a-zA-Z0-9]/g, '_');
   const filename = `Invoice_${details.invoiceNo}_${customerClean}.pdf`;
 
   const opt = {
-    margin: [3, 3, 3, 3],
+    margin: [0, 0, 0, 0],
     filename: filename,
-    image: { type: 'jpeg', quality: 0.75 },
-    html2canvas: { scale: 1.1, useCORS: true, logging: false },
+    image: { type: 'jpeg', quality: 0.90 },
+    html2canvas: { scale: 1.25, useCORS: true, logging: false },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
   };
 
   let blob = null;
   try {
-    blob = await html2pdf().set(opt).from(printWrapper).outputPdf('blob');
+    blob = await html2pdf().set(opt).from(tallyContainer || printWrapper).toPdf().get('pdf').then(pdf => {
+      const totalPages = pdf.internal.getNumberOfPages();
+      for (let p = totalPages; p > 1; p--) {
+        pdf.deletePage(p);
+      }
+      return pdf.output('blob');
+    });
   } finally {
     printWrapper.style.display = "none";
+    if (tallyContainer) {
+      tallyContainer.style.height = origTallyHeight;
+      tallyContainer.style.maxHeight = origTallyMaxHeight;
+      tallyContainer.style.padding = origTallyPadding;
+      tallyContainer.style.overflow = origTallyOverflow;
+    }
   }
 
   const reader = new FileReader();
@@ -10966,16 +10992,18 @@ function loadInvoicesHistoryTable() {
   }
   if (!isSyncing && typeof window.triggerDatabaseSync === 'function') {
     window.triggerDatabaseSync(true).then(() => {
+      window.isInitialSyncDone = true;
       if (elements.historyCount) elements.historyCount.textContent = (invoicesDb && invoicesDb.length) || "0";
       renderHistoryTableRows(invoicesDb || []);
-    }).catch(() => {});
-  }
-
-  setTimeout(() => {
+    }).catch(() => {
+      window.isInitialSyncDone = true;
+      if (elements.historyCount) elements.historyCount.textContent = (invoicesDb && invoicesDb.length) || "0";
+      renderHistoryTableRows(invoicesDb || []);
+    });
+  } else {
     window.isInitialSyncDone = true;
-    if (elements.historyCount) elements.historyCount.textContent = (invoicesDb && invoicesDb.length) || "0";
     renderHistoryTableRows(invoicesDb || []);
-  }, 2000);
+  }
 }
 
 function getInvoicePaidAndBalance(inv) {
@@ -11032,20 +11060,11 @@ function renderHistoryTableRows(records) {
     return;
   }
 
+  // Precompute & cache timestamps for sub-millisecond instant sorting
   const sortedRecords = (records || []).slice().sort((a, b) => {
-    function getTs(inv) {
-      if (!inv) return 0;
-      if (typeof inv.id === 'string' && inv.id.startsWith('inv_')) {
-        const ts = parseInt(inv.id.split('_')[1], 10);
-        if (!isNaN(ts) && ts > 1000000000000) return ts;
-      }
-      if (inv.invoiceDate) {
-        const t = new Date(inv.invoiceDate).getTime();
-        if (!isNaN(t) && t > 0) return t;
-      }
-      return 0;
-    }
-    return getTs(b) - getTs(a);
+    const aTs = a._ts || (a._ts = (typeof a.id === 'string' && a.id.startsWith('inv_') ? (parseInt(a.id.split('_')[1], 10) || 0) : (a.invoiceDate ? (new Date(a.invoiceDate).getTime() || 0) : 0)));
+    const bTs = b._ts || (b._ts = (typeof b.id === 'string' && b.id.startsWith('inv_') ? (parseInt(b.id.split('_')[1], 10) || 0) : (b.invoiceDate ? (new Date(b.invoiceDate).getTime() || 0) : 0)));
+    return bTs - aTs;
   });
 
   const htmlBuffer = [];
@@ -11119,12 +11138,12 @@ function renderHistoryTableRows(records) {
   elements.historyInvoicesBody.innerHTML = htmlBuffer.join("");
 }
 
-let searchHistoryDebounce = null;
+let searchHistoryTimer = null;
 elements.searchHistoryInput.addEventListener("input", () => {
-  if (searchHistoryDebounce) cancelAnimationFrame(searchHistoryDebounce);
-  searchHistoryDebounce = requestAnimationFrame(() => {
+  if (searchHistoryTimer) clearTimeout(searchHistoryTimer);
+  searchHistoryTimer = setTimeout(() => {
     window.filterInvoicesByStatus();
-  });
+  }, 100);
 });
 
 window.editSavedInvoice = function(id) {
@@ -14707,16 +14726,41 @@ window.executeUniversalShare = async function(channel) {
             populateA4PrintOverlay(det);
             const printEl = document.getElementById("print-invoice-wrapper");
             if (printEl) {
+              const tallyCont = printEl.querySelector('.tally-invoice-container');
+              const origH = tallyCont ? tallyCont.style.height : "";
+              const origMaxH = tallyCont ? tallyCont.style.maxHeight : "";
+              const origPad = tallyCont ? tallyCont.style.padding : "";
+              const origOvf = tallyCont ? tallyCont.style.overflow : "";
+
+              if (tallyCont) {
+                tallyCont.style.height = "288mm";
+                tallyCont.style.maxHeight = "288mm";
+                tallyCont.style.padding = "4.5mm 7mm";
+                tallyCont.style.overflow = "hidden";
+              }
+
               const opt = {
-                margin: [3, 3, 3, 3],
+                margin: [0, 0, 0, 0],
                 filename: `Invoice_${invNo}.pdf`,
-                image: { type: 'jpeg', quality: 0.95 },
-                html2canvas: { scale: 1.2, useCORS: true, logging: false },
+                image: { type: 'jpeg', quality: 0.90 },
+                html2canvas: { scale: 1.25, useCORS: true, logging: false },
                 jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
               };
               printEl.style.display = "block";
-              const pdfBlob = await html2pdf().set(opt).from(printEl).outputPdf('blob');
+              const pdfBlob = await html2pdf().set(opt).from(tallyCont || printEl).toPdf().get('pdf').then(pdf => {
+                const totalPages = pdf.internal.getNumberOfPages();
+                for (let i = totalPages; i > 1; i--) {
+                  pdf.deletePage(i);
+                }
+                return pdf.output('blob');
+              });
               printEl.style.display = "none";
+              if (tallyCont) {
+                tallyCont.style.height = origH;
+                tallyCont.style.maxHeight = origMaxH;
+                tallyCont.style.padding = origPad;
+                tallyCont.style.overflow = origOvf;
+              }
               pdfFile = new File([pdfBlob], `Invoice_${invNo}.pdf`, { type: 'application/pdf' });
             }
           } catch (pdfErr) {

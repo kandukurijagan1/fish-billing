@@ -2860,8 +2860,10 @@ body {
 /* TALLY BILL OF SUPPLY LAYOUT - NEW PREMIUM AQUA DESIGN */
 .tally-invoice-container {
   width: 210mm;
-  height: 297mm;
-  padding: 8mm;
+  max-width: 210mm;
+  height: 288mm;
+  max-height: 288mm;
+  padding: 4.5mm 7mm;
   box-sizing: border-box;
   background: #ffffff;
   font-family: 'Inter', Arial, sans-serif;
@@ -2871,6 +2873,7 @@ body {
   flex-direction: column;
   justify-content: space-between;
   line-height: 1.35;
+  overflow: hidden;
 }
 
 /* Header layout */
@@ -2878,7 +2881,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .invoice-header .header-left {
@@ -3048,8 +3051,8 @@ body {
 /* Parties Section */
 .parties-section {
   display: flex;
-  gap: 12px;
-  margin-top: 8px;
+  gap: 8px;
+  margin-top: 5px;
 }
 
 .party-card {
@@ -3065,9 +3068,9 @@ body {
 .party-card-header {
   background: #004b73;
   color: #ffffff;
-  font-size: 8.5pt;
+  font-size: 8pt;
   font-weight: 700;
-  padding: 6px 12px;
+  padding: 4px 10px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -3076,11 +3079,11 @@ body {
 }
 
 .party-card-body {
-  padding: 8px 12px;
+  padding: 5px 9px;
   flex-grow: 1;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .party-name {
@@ -3129,7 +3132,7 @@ body {
 
 /* Items Table */
 .tally-items-wrapper {
-  margin-top: 10px;
+  margin-top: 6px;
   border: 1px solid #b4c6d0;
   border-radius: 8px;
   overflow: hidden;
@@ -3149,7 +3152,7 @@ body {
   color: #ffffff;
   font-size: 8pt;
   font-weight: 700;
-  padding: 8px 6px;
+  padding: 5px 6px;
   text-align: center;
   border-bottom: 1px solid #004b73;
   border-right: 1px solid rgba(255,255,255,0.15);
@@ -3165,7 +3168,7 @@ body {
 }
 
 .tally-items-table td {
-  padding: 6px 8px;
+  padding: 4px 6px;
   font-size: 7.8pt;
   color: #1e293b;
   border-bottom: 1px solid #eef2f6;
@@ -3179,7 +3182,7 @@ body {
 
 .tally-items-table tbody tr.filler-row td {
   border-bottom: none;
-  height: 20px;
+  height: 14px;
 }
 
 .tally-total-row td {
@@ -3188,14 +3191,14 @@ body {
   font-size: 8.5pt !important;
   font-weight: 700 !important;
   border: none !important;
-  padding: 8px 12px !important;
+  padding: 5px 8px !important;
 }
 
 /* Lower Section breakdown and declaration */
 .breakdown-declaration-section {
   display: flex;
-  gap: 12px;
-  margin-top: 10px;
+  gap: 8px;
+  margin-top: 5px;
   align-items: flex-start;
 }
 
@@ -3210,7 +3213,7 @@ body {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
-  padding: 6px 10px;
+  padding: 4px 8px;
 }
 
 .word-amount-lbl {
@@ -3222,7 +3225,7 @@ body {
 }
 
 .word-amount-val {
-  font-size: 8.5pt;
+  font-size: 8.2pt;
   color: #004b73;
   font-weight: 700;
   font-style: italic;
@@ -3232,22 +3235,22 @@ body {
 .declaration-box {
   border: 1px solid #e2e8f0;
   border-radius: 6px;
-  padding: 8px 10px;
+  padding: 5px 8px;
 }
 
 .declaration-title {
-  font-size: 7.2pt;
+  font-size: 7pt;
   color: #004b73;
   font-weight: 800;
   text-transform: uppercase;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
   letter-spacing: 0.5px;
 }
 
 .declaration-text {
-  font-size: 7pt;
+  font-size: 6.8pt;
   color: #475569;
-  line-height: 1.35;
+  line-height: 1.3;
   margin: 0;
 }
 
@@ -3265,8 +3268,8 @@ body {
 }
 
 .totals-table td {
-  padding: 6px 12px;
-  font-size: 8pt;
+  padding: 4px 8px;
+  font-size: 7.8pt;
   color: #1e293b;
 }
 
@@ -3274,15 +3277,15 @@ body {
   background: #004b73 !important;
   color: #ffffff !important;
   font-weight: 700 !important;
-  font-size: 10pt !important;
-  padding: 8px 12px !important;
+  font-size: 9.5pt !important;
+  padding: 5px 8px !important;
 }
 
 /* Bottom Cards (Bank, Terms, Signature) */
 .bottom-cards-section {
   display: flex;
-  gap: 12px;
-  margin-top: 10px;
+  gap: 8px;
+  margin-top: 5px;
 }
 
 .bottom-card {
@@ -3312,7 +3315,7 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 6px 8px;
   box-sizing: border-box;
 }
 
@@ -3320,9 +3323,9 @@ body {
   background: #eef6fa;
   border-bottom: 1px solid #b4c6d0;
   color: #004b73;
-  font-size: 8pt;
+  font-size: 7.8pt;
   font-weight: 700;
-  padding: 5px 12px;
+  padding: 4px 8px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -3331,10 +3334,10 @@ body {
 }
 
 .bottom-card-body {
-  padding: 6px 12px;
-  font-size: 7.2pt;
+  padding: 4px 8px;
+  font-size: 7pt;
   color: #334155;
-  line-height: 1.35;
+  line-height: 1.3;
 }
 
 .bank-table {
@@ -3343,8 +3346,8 @@ body {
 }
 
 .bank-table td {
-  padding: 2.5px 0;
-  font-size: 7.5pt;
+  padding: 1.5px 0;
+  font-size: 7.2pt;
   vertical-align: middle;
 }
 
@@ -3368,17 +3371,17 @@ body {
 
 .terms-list {
   margin: 0;
-  padding-left: 12px;
+  padding-left: 10px;
 }
 
 .terms-list li {
-  margin-bottom: 2px;
-  font-size: 6.8pt;
+  margin-bottom: 1px;
+  font-size: 6.6pt;
   color: #475569;
 }
 
 .sig-title {
-  font-size: 7.5pt;
+  font-size: 7.2pt;
   font-weight: 700;
   color: #004b73;
   text-align: center;
@@ -3394,32 +3397,32 @@ body {
 }
 
 .sig-img {
-  max-height: 38px;
+  max-height: 30px;
   max-width: 100%;
   object-fit: contain;
 }
 
 .sig-label {
-  font-size: 7.2pt;
+  font-size: 7pt;
   font-weight: 700;
   color: #475569;
   text-align: center;
   border-top: 1px solid #cbd5e1;
-  padding-top: 3px;
-  margin-top: 3px;
+  padding-top: 2px;
+  margin-top: 2px;
 }
 
 /* Footer Bar */
 .invoice-footer-bar {
   background: #004b73;
   color: #ffffff;
-  padding: 6px 12px;
+  padding: 4px 8px;
   border-radius: 6px;
-  margin-top: 10px;
+  margin-top: 5px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   box-sizing: border-box;
 }
 
@@ -3459,7 +3462,7 @@ body {
 /* --- PRINT MEDIA ENGINE --- */
 @page {
   size: A4 portrait;
-  margin: 0mm;
+  margin: 0 !important;
 }
 
 @media print {
@@ -3474,28 +3477,37 @@ body {
     display: none !important;
   }
 
-  /* Reset document viewport & scrolling */
+  /* Reset document viewport & scrolling - strictly single page */
   html, body {
     width: 210mm !important;
-    height: 297mm !important;
+    height: 100% !important;
+    max-height: 295mm !important;
     margin: 0 !important;
     padding: 0 !important;
     background: #ffffff !important;
     overflow: hidden !important;
     display: block !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  /* Standard A4 Invoice Print Mode */
+  /* Standard A4 Invoice Print Mode - Strictly 1 Page Only */
   body:not(.printing-thermal) #print-invoice-wrapper {
-    display: flex !important;
-    justify-content: center !important;
-    align-items: flex-start !important;
+    display: block !important;
     width: 210mm !important;
-    height: 297mm !important;
-    margin: 0 !important;
+    max-width: 210mm !important;
+    height: 288mm !important;
+    max-height: 288mm !important;
+    margin: 0 auto !important;
     padding: 0 !important;
     box-sizing: border-box !important;
     background: #ffffff !important;
+    overflow: hidden !important;
+    page-break-before: avoid !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   body:not(.printing-thermal) #print-thermal-wrapper {
@@ -3504,18 +3516,22 @@ body {
 
   body:not(.printing-thermal) .tally-invoice-container {
     width: 210mm !important;
-    height: 297mm !important;
-    max-height: 297mm !important;
+    max-width: 210mm !important;
+    height: 286mm !important;
+    max-height: 286mm !important;
     margin: 0 auto !important;
-    padding: 6mm 8mm !important;
+    padding: 4mm 6.5mm !important;
     box-sizing: border-box !important;
     background: #ffffff !important;
     display: flex !important;
     flex-direction: column !important;
     justify-content: space-between !important;
+    overflow: hidden !important;
     page-break-before: avoid !important;
     page-break-after: avoid !important;
+    break-after: avoid !important;
     page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   /* 80mm POS Thermal Receipt Print Mode */
