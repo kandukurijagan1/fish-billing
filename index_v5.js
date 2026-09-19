@@ -15940,119 +15940,15 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
     if (fullyPaidSection) fullyPaidSection.style.display = "block";
   }
 
-  // Admin Security Protection State Check
-  const isAdminAuthenticated = sessionStorage.getItem("session_authenticated") === "true" && (typeof isLocked === "undefined" || !isLocked);
-  const adminSettleControls = document.getElementById("verify-admin-settle-controls");
-  const adminTriggerBar = document.getElementById("verify-admin-trigger-bar");
-  const adminPinCard = document.getElementById("verify-admin-pin-card");
-  const adminPinInput = document.getElementById("verify-admin-pin-input");
-  const adminPinError = document.getElementById("verify-admin-pin-error");
-
-  if (adminPinError) adminPinError.style.display = "none";
-  if (adminPinInput) adminPinInput.value = "";
-
-  if (isAdminAuthenticated) {
-    // Already logged in as store admin: display settlement controls directly
-    if (adminSettleControls) adminSettleControls.style.display = "block";
-    if (adminTriggerBar) adminTriggerBar.style.display = "none";
-    if (adminPinCard) adminPinCard.style.display = "none";
-  } else {
-    // Public QR Scan / Visitor Mode: HIDE settlement form behind Admin PIN gate
-    if (adminSettleControls) adminSettleControls.style.display = "none";
-    if (adminTriggerBar) adminTriggerBar.style.display = "flex";
-    if (adminPinCard) adminPinCard.style.display = "none";
-  }
 
   modal.classList.remove("hidden");
   modal.style.display = "flex";
 };
 
-window.toggleAdminPinCard = function(force) {
-  const card = document.getElementById("verify-admin-pin-card");
-  const trigger = document.getElementById("verify-admin-trigger-bar");
-  const input = document.getElementById("verify-admin-pin-input");
-  const err = document.getElementById("verify-admin-pin-error");
-  if (!card) return;
 
-  const show = force !== undefined ? force : (card.style.display === "none" || card.style.display === "");
-  if (show) {
-    card.style.display = "block";
-    if (trigger) trigger.style.display = "none";
-    if (err) err.style.display = "none";
-    if (input) {
-      input.value = "";
-      setTimeout(() => input.focus(), 120);
-    }
-  } else {
-    card.style.display = "none";
-    if (trigger) trigger.style.display = "flex";
-  }
-};
+// NOTE: Settlement controls have been removed from the QR verification modal.
+// Settlements are ONLY processed through the admin dashboard after login.
 
-window.toggleVerifyPinVisibility = function() {
-  const input = document.getElementById("verify-admin-pin-input");
-  const icon = document.getElementById("verify-pin-eye-icon");
-  if (!input) return;
-  if (input.type === "password") {
-    input.type = "text";
-    if (icon) {
-      icon.classList.remove("fa-eye");
-      icon.classList.add("fa-eye-slash");
-    }
-  } else {
-    input.type = "password";
-    if (icon) {
-      icon.classList.remove("fa-eye-slash");
-      icon.classList.add("fa-eye");
-    }
-  }
-};
-
-window.verifyAdminPinForSettlement = function() {
-  const input = document.getElementById("verify-admin-pin-input");
-  const err = document.getElementById("verify-admin-pin-error");
-  const pinCard = document.getElementById("verify-admin-pin-card");
-  const settleControls = document.getElementById("verify-admin-settle-controls");
-  const triggerBar = document.getElementById("verify-admin-trigger-bar");
-
-  const entered = (input ? input.value : "").trim();
-  const sec = (typeof globalSettings !== "undefined" && globalSettings.security) ? globalSettings.security : {};
-  const targetPassword = (sec.password || activePassword || "Aaryan@2024").toString().trim();
-  const targetPin = (sec.whatsappPin || sec.pin || "2024").toString().trim();
-
-  const isValid = entered && (
-    entered === targetPassword ||
-    entered === targetPin ||
-    entered === "2024" ||
-    entered === "Aaryan@2024" ||
-    entered === "Aaryanaqua"
-  );
-
-  if (isValid) {
-    if (err) err.style.display = "none";
-    if (pinCard) pinCard.style.display = "none";
-    if (triggerBar) triggerBar.style.display = "none";
-    if (settleControls) settleControls.style.display = "block";
-    
-    // Mark as session-authenticated
-    sessionStorage.setItem("session_authenticated", "true");
-    if (typeof playSuccessChime === "function") playSuccessChime();
-    if (typeof showFloatingToast === "function") {
-      showFloatingToast("🛡️ Admin mode unlocked! Settlement controls active.", "success", 3500);
-    }
-  } else {
-    if (err) {
-      err.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Incorrect PIN or Password! Access denied.';
-      err.style.display = "block";
-    }
-    if (typeof playAudioFeedback === "function") playAudioFeedback("warn");
-    else if (typeof playScannerBeep === "function") playScannerBeep();
-    if (input) {
-      input.value = "";
-      input.focus();
-    }
-  }
-};
 
 window.copyVerifyUpiId = function() {
   const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
@@ -16091,68 +15987,14 @@ window.downloadVerifiedInvoicePdf = function(btnEl = null) {
   }
 };
 
-window.openAdminDashboardFromVerify = function() {
-  window.closeInvoiceVerificationModal();
-  if (typeof unlockSystemSilently === "function") {
-    unlockSystemSilently();
-  }
-  if (typeof switchTab === "function") {
-    switchTab("dashboard");
-  }
-  if (typeof showFloatingToast === "function") {
-    showFloatingToast("🔓 Welcome, Admin! Full Dashboard Opened.", "success", 3000);
-  }
-};
 
-window.toggleVerifyCustomAmount = function(status) {
-  const wrap = document.getElementById("verify-custom-amount-wrap");
-  const btn = document.getElementById("verify-done-pay-btn");
-  const input = document.getElementById("verify-pay-amount-input");
-  
-  let curBal = 0;
-  if (window.currentVerifiedInvoiceNo) {
-    const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => 
-      String(i.invoiceNo || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase() ||
-      String(i.id || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase()
-    );
-    if (inv) {
-      const payInfo = typeof getInvoicePaidAndBalance === "function" ? getInvoicePaidAndBalance(inv) : { balance: inv.balanceDue || 0 };
-      curBal = payInfo.balance;
-    }
-  }
 
-  if (status === "Partial") {
-    if (wrap) wrap.style.display = "block";
-    if (input && (!input.value || parseFloat(input.value) <= 0)) {
-      input.value = curBal > 0 ? (curBal / 2).toFixed(2) : "0";
-    }
-    if (btn) btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Record Partial Payment & Update Database';
-  } else {
-    if (wrap) wrap.style.display = "none";
-    if (input) input.value = curBal.toFixed(2);
-    if (btn) btn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Settle Full Balance (₹ ${formatCurrency(curBal)}) & Update Database`;
-  }
-};
 
 window.closeInvoiceVerificationModal = function() {
   const modal = document.getElementById("invoice-verification-modal");
   if (modal) {
     modal.classList.add("hidden");
     modal.style.display = "none";
-  }
-  
-  // Security Enforcement: If not an authenticated admin, keep lock screen active
-  const isAuth = sessionStorage.getItem("session_authenticated") === "true" && (typeof isLocked === "undefined" || !isLocked);
-  if (!isAuth) {
-    const lockOverlay = document.getElementById("lock-screen-overlay");
-    if (lockOverlay) {
-      lockOverlay.classList.remove("hidden");
-      lockOverlay.style.display = "flex";
-    }
-    const wrapper = document.querySelector(".dashboard-wrapper");
-    if (wrapper) {
-      wrapper.classList.add("blur-dashboard-wrapper");
-    }
   }
 };
 
@@ -16176,138 +16018,6 @@ window.printVerifiedInvoice = function() {
   }
 };
 
-window.submitInvoicePaymentSettlement = function() {
-  if (!window.currentVerifiedInvoiceNo) return;
-  const invNo = String(window.currentVerifiedInvoiceNo).trim();
-  const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => 
-    String(i.invoiceNo || "").trim().toLowerCase() === invNo.toLowerCase() ||
-    String(i.id || "").trim().toLowerCase() === invNo.toLowerCase()
-  );
-
-  if (!inv) {
-    if (typeof showFloatingToast === "function") showFloatingToast("❌ Error: Invoice record not found.", "warning");
-    return;
-  }
-
-  const payInfo = typeof getInvoicePaidAndBalance === "function" 
-    ? getInvoicePaidAndBalance(inv) 
-    : { total: parseFloat(inv.total) || 0, paid: parseFloat(inv.paidAmount) || 0, balance: parseFloat(inv.balanceDue) || 0 };
-  const totalAmt = payInfo.total;
-  const curPaid = payInfo.paid;
-  const curBal = payInfo.balance;
-
-  const selectedStatus = document.getElementById("verify-pay-status-select")?.value || "Paid";
-  const payMode = document.getElementById("verify-pay-mode-select")?.value || "UPI / Online";
-  const payRef = document.getElementById("verify-pay-ref-input")?.value.trim() || "";
-
-  let settledAmount = 0;
-  let newPaid = 0;
-  let newBal = 0;
-  let finalStatus = "Paid";
-
-  if (selectedStatus === "Partial") {
-    const customAmt = parseFloat(document.getElementById("verify-pay-amount-input")?.value) || 0;
-    if (customAmt <= 0) {
-      if (typeof showFloatingToast === "function") showFloatingToast("⚠️ Please enter a valid payment amount.", "warning");
-      return;
-    }
-    settledAmount = Math.min(customAmt, curBal);
-    newPaid = curPaid + settledAmount;
-    newBal = Math.max(0, curBal - settledAmount);
-    finalStatus = newBal <= 0.01 ? "Paid" : "Partial";
-  } else {
-    // Paid (Full balance settlement)
-    settledAmount = curBal;
-    newPaid = totalAmt;
-    newBal = 0;
-    finalStatus = "Paid";
-  }
-
-  // Update Invoice Record
-  inv.paidAmount = newPaid;
-  inv.balanceDue = newBal;
-  inv.balancePaid = (inv.balancePaid || 0) + settledAmount;
-  inv.paymentStatus = finalStatus;
-  inv.paymentMode = payMode;
-  if (payRef) inv.paymentReference = payRef;
-
-  if (inv.details) {
-    inv.details.paidAmount = newPaid;
-    inv.details.balanceDue = newBal;
-    inv.details.balancePaid = (inv.details.balancePaid || 0) + settledAmount;
-    inv.details.paymentStatus = finalStatus;
-    inv.details.paymentMode = payMode;
-    if (payRef) inv.details.paymentReference = payRef;
-  }
-
-  if (!inv.paymentHistory) inv.paymentHistory = [];
-  inv.paymentHistory.push({
-    date: new Date().toISOString(),
-    amount: settledAmount,
-    mode: payMode,
-    reference: payRef,
-    status: finalStatus,
-    source: "QR Verification Portal Settlement"
-  });
-
-  // Save to database & sync
-  try {
-    localStorage.setItem("invoices", JSON.stringify(invoicesDb));
-    window.invoicesDb = invoicesDb;
-  } catch (e) {
-    console.warn("Error persisting invoices to localStorage:", e);
-  }
-  if (window.AaryanDB && typeof window.AaryanDB.saveInvoice === 'function') {
-    try { window.AaryanDB.saveInvoice(inv); } catch (e) {}
-  }
-  if (typeof syncDatabaseToServer === 'function') {
-    try { syncDatabaseToServer("invoices", inv); } catch (e) {}
-  }
-  if (typeof renderInvoicesTable === "function") renderInvoicesTable();
-  if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
-  if (typeof updateDashboardOverview === "function") updateDashboardOverview();
-  if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
-
-  // Mesh MQTT Sync
-  if (typeof publishMeshDatabaseUpdate === "function") {
-    try { publishMeshDatabaseUpdate("invoicesDb", inv); } catch (e) { console.warn(e); }
-  }
-
-  // Audio feedback
-  if (typeof playSuccessChime === "function") playSuccessChime();
-
-  // Automatic WhatsApp Receipt & Paid PDF Dispatch
-  const custPhone = inv.buyerPhone || inv.details?.buyer?.phone || inv.phone || "";
-  if (custPhone) {
-    const isFull = finalStatus === "Paid";
-    const msg = `✅ *Payment Received & Verified!*\n\n` +
-      `🧾 *Invoice No:* ${inv.invoiceNo}\n` +
-      `👤 *Customer:* ${inv.buyerName || inv.details?.buyer?.name || 'Customer'}\n` +
-      `💰 *Amount Paid:* ₹ ${formatCurrency(settledAmount)}\n` +
-      `💳 *Payment Mode:* ${payMode}` + (payRef ? ` (Ref: ${payRef})` : '') + `\n` +
-      `📊 *Remaining Balance:* ₹ ${formatCurrency(newBal)} (${isFull ? '100% Fully Paid' : 'Partial'})\n\n` +
-      `Thank you for your business with *Aaryan Aqua Needs*! 🌊`;
-
-    if (typeof dispatchWhatsAppBotMessage === "function") {
-      dispatchWhatsAppBotMessage(custPhone, msg);
-    }
-
-    setTimeout(() => {
-      if (typeof autoDispatchInvoiceToWhatsApp === "function") {
-        autoDispatchInvoiceToWhatsApp(inv.details || inv);
-      } else if (typeof shareInvoicePdfNative === "function") {
-        shareInvoicePdfNative(inv.details || inv, null, false, null);
-      }
-    }, 1000);
-  }
-
-  if (typeof showFloatingToast === "function") {
-    showFloatingToast(`✅ Payment of ₹ ${formatCurrency(settledAmount)} recorded! Invoice #${inv.invoiceNo} updated & Dashboard refreshed.`);
-  }
-
-  // Re-render modal in updated state
-  openInvoiceVerificationModal(inv.invoiceNo);
-};
 
 // Check for verify_invoice URL query parameters on page load
 window.checkUrlVerificationParams = function() {

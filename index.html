@@ -75,7 +75,7 @@
       } catch (e) {}
     }
     // Build Version Enforcement: Clears stale caches when new build is deployed
-    window.__APP_BUILD_VERSION__ = "v407_customer_only_whatsapp_dispatch";
+    window.__APP_BUILD_VERSION__ = "v412_readonly_qr_verification_no_public_settle";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -87,8 +87,8 @@
     } catch (e) {}
   </script>
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=411_direct_online_cloud_sync_and_strict_security">
-  <script src="invoice_utils_v5.js?v=411_direct_online_cloud_sync_and_strict_security"></script>
+  <link rel="stylesheet" href="index.css?v=412_readonly_qr_verification_no_public_settle">
+  <script src="invoice_utils_v5.js?v=412_readonly_qr_verification_no_public_settle"></script>
 </head>
 <body>
   <!-- HIGH-END LOGIN / LOCK SCREEN OVERLAY (Enforced by default for security) -->
@@ -3043,99 +3043,7 @@
             </button>
           </div>
 
-          <!-- =================================================== -->
-          <!-- ADMIN SECURITY GATE: RESTRICTED SETTLEMENT CONTROLS -->
-          <!-- =================================================== -->
-          <div id="verify-admin-gate-container" style="border-top: 1.5px solid #e2e8f0; padding-top: 14px; margin-top: 8px;">
-            
-            <!-- Admin Access Trigger Bar (Visible in Public Mode) -->
-            <div id="verify-admin-trigger-bar" style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 10px 14px; display: flex; align-items: center; justify-content: space-between;">
-              <div style="font-size: 11.5px; color: #64748b; display: flex; align-items: center; gap: 6px;">
-                <i class="fa-solid fa-user-shield text-cyan" style="font-size: 14px;"></i>
-                <span>Shop Staff / Store Admin?</span>
-              </div>
-              <button type="button" class="btn btn-xs btn-secondary" onclick="toggleAdminPinCard()" style="font-size: 11.5px; font-weight: 700; color: #0891b2; padding: 4px 10px; border-radius: 6px;">
-                <i class="fa-solid fa-lock"></i> Settle / Admin Login
-              </button>
-            </div>
-
-            <!-- Admin PIN Input Card (Hidden until triggered) -->
-            <div id="verify-admin-pin-card" style="display: none; background: #0f172a; color: white; border-radius: 12px; padding: 16px; margin-top: 10px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);">
-              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                <div style="font-size: 13px; font-weight: 800; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
-                  <i class="fa-solid fa-key"></i> Store Admin Verification
-                </div>
-                <button type="button" onclick="toggleAdminPinCard(false)" style="background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 14px;"><i class="fa-solid fa-xmark"></i></button>
-              </div>
-              <p style="margin: 0 0 10px 0; font-size: 11.5px; color: #cbd5e1;">Enter Admin Security PIN or Master Password to record settlement &amp; update records:</p>
-              
-              <div id="verify-admin-pin-error" style="display: none; background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #fca5a5; padding: 6px 10px; border-radius: 6px; font-size: 11.5px; margin-bottom: 10px;">
-                <i class="fa-solid fa-triangle-exclamation"></i> Incorrect PIN or Password!
-              </div>
-
-              <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                <div style="position: relative; flex: 1;">
-                  <input type="password" id="verify-admin-pin-input" class="form-control" placeholder="Admin PIN / Password" maxlength="24" autocomplete="off" style="width: 100%; padding: 8px 36px 8px 12px; border-radius: 8px; border: 1.5px solid #334155; background: #1e293b; color: white; font-size: 14px; letter-spacing: 2px;" onkeydown="if(event.key==='Enter') verifyAdminPinForSettlement();">
-                  <button type="button" onclick="toggleVerifyPinVisibility()" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: #94a3b8; cursor: pointer;">
-                    <i id="verify-pin-eye-icon" class="fa-solid fa-eye"></i>
-                  </button>
-                </div>
-                <button type="button" class="btn btn-cyan" onclick="verifyAdminPinForSettlement()" style="padding: 8px 16px; font-weight: 800; font-size: 12.5px;">
-                  <i class="fa-solid fa-unlock"></i> Unlock
-                </button>
-              </div>
-              <div style="font-size: 10.5px; color: #94a3b8; text-align: center;">Master login password or WhatsApp PIN is accepted.</div>
-            </div>
-
-            <!-- Admin Settlement Controls (Unlocked ONLY after entering valid PIN or authenticated admin) -->
-            <div id="verify-admin-settle-controls" style="display: none; background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 14px; margin-top: 10px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.1);">
-              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
-                <span style="font-size: 12.5px; font-weight: 800; color: #166534; display: flex; align-items: center; gap: 6px;">
-                  <i class="fa-solid fa-shield-halved text-green"></i> Store Admin Settle Mode
-                </span>
-                <span class="badge-status badge-paid" style="font-size: 10px; padding: 2px 7px;">Authenticated</span>
-              </div>
-
-              <!-- Payment Status Selector -->
-              <div style="margin-bottom: 10px;">
-                <label style="font-size: 11px; color: #374151; font-weight: 700; display: block; margin-bottom: 3px;">Payment Status</label>
-                <select id="verify-pay-status-select" class="form-control" onchange="toggleVerifyCustomAmount(this.value)" style="font-size: 12.5px; padding: 7px 10px; font-weight: 700; color: #15803d; border: 1.5px solid #86efac; background: #ffffff; border-radius: 8px;">
-                  <option value="Paid" selected>✅ Full Settlement of Balance</option>
-                  <option value="Partial">⏳ Partial Payment (Custom Amount)</option>
-                </select>
-              </div>
-
-              <div id="verify-custom-amount-wrap" style="display: none; margin-bottom: 10px;">
-                <label style="font-size: 11px; color: #374151; font-weight: 700; display: block; margin-bottom: 3px;">Amount Settling Now (₹)</label>
-                <input type="number" id="verify-pay-amount-input" class="form-control" placeholder="Enter amount received" min="1" step="any" style="font-size: 13px; padding: 7px 10px; font-weight: 700; color: #0f172a; border-radius: 8px; background: #ffffff;">
-              </div>
-
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
-                <div>
-                  <label style="font-size: 10.5px; color: #475569; font-weight: 600; display: block; margin-bottom: 2px;">Payment Mode</label>
-                  <select id="verify-pay-mode-select" class="form-control" style="font-size: 12px; padding: 6px 8px; border-radius: 6px; background: #ffffff;">
-                    <option value="UPI / Online">UPI / Online</option>
-                    <option value="Cash">Cash</option>
-                    <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
-                    <option value="Cheque">Cheque</option>
-                  </select>
-                </div>
-                <div>
-                  <label style="font-size: 10.5px; color: #475569; font-weight: 600; display: block; margin-bottom: 2px;">Ref / UTR No.</label>
-                  <input type="text" id="verify-pay-ref-input" class="form-control" placeholder="e.g. UTR1293847" style="font-size: 12px; padding: 6px 8px; border-radius: 6px; background: #ffffff;">
-                </div>
-              </div>
-
-              <button type="button" id="verify-done-pay-btn" onclick="submitInvoicePaymentSettlement()" class="btn btn-success" style="width: 100%; padding: 11px; font-weight: 800; font-size: 13.5px; background: linear-gradient(135deg, #16a34a, #15803d); border: none; border-radius: 8px; box-shadow: 0 4px 10px rgba(22, 163, 74, 0.3); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 8px;">
-                <i class="fa-solid fa-circle-check"></i> Settle Balance &amp; Update Database
-              </button>
-
-              <button type="button" class="btn btn-secondary" onclick="openAdminDashboardFromVerify()" style="width: 100%; justify-content: center; font-size: 12px; font-weight: 700; padding: 8px; background: #ffffff; color: #0891b2; border: 1px solid #cbd5e1;">
-                <i class="fa-solid fa-chart-line"></i> Open Full Admin Billing Dashboard
-              </button>
-            </div>
-
-          </div>
+          <!-- Settlement controls are ONLY available in the admin dashboard after login -->
 
         </div>
 
@@ -4428,7 +4336,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=411_direct_online_cloud_sync_and_strict_security"></script>
+  <script src="index_v5.js?v=412_readonly_qr_verification_no_public_settle"></script>
 </body>
 </html>
 
