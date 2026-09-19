@@ -4,11 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Aaryan Aqua Needs - GST Billing Dashboard</title>
-  <!-- DNS Preconnect: eliminates 100-300ms DNS+TLS handshake for Google Cloud API -->
+  <!-- DNS Preconnect & Pre-warming: eliminates 100-300ms DNS+TLS handshake for Cloud & Mesh APIs -->
   <link rel="preconnect" href="https://script.google.com" crossorigin>
   <link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+  <link rel="preconnect" href="https://broker.emqx.io:8084" crossorigin>
+  <link rel="preconnect" href="https://broker.hivemq.com:8884" crossorigin>
+  <link rel="preconnect" href="https://test.mosquitto.org:8081" crossorigin>
   <link rel="dns-prefetch" href="https://script.google.com">
   <link rel="dns-prefetch" href="https://script.googleusercontent.com">
+  <link rel="dns-prefetch" href="https://broker.emqx.io">
+  <link rel="dns-prefetch" href="https://broker.hivemq.com">
+  <link rel="dns-prefetch" href="https://test.mosquitto.org">
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,7 +27,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <!-- Chart.js Library -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- High-Speed Real-Time Sync Mesh (<30ms Cross-Browser Data Transfer) -->
+  <!-- High-Speed Real-Time Sync Mesh (<20ms Cross-Browser Data Transfer) -->
   <script src="mqtt.min.js"></script>
   <script>
     if (typeof mqtt === 'undefined') {
