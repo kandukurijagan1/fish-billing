@@ -63,6 +63,34 @@
   --radius-full: 9999px;
 }
 
+/* ============================================================================
+   NATIVE APPLICATION CORE BEHAVIORS (ELIMINATING "WEBSITE" FEEL)
+   ============================================================================ */
+html, body {
+  overscroll-behavior-y: contain;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+/* App-like non-selectable UI Chrome (buttons, cards, headers, navigation) */
+body, button, .nav-item, .card-header, .stat-card, .table-header, .badge-status, 
+.sidebar, .mobile-bottom-nav, .app-top-header-meta, .tab-btn, .mobile-bottom-nav-item,
+.modal-header, .invoice-tabs, .btn-action {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+}
+
+/* Allow clean text selection strictly in form inputs, textareas, and invoice item details */
+input, textarea, [contenteditable="true"], .selectable-text, .tally-invoice-container, .tally-items-table {
+  -webkit-user-select: text !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
+  user-select: text !important;
+}
+
 /* App Top Header Bar Right Meta */
 .app-top-header-meta {
   display: flex !important;
@@ -9098,6 +9126,222 @@ section.content-view.hidden {
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ============================================================================
+   PWA & STANDALONE APPLICATION STYLES (INSTALL PILL, BANNER, iOS GUIDE)
+   ============================================================================ */
+
+/* 1. PWA Install Pill in Header */
+.pwa-install-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 5px 12px !important;
+  border-radius: 20px !important;
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+  background: linear-gradient(135deg, #06b6d4 0%, #0284c7 100%) !important;
+  color: #ffffff !important;
+  border: none !important;
+  cursor: pointer !important;
+  box-shadow: 0 2px 10px rgba(6, 182, 212, 0.35) !important;
+  transition: all 0.2s ease !important;
+  animation: pulseInstallBtn 2.8s infinite !important;
+  white-space: nowrap !important;
+  font-family: inherit !important;
+}
+
+@keyframes pulseInstallBtn {
+  0%, 100% { transform: scale(1); box-shadow: 0 2px 10px rgba(6, 182, 212, 0.35); }
+  50% { transform: scale(1.04); box-shadow: 0 4px 16px rgba(6, 182, 212, 0.55); }
+}
+
+.pwa-install-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(6, 182, 212, 0.6) !important;
+}
+
+/* 2. PWA Sidebar Install Item */
+.pwa-sidebar-install-item {
+  color: #38bdf8 !important;
+  font-weight: 700 !important;
+  border-left: 3px solid #06b6d4 !important;
+}
+
+/* 3. Mobile Install Banner */
+.pwa-mobile-banner {
+  position: fixed !important;
+  bottom: calc(66px + env(safe-area-inset-bottom, 0px)) !important;
+  left: 12px !important;
+  right: 12px !important;
+  background: rgba(15, 23, 42, 0.96) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1.5px solid rgba(6, 182, 212, 0.4) !important;
+  border-radius: 14px !important;
+  padding: 10px 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(6, 182, 212, 0.25) !important;
+  z-index: 2147483620 !important;
+  animation: slideUpPwaBanner 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+@keyframes slideUpPwaBanner {
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.pwa-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.pwa-banner-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  object-fit: cover;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  flex-shrink: 0;
+}
+
+.pwa-banner-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.2;
+}
+
+.pwa-banner-subtitle {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
+.pwa-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btn-pwa-banner-install {
+  background: linear-gradient(135deg, #06b6d4 0%, #2563eb 100%) !important;
+  color: #ffffff !important;
+  border: none !important;
+  padding: 7px 14px !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  white-space: nowrap !important;
+  font-family: inherit !important;
+}
+
+.btn-pwa-banner-close {
+  background: transparent !important;
+  border: none !important;
+  color: #94a3b8 !important;
+  font-size: 16px !important;
+  padding: 6px !important;
+  cursor: pointer !important;
+}
+
+/* 4. App Network Status Banner */
+.app-network-banner {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  background: #f59e0b !important;
+  color: #0f172a !important;
+  text-align: center !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  padding: 6px 12px !important;
+  z-index: 2147483645 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2) !important;
+  transition: all 0.3s ease !important;
+}
+
+.app-network-banner.online {
+  background: #10b981 !important;
+  color: #ffffff !important;
+}
+
+/* 5. iOS Install Modal */
+.ios-pwa-card {
+  max-width: 380px !important;
+  background: #ffffff !important;
+  border-radius: 18px !important;
+  overflow: hidden !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4) !important;
+}
+
+.ios-install-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+  background: #f8fafc;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.ios-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #334155;
+}
+
+.step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #004b73;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* 6. Standalone PWA Mode & Notch Adaptations */
+@media all and (display-mode: standalone) {
+  body {
+    padding-top: env(safe-area-inset-top, 0px) !important;
+  }
+  .content-header {
+    padding-top: calc(12px + env(safe-area-inset-top, 0px)) !important;
+  }
+  .mobile-bottom-nav {
+    padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)) !important;
+    height: calc(60px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  /* In installed standalone mode, hide install triggers */
+  .pwa-install-pill, #pwa-mobile-install-banner, .pwa-sidebar-install-item {
+    display: none !important;
+  }
+}
+
 
 
 

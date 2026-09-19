@@ -3350,6 +3350,9 @@ window.closeMobileSidebar = function() {
 
 window.switchTab = function(tabName) {
   if (isLocked) return;
+  if (typeof window.triggerHapticFeedback === 'function') {
+    window.triggerHapticFeedback(10);
+  }
   if (typeof window.closeMobileSidebar === 'function') {
     window.closeMobileSidebar();
   }
@@ -16693,3 +16696,164 @@ window.shareDynamicUpiWhatsApp = function() {
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`, '_blank');
   }
 };
+
+// ============================================================================
+// NATIVE GENERAL APP ARCHITECTURE: PWA INSTALLATION, MODAL BACK-STACK, HAPTICS
+// ============================================================================
+
+// --- 1. PWA NATIVE INSTALLATION PROMPT MANAGER ---
+window.deferredPwaPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  // Prevent default mini-infobar from appearing on mobile
+  e.preventDefault();
+  window.deferredPwaPrompt = e;
+  
+  // Reveal native app install buttons
+  const headerInstallBtn = document.getElementById('btn-pwa-install-header');
+  if (headerInstallBtn) headerInstallBtn.classList.remove('hidden');
+
+  const sidebarInstallBtn = document.getElementById('btn-pwa-install-sidebar');
+  if (sidebarInstallBtn) sidebarInstallBtn.classList.remove('hidden');
+
+  // Reveal bottom mobile banner if not dismissed this session
+  if (!sessionStorage.getItem('pwa_banner_dismissed')) {
+    const mobileBanner = document.getElementById('pwa-mobile-install-banner');
+    if (mobileBanner && window.innerWidth <= 768) {
+      mobileBanner.classList.remove('hidden');
+    }
+  }
+  console.log('[PWA] Native app installation prompt ready.');
+});
+
+window.triggerPwaInstall = async function() {
+  if (typeof window.triggerHapticFeedback === 'function') {
+    window.triggerHapticFeedback(15);
+  }
+
+  if (window.deferredPwaPrompt) {
+    window.deferredPwaPrompt.prompt();
+    const { outcome } = await window.deferredPwaPrompt.userChoice;
+    console.log('[PWA] User response to install prompt:', outcome);
+    if (outcome === 'accepted') {
+      showFloatingToast("🚀 Installing Aaryan Aqua App on your device...", 2500);
+      window.dismissPwaBanner();
+    }
+    window.deferredPwaPrompt = null;
+  } else {
+    const isIos = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase());
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    
+    if (isStandalone) {
+      showFloatingToast("✅ Aaryan Aqua is already installed and running as a standalone app!", 3000);
+    } else if (isIos) {
+      const iosModal = document.getElementById('ios-pwa-modal');
+      if (iosModal) iosModal.classList.remove('hidden');
+    } else {
+      showFloatingToast("📲 To install: tap your browser menu (⋮ or Share) > select 'Install app' or 'Add to Home Screen'!", 4500);
+    }
+  }
+};
+
+window.dismissPwaBanner = function() {
+  sessionStorage.setItem('pwa_banner_dismissed', 'true');
+  const mobileBanner = document.getElementById('pwa-mobile-install-banner');
+  if (mobileBanner) mobileBanner.classList.add('hidden');
+};
+
+window.closeIosInstallModal = function(e) {
+  if (e && e.target && e.target !== document.getElementById('ios-pwa-modal') && !e.target.classList.contains('btn-close-modal') && !e.target.classList.contains('btn-primary')) {
+    return;
+  }
+  const iosModal = document.getElementById('ios-pwa-modal');
+  if (iosModal) iosModal.classList.add('hidden');
+};
+
+window.addEventListener('appinstalled', (evt) => {
+  console.log('[PWA] Aaryan Aqua successfully installed to home screen / OS!');
+  showFloatingToast("🎉 Aaryan Aqua App installed! You can now launch it directly from your Home Screen or Desktop.", 5000);
+  const headerInstallBtn = document.getElementById('btn-pwa-install-header');
+  if (headerInstallBtn) headerInstallBtn.classList.add('hidden');
+  const sidebarInstallBtn = document.getElementById('btn-pwa-install-sidebar');
+  if (sidebarInstallBtn) sidebarInstallBtn.classList.add('hidden');
+  window.dismissPwaBanner();
+});
+
+// --- 2. ANDROID HARDWARE / GESTURE BACK BUTTON (MODAL BACK-STACK) ---
+window._modalCloseStack = [];
+
+window.pushModalBackStack = function(closeCallback) {
+  if (typeof closeCallback !== 'function') return;
+  window._modalCloseStack.push(closeCallback);
+  try {
+    history.pushState({ modalOpen: true, stackDepth: window._modalCloseStack.length }, '');
+  } catch (e) {}
+};
+
+window.popModalBackStack = function() {
+  if (window._modalCloseStack.length > 0) {
+    const cb = window._modalCloseStack.pop();
+    try { cb(); } catch (e) {}
+  }
+};
+
+window.addEventListener('popstate', (e) => {
+  // If we have an explicit callback in stack, trigger it
+  if (window._modalCloseStack.length > 0) {
+    const cb = window._modalCloseStack.pop();
+    try { cb(); } catch (e) {}
+    return;
+  }
+  // Check if mobile sidebar is open
+  const wrapper = document.querySelector('.dashboard-wrapper');
+  if (wrapper && wrapper.classList.contains('sidebar-open')) {
+    if (typeof window.closeMobileSidebar === 'function') {
+      window.closeMobileSidebar();
+      return;
+    }
+  }
+  // Check if any modal-overlay is visible
+  const visibleModals = document.querySelectorAll('.modal-overlay:not(.hidden)');
+  if (visibleModals && visibleModals.length > 0) {
+    const topModal = visibleModals[visibleModals.length - 1];
+    topModal.classList.add('hidden');
+    const closeBtn = topModal.querySelector('.btn-close-modal, .btn-close, [onclick*="close"]');
+    if (closeBtn && typeof closeBtn.click === 'function') {
+      closeBtn.click();
+    }
+  }
+});
+
+// --- 3. NATIVE HAPTIC VIBRATION FEEDBACK ---
+window.triggerHapticFeedback = function(durationMs = 12) {
+  if (navigator && typeof navigator.vibrate === 'function') {
+    try { navigator.vibrate(durationMs); } catch (e) {}
+  }
+};
+
+// --- 4. APP NETWORK ONLINE / OFFLINE DETECTOR ---
+function updateAppNetworkStatus() {
+  const banner = document.getElementById('app-network-banner');
+  const text = document.getElementById('network-banner-text');
+  const icon = document.getElementById('network-banner-icon');
+  if (!banner || !text) return;
+
+  if (navigator.onLine) {
+    banner.classList.add('online');
+    banner.classList.remove('hidden');
+    text.textContent = '🟢 Back Online — Syncing records with Cloud Mesh...';
+    if (icon) icon.className = 'fa-solid fa-cloud-arrow-up';
+    setTimeout(() => {
+      banner.classList.add('hidden');
+    }, 2800);
+  } else {
+    banner.classList.remove('online');
+    banner.classList.remove('hidden');
+    text.textContent = '⚠️ Working Offline — Invoices saved locally & auto-sync when online.';
+    if (icon) icon.className = 'fa-solid fa-wifi';
+  }
+}
+
+window.addEventListener('online', updateAppNetworkStatus);
+window.addEventListener('offline', updateAppNetworkStatus);
+

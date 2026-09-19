@@ -1,22 +1,55 @@
 {
-  "name": "Aaryan Aqua Needs - GST Billing System",
-  "short_name": "AquaBilling",
-  "description": "High-Performance GST Billing & Financial Accounting Application for Aquaculture Supplies",
+  "name": "Aaryan Aqua Needs - GST Billing",
+  "short_name": "Aaryan Aqua",
+  "description": "High-Performance GST Billing & Inventory Management Application for Aquaculture Supplies",
   "start_url": "./index.html",
+  "scope": "./",
+  "id": "/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#06b6d4",
   "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#004b73",
+  "categories": ["business", "finance", "productivity"],
   "icons": [
     {
-      "src": "lord_ganesha.jpg",
+      "src": "icon-192.png",
       "sizes": "192x192",
-      "type": "image/jpeg"
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "lord_ganesha.jpg",
       "sizes": "512x512",
       "type": "image/jpeg"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New Bill",
+      "short_name": "New Bill",
+      "description": "Create a new GST billing invoice",
+      "url": "./index.html?tab=billing",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Invoice History",
+      "short_name": "History",
+      "description": "View and search saved invoices",
+      "url": "./index.html?tab=history",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Products",
+      "short_name": "Products",
+      "description": "Browse and manage aquaculture products",
+      "url": "./index.html?tab=products",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
     }
   ]
 }

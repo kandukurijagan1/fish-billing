@@ -43,39 +43,32 @@
   </script>
   <!-- PWA Manifest & App Icons -->
   <link rel="manifest" href="manifest.json">
-  <link rel="icon" type="image/jpeg" href="lord_ganesha.jpg">
-  <link rel="shortcut icon" type="image/jpeg" href="lord_ganesha.jpg">
-  <link rel="apple-touch-icon" href="lord_ganesha.jpg">
-  <meta name="theme-color" content="#06b6d4">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+  <link rel="shortcut icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="theme-color" content="#004b73">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Aaryan Aqua">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-  <!-- Safe service worker unregister and cache refresh -->
+  <meta name="application-name" content="Aaryan Aqua">
+  <meta name="msapplication-TileColor" content="#004b73">
+  <!-- PWA Active Service Worker Registration for Instant App Speed & Installability -->
   <script>
-    if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-      try {
-        navigator.serviceWorker.getRegistrations().then(function(registrations) {
-          for (var registration of registrations) {
-            registration.unregister();
-          }
-        }).catch(function() {});
-      } catch (e) {}
+    if ('serviceWorker' in navigator && (window.location.protocol.startsWith('http') || window.location.protocol === 'file:')) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('./sw.js?v=416_native_pwa_standalone_app')
+          .then(function(reg) {
+            console.log('[PWA] Service Worker active, scope:', reg.scope);
+          })
+          .catch(function(err) {
+            console.warn('[PWA] Service Worker note:', err);
+          });
+      });
     }
-    if ('caches' in window && window.location.protocol.startsWith('http')) {
-      try {
-        caches.keys().then(function(names) {
-          for (var name of names) {
-            caches.delete(name);
-          }
-        }).catch(function() {});
-      } catch (e) {}
-    }
-    // Build Version Enforcement: Clears stale caches when new build is deployed
-    window.__APP_BUILD_VERSION__ = "v415_single_page_print_and_turbo_retrieval";
+    // Build Version Enforcement
+    window.__APP_BUILD_VERSION__ = "v416_native_pwa_standalone_app";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -87,8 +80,8 @@
     } catch (e) {}
   </script>
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=415_single_page_print_and_turbo_retrieval">
-  <script src="invoice_utils_v5.js?v=415_single_page_print_and_turbo_retrieval"></script>
+  <link rel="stylesheet" href="index.css?v=416_native_pwa_standalone_app">
+  <script src="invoice_utils_v5.js?v=416_native_pwa_standalone_app"></script>
 </head>
 <body>
   <!-- HIGH-END LOGIN / LOCK SCREEN OVERLAY (Enforced by default for security) -->
@@ -185,6 +178,9 @@
         <button class="nav-item" data-tab="settings">
           <i class="fa-solid fa-gear"></i> Settings
         </button>
+        <button type="button" id="btn-pwa-install-sidebar" class="nav-item pwa-sidebar-install-item hidden" onclick="window.triggerPwaInstall()">
+          <i class="fa-solid fa-mobile-screen-button" style="color: #06b6d4;"></i> Install App
+        </button>
       </nav>
 
       <div class="sidebar-profile">
@@ -241,6 +237,10 @@
             </div>
           </div>
           <div class="header-tools-group">
+            <button type="button" id="btn-pwa-install-header" class="pwa-install-pill hidden cursor-pointer" onclick="window.triggerPwaInstall()" title="Install Aaryan Aqua App on this Device (Standalone App)">
+              <i class="fa-solid fa-cloud-arrow-down"></i>
+              <span>Install App</span>
+            </button>
             <div id="live-turbo-hub-pill" class="turbo-hub-pill cursor-pointer" onclick="openCommandPalette()" title="Turbo Intelligence & Fast Search Hub (Ctrl+K / Alt+K)">
               <i class="fa-solid fa-bolt-lightning text-cyan" id="turbo-hub-icon"></i>
               <span id="turbo-hub-pill-text">Turbo Hub <kbd>Ctrl+K</kbd></span>
@@ -4380,7 +4380,54 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=415_single_page_print_and_turbo_retrieval"></script>
+  <!-- PWA MOBILE INSTALL BANNER -->
+  <div id="pwa-mobile-install-banner" class="pwa-mobile-banner hidden no-print">
+    <div class="pwa-banner-content">
+      <img src="icon-192.png" alt="Aaryan Aqua" class="pwa-banner-icon">
+      <div class="pwa-banner-text">
+        <div class="pwa-banner-title">Install Aaryan Aqua App</div>
+        <div class="pwa-banner-subtitle">Add to Home Screen for fast offline billing</div>
+      </div>
+    </div>
+    <div class="pwa-banner-actions">
+      <button type="button" class="btn-pwa-banner-install" onclick="window.triggerPwaInstall()">
+        <i class="fa-solid fa-download"></i> Install
+      </button>
+      <button type="button" class="btn-pwa-banner-close" onclick="window.dismissPwaBanner()" aria-label="Close">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- iOS PWA INSTALL GUIDE MODAL -->
+  <div id="ios-pwa-modal" class="modal-overlay hidden no-print" onclick="window.closeIosInstallModal(event)">
+    <div class="modal-card ios-pwa-card" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3><i class="fa-brands fa-apple"></i> Install on iPhone / iPad</h3>
+        <button type="button" class="btn-close-modal" onclick="window.closeIosInstallModal()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 20px; text-align: center;">
+        <img src="icon-192.png" alt="App Icon" style="width: 60px; height: 60px; border-radius: 14px; box-shadow: 0 4px 14px rgba(0,0,0,0.2); margin-bottom: 10px; display: inline-block;">
+        <h4 style="margin: 0 0 6px 0; color: #004b73; font-size: 16px;">Aaryan Aqua Needs</h4>
+        <p style="color: #64748b; font-size: 12.5px; margin-bottom: 16px;">Add this app to your Home Screen for full-screen standalone use:</p>
+        <div class="ios-install-steps">
+          <div class="ios-step"><span class="step-num">1</span> Tap the <strong>Share</strong> button <i class="fa-solid fa-arrow-up-from-bracket" style="color: #0284c7;"></i> in Safari menu bar</div>
+          <div class="ios-step"><span class="step-num">2</span> Scroll down and tap <strong>'Add to Home Screen'</strong> <i class="fa-regular fa-square-plus" style="color: #0284c7;"></i></div>
+          <div class="ios-step"><span class="step-num">3</span> Tap <strong>'Add'</strong> in the top-right corner!</div>
+        </div>
+      </div>
+      <div class="modal-footer" style="padding: 12px 20px; text-align: center;">
+        <button type="button" class="btn-primary" onclick="window.closeIosInstallModal()" style="width: 100%; border-radius: 8px; padding: 10px;">Got It</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- APP NETWORK STATUS NOTIFICATION BAR -->
+  <div id="app-network-banner" class="app-network-banner hidden no-print">
+    <i class="fa-solid fa-wifi" id="network-banner-icon"></i> <span id="network-banner-text">Working Offline</span>
+  </div>
+
+  <script src="index_v5.js?v=416_native_pwa_standalone_app"></script>
 </body>
 </html>
 
