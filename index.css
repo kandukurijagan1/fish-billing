@@ -2508,20 +2508,21 @@ body {
 
 /* --- HIGH-END LOGIN SCREEN OVERLAY --- */
 .lock-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(15, 23, 42, 0.9);
-  backdrop-filter: blur(12px) saturate(180%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 999999;
-  transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  opacity: 1;
-  visibility: visible;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background: rgba(15, 23, 42, 0.94) !important;
+  backdrop-filter: blur(16px) saturate(180%) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 2147483647 !important; /* STRICT MAXIMUM 32-BIT INTEGER - CANNOT BE OVERRIDDEN */
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
 }
 
 /* Strict hidden state ensures no pointer-events or layout interception */
@@ -2529,6 +2530,18 @@ body {
   display: none !important;
   opacity: 0 !important;
   visibility: hidden !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+}
+
+/* When application is locked, strictly hide interactive mobile bars and banners */
+body.app-is-locked #mobile-bottom-nav,
+body.app-is-locked #pwa-mobile-install-banner,
+body.app-is-locked #app-network-banner,
+body.app-is-locked .mobile-sidebar-overlay,
+body.app-is-locked #quick-calculator-modal,
+body.app-is-locked #global-command-palette-modal {
+  display: none !important;
   pointer-events: none !important;
 }
 

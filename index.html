@@ -68,7 +68,7 @@
       });
     }
     // Build Version Enforcement
-    window.__APP_BUILD_VERSION__ = "v416_native_pwa_standalone_app";
+    window.__APP_BUILD_VERSION__ = "v417_lock_system_bulletproof";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -80,8 +80,8 @@
     } catch (e) {}
   </script>
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=416_native_pwa_standalone_app">
-  <script src="invoice_utils_v5.js?v=416_native_pwa_standalone_app"></script>
+  <link rel="stylesheet" href="index.css?v=417_lock_system_bulletproof">
+  <script src="invoice_utils_v5.js?v=417_lock_system_bulletproof"></script>
 </head>
 <body>
   <!-- HIGH-END LOGIN / LOCK SCREEN OVERLAY (Enforced by default for security) -->
@@ -256,6 +256,10 @@
             <div id="live-audio-fx-pill" class="audio-fx-pill active cursor-pointer" onclick="toggleAudioFeedback()" title="Billing Audio FX (Click to Mute / Unmute)">
               <i class="fa-solid fa-volume-high" id="audio-fx-icon"></i>
               <span id="audio-fx-text">Audio</span>
+            </div>
+            <div id="live-header-lock-pill" class="lock-pill cursor-pointer" onclick="triggerManualLock()" title="Lock Screen (Admin Security)" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.25); color: #f87171; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;">
+              <i class="fa-solid fa-lock" style="color: #ef4444; font-size: 11px;"></i>
+              <span>Lock</span>
             </div>
           </div>
           <div class="header-clock-pill">
@@ -3089,13 +3093,38 @@
             </div>
           </div>
 
+          <!-- STORE OWNER / ADMIN SETTLE INLINE GATE (Shown when pending balance exists and user is unauthenticated) -->
+          <div id="verify-admin-gate-prompt" style="display: none; margin-top: 14px; padding: 11px 14px; background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: 12px; align-items: center; justify-content: space-between; gap: 10px;">
+            <div style="font-size: 11.5px; color: #475569; display: flex; align-items: center; gap: 7px;">
+              <i class="fa-solid fa-user-shield text-cyan" style="font-size: 15px;"></i>
+              <span><strong>Store Owner?</strong> Unlock admin settlement mode</span>
+            </div>
+            <button type="button" class="btn btn-xs btn-primary" onclick="showModalAdminUnlockForm()" style="padding: 6px 13px; font-size: 11.5px; font-weight: 700; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap;">
+              <i class="fa-solid fa-key"></i> Admin Settle
+            </button>
+          </div>
+
+          <div id="verify-admin-unlock-form" style="display: none; margin-top: 14px; padding: 14px; background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.1);">
+            <div style="font-size: 12px; font-weight: 700; color: #166534; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
+              <span style="display: flex; align-items: center; gap: 6px;"><i class="fa-solid fa-shield-halved text-green"></i> Enter Admin Password or PIN:</span>
+              <button type="button" onclick="hideModalAdminUnlockForm()" style="background: none; border: none; font-size: 14px; color: #64748b; cursor: pointer; padding: 0 4px;">✕</button>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="password" id="modal-admin-pwd-input" class="form-control" placeholder="Aaryan@2024 or PIN 2024" style="font-size: 12.5px; padding: 8px 10px; border-radius: 8px; flex: 1; border: 1.5px solid #86efac; background: #ffffff;" onkeydown="if(event.key==='Enter') submitModalAdminUnlock();">
+              <button type="button" class="btn btn-success" onclick="submitModalAdminUnlock()" style="padding: 8px 14px; font-size: 12px; font-weight: 800; border-radius: 8px; white-space: nowrap; background: #16a34a; color: white; border: none; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                <i class="fa-solid fa-unlock"></i> Unlock &amp; Settle
+              </button>
+            </div>
+            <div id="modal-admin-pwd-error" style="display: none; color: #dc2626; font-size: 11px; margin-top: 6px; font-weight: 600;"></div>
+          </div>
+
         </div>
 
       </div>
 
       <!-- Footer Buttons -->
       <div style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 11px; color: #94a3b8;"><i class="fa-solid fa-lock"></i> Protected Registry</span>
+        <span id="verify-footer-status" style="font-size: 11px; color: #94a3b8;"><i class="fa-solid fa-lock"></i> Protected Official Registry</span>
         <button type="button" class="btn btn-secondary" onclick="closeInvoiceVerificationModal()">Close</button>
       </div>
 
@@ -4427,7 +4456,7 @@
     <i class="fa-solid fa-wifi" id="network-banner-icon"></i> <span id="network-banner-text">Working Offline</span>
   </div>
 
-  <script src="index_v5.js?v=416_native_pwa_standalone_app"></script>
+  <script src="index_v5.js?v=417_lock_system_bulletproof"></script>
 </body>
 </html>
 

@@ -2838,18 +2838,36 @@ function initializeApp() {
     }
   });
 
-  // Security Enforcement: System is locked on load/reload until administrator authenticates
-  isLocked = true;
-  localStorage.setItem("app_locked", "true");
-  sessionStorage.removeItem("session_authenticated");
+  // Security Enforcement & Session Verification
+  const isManuallyLocked = localStorage.getItem("app_locked") === "true";
+  const hasSessionAuth = sessionStorage.getItem("session_authenticated") === "true";
+  const hasAppAuth = localStorage.getItem("app_authenticated") === "true";
+  const rememberMe = localStorage.getItem("remember_me") === "true";
+  const savedPwd = localStorage.getItem("saved_password") || "";
+  const lastActive = parseInt(localStorage.getItem("last_active_time") || "0", 10);
+  const lockTimeout = lockTimerSeconds > 0 ? (lockTimerSeconds * 1000) : 0;
+  const isTimedOut = lockTimeout > 0 && lastActive > 0 && (Date.now() - lastActive > lockTimeout);
 
-  const overlay = document.getElementById("lock-screen-overlay");
-  if (overlay) overlay.classList.remove("hidden");
-  const wrapper = document.querySelector('.dashboard-wrapper');
-  if (wrapper) wrapper.classList.add("blur-dashboard-wrapper");
+  // Determine if session can remain seamlessly active
+  const canStayUnlocked = !isManuallyLocked && !isTimedOut && (hasSessionAuth || (rememberMe && savedPwd && hasAppAuth));
 
-  // Setup login form credentials
-  autofillRememberedCredentials();
+  if (canStayUnlocked) {
+    unlockSystemSilently();
+  } else {
+    // Lock the system cleanly
+    isLocked = true;
+    localStorage.setItem("app_locked", "true");
+    sessionStorage.removeItem("session_authenticated");
+    document.body.classList.add("app-is-locked");
+
+    const overlay = document.getElementById("lock-screen-overlay");
+    if (overlay) overlay.classList.remove("hidden");
+    const wrapper = document.querySelector('.dashboard-wrapper');
+    if (wrapper) wrapper.classList.add("blur-dashboard-wrapper");
+
+    // Setup login form credentials
+    autofillRememberedCredentials();
+  }
 
   // Reset lock timer on activity
   resetAutolockTimer();
@@ -3335,6 +3353,7 @@ function setupRouting() {
 }
 
 window.toggleMobileSidebar = function() {
+  if (isLocked) return;
   const wrapper = document.querySelector('.dashboard-wrapper');
   if (wrapper) {
     wrapper.classList.toggle('sidebar-open');
@@ -4768,6 +4787,7 @@ function bindBillingFormInputs() {
   };
 
   window.openCommandPalette = function() {
+    if (isLocked) return;
     const modal = document.getElementById("global-command-palette-modal");
     if (modal) {
       modal.classList.remove("hidden");
@@ -5120,6 +5140,7 @@ function bindBillingFormInputs() {
     }
 
     document.addEventListener("keydown", (e) => {
+      if (isLocked) return;
       // 1. Escape closes Command Palette, shortcuts modal, and popovers
       if (e.key === "Escape") {
         if (typeof window.closeCommandPalette === 'function') window.closeCommandPalette();
@@ -13301,11 +13322,25 @@ function unlockSystemSilently() {
   localStorage.setItem("app_authenticated", "true");
   sessionStorage.setItem("session_authenticated", "true");
   localStorage.setItem("last_active_time", Date.now());
+  document.body.classList.remove("app-is-locked");
   
   const overlay = document.getElementById("lock-screen-overlay");
   if (overlay) overlay.classList.add("hidden");
   const wrapper = document.querySelector('.dashboard-wrapper');
   if (wrapper) wrapper.classList.remove("blur-dashboard-wrapper");
+
+  // Re-render open verification modal if visible so admin controls populate
+  if (window.currentVerifiedInvoiceNo && typeof openInvoiceVerificationModal === 'function') {
+    const vModal = document.getElementById("invoice-verification-modal");
+    if (vModal && !vModal.classList.contains("hidden")) {
+      openInvoiceVerificationModal(window.currentVerifiedInvoiceNo);
+    }
+  }
+
+  // Restart inactivity auto-lock timer
+  if (typeof resetAutolockTimer === 'function') {
+    resetAutolockTimer();
+  }
 }
 window.unlockSystemSilently = unlockSystemSilently;
 
@@ -13331,6 +13366,9 @@ window.autofillRememberedCredentials = function() {
 
 window.triggerManualLock = function() {
   triggerLockOverlay();
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast("🔒 Screen locked securely.", 2500);
+  }
 };
 
 function triggerLockOverlay() {
@@ -13340,11 +13378,30 @@ function triggerLockOverlay() {
   }
   localStorage.setItem("app_locked", "true");
   sessionStorage.removeItem("session_authenticated");
+  localStorage.removeItem("app_authenticated");
+  document.body.classList.add("app-is-locked");
 
   const errBlock = document.getElementById("login-error-message");
   if (errBlock) errBlock.classList.add("hidden");
 
-  autofillRememberedCredentials();
+  // Close open sidebars/menus
+  if (typeof closeMobileSidebar === 'function') closeMobileSidebar();
+  if (typeof closeCommandPalette === 'function') closeCommandPalette();
+  const calcModal = document.getElementById("quick-calculator-modal");
+  if (calcModal) calcModal.classList.add("hidden");
+
+  // Autofill username, but clear password so user must re-enter to unlock
+  const userField = document.getElementById("login-username");
+  const pwdField = document.getElementById("login-password");
+  const rememberBox = document.getElementById("login-remember-me");
+  const remembered = localStorage.getItem("remember_me") === "true";
+  const savedUser = localStorage.getItem("saved_username") || "Aaryanaqua";
+  if (userField) userField.value = savedUser;
+  if (rememberBox) rememberBox.checked = remembered;
+  if (pwdField) {
+    pwdField.value = "";
+    setTimeout(() => { try { pwdField.focus(); } catch(_) {} }, 100);
+  }
 
   const wrapper = document.querySelector('.dashboard-wrapper');
   if (wrapper) wrapper.classList.add("blur-dashboard-wrapper");
@@ -13405,14 +13462,26 @@ window.submitUnlockLogin = function(e) {
   if (btnSpinner) btnSpinner.classList.remove("hidden");
   if (errBlock) errBlock.classList.add("hidden");
 
-  // Determine authorized master credentials
+  // Master credentials matching (robust & case-tolerant)
   const sec = globalSettings?.security || {};
-  const targetUser = (sec.username || activeUsername || "Aaryanaqua").toString().trim().toLowerCase();
-  const targetPwd = (sec.password || activePassword || "Aaryan@2024").toString().trim();
-  const targetPin = (sec.whatsappPin || "2024").toString().trim();
+  const customUser = (sec.username || "").toString().trim().toLowerCase();
+  const customPwd = (sec.password || "").toString().trim();
+  const customPin = (sec.whatsappPin || sec.pin || "").toString().trim();
 
-  const isUserMatch = (userText.toLowerCase() === targetUser || userText.toLowerCase() === "aaryanaqua" || userText.toLowerCase() === "admin");
-  const isPwdMatch = (pwdText === targetPwd || pwdText === "Aaryan@2024" || pwdText === targetPin || pwdText === "2024");
+  const userLower = userText.toLowerCase();
+  const isUserMatch = (
+    userLower === "aaryanaqua" ||
+    userLower === "admin" ||
+    (customUser && userLower === customUser)
+  );
+
+  const isPwdMatch = (
+    pwdText === "Aaryan@2024" ||
+    pwdText.toLowerCase() === "aaryan@2024" ||
+    pwdText === "2024" ||
+    (customPwd && (pwdText === customPwd || pwdText.toLowerCase() === customPwd.toLowerCase())) ||
+    (customPin && pwdText === customPin)
+  );
 
   setTimeout(() => {
     if (isUserMatch && isPwdMatch) {
@@ -13428,11 +13497,11 @@ window.submitUnlockLogin = function(e) {
 
       unlockSystemSilently();
       if (typeof showFloatingToast === 'function') {
-        showFloatingToast("🔓 Welcome! System unlocked successfully.", 3000);
+        showFloatingToast("🔓 Welcome back! System unlocked successfully.", 3000);
       }
     } else {
       if (errBlock) {
-        errBlock.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Invalid username or password!';
+        errBlock.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Invalid credentials! (Default: Aaryan@2024 or PIN 2024)';
         errBlock.classList.remove("hidden");
       }
       if (pwdField) {
@@ -13444,7 +13513,7 @@ window.submitUnlockLogin = function(e) {
     if (submitBtn) submitBtn.disabled = false;
     if (btnText) btnText.classList.remove("hidden");
     if (btnSpinner) btnSpinner.classList.add("hidden");
-  }, 250);
+  }, 180);
 };
 
 // --- UPLOAD INVOICE PDF TO TELEGRAM BOT API ---
@@ -15993,9 +16062,17 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
   // Differentiate between Public Visitors vs Authenticated Admin inside Website
   const isAdminLoggedIn = (sessionStorage.getItem("session_authenticated") === "true" || localStorage.getItem("app_authenticated") === "true") && (typeof isLocked === "undefined" || !isLocked);
   const adminSettleControls = document.getElementById("verify-admin-settle-controls");
-  if (adminSettleControls) {
-    if (isAdminLoggedIn && balDue > 0.01) {
-      adminSettleControls.style.display = "block";
+  const adminGatePrompt = document.getElementById("verify-admin-gate-prompt");
+  const adminUnlockForm = document.getElementById("verify-admin-unlock-form");
+  const footerStatus = document.getElementById("verify-footer-status");
+
+  if (balDue > 0.01) {
+    if (isAdminLoggedIn) {
+      if (adminSettleControls) adminSettleControls.style.display = "block";
+      if (adminGatePrompt) adminGatePrompt.style.display = "none";
+      if (adminUnlockForm) adminUnlockForm.style.display = "none";
+      if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-shield-halved text-green"></i> Store Admin Settle Active`;
+
       const payStatusSelect = document.getElementById("verify-pay-status-select");
       if (payStatusSelect) payStatusSelect.value = "Paid";
       const customAmtWrap = document.getElementById("verify-custom-amount-wrap");
@@ -16005,12 +16082,86 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
       const doneBtn = document.getElementById("verify-done-pay-btn");
       if (doneBtn) doneBtn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Settle Balance (₹ ${formatCurrency(balDue)}) & Update Database`;
     } else {
-      adminSettleControls.style.display = "none";
+      if (adminSettleControls) adminSettleControls.style.display = "none";
+      if (adminGatePrompt) adminGatePrompt.style.display = "flex";
+      if (adminUnlockForm) adminUnlockForm.style.display = "none";
+      if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-lock"></i> Protected Official Registry`;
     }
+  } else {
+    if (adminSettleControls) adminSettleControls.style.display = "none";
+    if (adminGatePrompt) adminGatePrompt.style.display = "none";
+    if (adminUnlockForm) adminUnlockForm.style.display = "none";
+    if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-circle-check text-green"></i> Verified &amp; Settled`;
   }
 
   modal.classList.remove("hidden");
   modal.style.display = "flex";
+};
+
+window.showModalAdminUnlockForm = function() {
+  const promptEl = document.getElementById("verify-admin-gate-prompt");
+  const formEl = document.getElementById("verify-admin-unlock-form");
+  const errEl = document.getElementById("modal-admin-pwd-error");
+  if (promptEl) promptEl.style.display = "none";
+  if (formEl) formEl.style.display = "block";
+  if (errEl) errEl.style.display = "none";
+  const pwdInput = document.getElementById("modal-admin-pwd-input");
+  if (pwdInput) {
+    pwdInput.value = "";
+    setTimeout(() => { try { pwdInput.focus(); } catch(_) {} }, 100);
+  }
+};
+
+window.hideModalAdminUnlockForm = function() {
+  const promptEl = document.getElementById("verify-admin-gate-prompt");
+  const formEl = document.getElementById("verify-admin-unlock-form");
+  if (formEl) formEl.style.display = "none";
+  if (promptEl) promptEl.style.display = "flex";
+};
+
+window.submitModalAdminUnlock = function() {
+  const pwdInput = document.getElementById("modal-admin-pwd-input");
+  const errEl = document.getElementById("modal-admin-pwd-error");
+  const enteredVal = (pwdInput?.value || "").trim();
+
+  if (!enteredVal) {
+    if (errEl) {
+      errEl.textContent = "Please enter your admin password or PIN!";
+      errEl.style.display = "block";
+    }
+    return;
+  }
+
+  const sec = globalSettings?.security || {};
+  const customPwd = (sec.password || "").toString().trim();
+  const customPin = (sec.whatsappPin || sec.pin || "").toString().trim();
+
+  const isMatch = (
+    enteredVal === "Aaryan@2024" ||
+    enteredVal.toLowerCase() === "aaryan@2024" ||
+    enteredVal === "2024" ||
+    (customPwd && (enteredVal === customPwd || enteredVal.toLowerCase() === customPwd.toLowerCase())) ||
+    (customPin && enteredVal === customPin)
+  );
+
+  if (isMatch) {
+    unlockSystemSilently();
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("🔓 Admin authenticated! Settlement mode unlocked.", "success", 3000);
+    }
+    if (window.currentVerifiedInvoiceNo && typeof openInvoiceVerificationModal === 'function') {
+      openInvoiceVerificationModal(window.currentVerifiedInvoiceNo);
+    }
+  } else {
+    if (errEl) {
+      errEl.textContent = "❌ Invalid password or PIN. (Default: Aaryan@2024 or 2024)";
+      errEl.style.display = "block";
+    }
+    if (pwdInput) {
+      pwdInput.value = "";
+      pwdInput.focus();
+    }
+  }
 };
 
 window.toggleVerifyCustomAmount = function(status) {
@@ -16358,6 +16509,7 @@ let calcState = {
 };
 
 window.toggleQuickCalculator = function() {
+  if (isLocked) return;
   const modal = document.getElementById("quick-calculator-modal");
   if (!modal) return;
   const isHidden = modal.classList.contains("hidden");
