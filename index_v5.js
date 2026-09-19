@@ -2073,8 +2073,8 @@ window.triggerDatabaseSync = async function(forceReload = false) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 6000);
 
-  const clientHash = lastSyncDataHash || "";
-  const gasSyncUrl = `${GOOGLE_SCRIPT_URL}?action=sync${clientHash && !forceReload ? `&hash=${encodeURIComponent(clientHash)}` : ''}`;
+  const clientHash = (lastSyncDataHash && !forceReload) ? lastSyncDataHash : "";
+  const gasSyncUrl = `${GOOGLE_SCRIPT_URL}?action=sync&auth=${encodeURIComponent(API_SECRET_TOKEN)}&token=${encodeURIComponent(API_SECRET_TOKEN)}${clientHash ? `&hash=${encodeURIComponent(clientHash)}` : ''}&_t=${Date.now()}`;
 
   activeSyncPromise = fetch(gasSyncUrl, {
     signal: controller.signal,
@@ -2283,7 +2283,7 @@ try {
     if (navigator.onLine && !isSyncing && document.visibilityState === 'visible') {
       window.triggerDatabaseSync(false);
     }
-  }, 30000);
+  }, 15000);
 
   window.addEventListener('focus', () => {
     if (navigator.onLine && !isSyncing) {
@@ -15681,55 +15681,63 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
 
   let inv = activeInv || activeByNo;
 
-  // 4. Handle Case where Invoice is Not Found in Local In-Memory DB
+  // 4. Handle Case where Invoice is Not Found in Local In-Memory DB (Query Live Online Database)
   if (!inv) {
-    // If invoicesDb is not loaded yet (or empty) and we have a cloud master database configured:
-    if (typeof GOOGLE_SCRIPT_URL !== "undefined" && GOOGLE_SCRIPT_URL && !window._isVerifyingCloudSync && (!invoicesDb || invoicesDb.length === 0)) {
+    if (typeof GOOGLE_SCRIPT_URL !== "undefined" && GOOGLE_SCRIPT_URL && !window._isVerifyingCloudSync) {
       window._isVerifyingCloudSync = true;
-      if (subtitleEl) subtitleEl.textContent = "Verifying against Company Database...";
+      if (subtitleEl) subtitleEl.textContent = "Verifying live against Company Cloud Database...";
       if (header) header.style.background = "linear-gradient(135deg, #0284c7, #0369a1)";
       if (stateInvalid) stateInvalid.style.display = "none";
       if (stateCancelled) stateCancelled.style.display = "none";
       if (stateValid) stateValid.style.display = "none";
-      if (modal) modal.classList.remove("hidden");
+      if (modal) {
+        modal.classList.remove("hidden");
+        modal.style.display = "flex";
+      }
 
-      fetch(`${GOOGLE_SCRIPT_URL}?action=sync&_t=${Date.now()}`)
+      const syncUrl = `${GOOGLE_SCRIPT_URL}?action=sync&auth=${encodeURIComponent(API_SECRET_TOKEN)}&token=${encodeURIComponent(API_SECRET_TOKEN)}&_t=${Date.now()}`;
+      const directGetUrl = `${GOOGLE_SCRIPT_URL}?action=get_invoice&invoiceNo=${encodeURIComponent(cleanNo)}&id=${encodeURIComponent(qId || cleanNo)}&auth=${encodeURIComponent(API_SECRET_TOKEN)}&token=${encodeURIComponent(API_SECRET_TOKEN)}&_t=${Date.now()}`;
+
+      fetch(directGetUrl)
         .then(r => r.json())
-        .then(data => {
-          window._isVerifyingCloudSync = false;
-          if (data && data.invoices && Array.isArray(data.invoices)) {
-            invoicesDb = data.invoices;
-            // Retry verification with fresh authoritative database
+        .then(singleRes => {
+          if (singleRes && singleRes.ok && singleRes.found && singleRes.invoice) {
+            window._isVerifyingCloudSync = false;
+            const fetchedInv = singleRes.invoice;
+            if (!invoicesDb) invoicesDb = [];
+            const existingIdx = invoicesDb.findIndex(i => i && (i.id === fetchedInv.id || i.invoiceNo === fetchedInv.invoiceNo));
+            if (existingIdx >= 0) invoicesDb[existingIdx] = fetchedInv;
+            else invoicesDb.unshift(fetchedInv);
+            try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
+            window.invoicesDb = invoicesDb;
             window.openInvoiceVerificationModal(cleanNo, rawUrl);
             return;
           }
-          // Cloud database returned, but invoice is NOT in it (was deleted or never existed)
-          renderCancelledState({
-            id: qId,
-            token: qToken,
-            invoiceNo: cleanNo,
-            customerName: qCust || "Customer",
-            total: qTot,
-            reason: "Record Deleted: This invoice was officially deleted from company registry. This QR code is inactive."
-          });
+
+          // Fallback to full bundle sync
+          return fetch(syncUrl)
+            .then(r => r.json())
+            .then(syncData => {
+              window._isVerifyingCloudSync = false;
+              if (syncData && Array.isArray(syncData.invoices) && syncData.invoices.length > 0) {
+                invoicesDb = syncData.invoices;
+                try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
+                window.invoicesDb = invoicesDb;
+                window.openInvoiceVerificationModal(cleanNo, rawUrl);
+                return;
+              }
+              renderInvalidState();
+            });
         })
         .catch(err => {
           window._isVerifyingCloudSync = false;
-          console.warn("Verification cloud sync failed:", err);
+          console.warn("Live online verification query failed:", err);
           renderInvalidState();
         });
       return;
     }
 
-    // If invoicesDb is already loaded and invoice is NOT present, it was DELETED!
-    return renderCancelledState({
-      id: qId,
-      token: qToken,
-      invoiceNo: cleanNo,
-      customerName: qCust || "Customer",
-      total: qTot,
-      reason: "Record Deleted: This invoice was officially deleted from company registry. This QR code is inactive."
-    });
+    return renderInvalidState();
   }
 
   // 5. Check if the found invoice has CANCELLED or VOID status
@@ -16015,11 +16023,9 @@ window.verifyAdminPinForSettlement = function() {
   const isValid = entered && (
     entered === targetPassword ||
     entered === targetPin ||
-    entered === "1234" ||
     entered === "2024" ||
     entered === "Aaryan@2024" ||
-    entered.toLowerCase() === "admin" ||
-    entered.toLowerCase() === "aaryanaqua"
+    entered === "Aaryanaqua"
   );
 
   if (isValid) {

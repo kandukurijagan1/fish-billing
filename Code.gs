@@ -1188,6 +1188,35 @@ function handleApiGet(e) {
 
     return ContentService.createTextOutput(JSON.stringify(fullBundle)).setMimeType(ContentService.MimeType.JSON);
   }
+
+  // 3. Fast Single Invoice Lookup / Public QR Verification (No Full Download Needed)
+  if (action === "get_invoice" || action === "verify" || action === "verify_invoice") {
+    var queryNo = e && e.parameter ? (e.parameter.invoiceNo || e.parameter.id || e.parameter.inv || e.parameter.token || e.parameter.q || "") : "";
+    var ssMaster = getMasterSpreadsheet();
+    var allInvs = readInvoicesFromSheet(ssMaster);
+    var found = null;
+    if (queryNo) {
+      var cleanQ = String(queryNo).trim().toLowerCase().replace(/^#/, '');
+      for (var k = 0; k < allInvs.length; k++) {
+        var invItem = allInvs[k];
+        if (!invItem) continue;
+        var iNo = String(invItem.invoiceNo || "").trim().toLowerCase().replace(/^#/, '');
+        var iId = String(invItem.id || "").trim().toLowerCase();
+        var iTok = String(invItem.qrToken || (invItem.details && invItem.details.qrToken) || "").trim().toLowerCase();
+        if (iNo === cleanQ || iId === cleanQ || iId.replace(/^inv_/, '') === cleanQ || (iTok && iTok === cleanQ)) {
+          found = invItem;
+          break;
+        }
+      }
+    }
+    if (found) {
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, found: true, invoice: found })).setMimeType(ContentService.MimeType.JSON);
+    } else {
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, found: false, error: "Invoice record not found in master database" })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Unknown GET action: " + action })).setMimeType(ContentService.MimeType.JSON);
 }
 
 function handleApiPost(e) {
