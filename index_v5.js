@@ -15943,13 +15943,165 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
   }
 
 
+  // Differentiate between Public Visitors vs Authenticated Admin inside Website
+  const isAdminLoggedIn = (sessionStorage.getItem("session_authenticated") === "true" || localStorage.getItem("app_authenticated") === "true") && (typeof isLocked === "undefined" || !isLocked);
+  const adminSettleControls = document.getElementById("verify-admin-settle-controls");
+  if (adminSettleControls) {
+    if (isAdminLoggedIn && balDue > 0.01) {
+      adminSettleControls.style.display = "block";
+      const payStatusSelect = document.getElementById("verify-pay-status-select");
+      if (payStatusSelect) payStatusSelect.value = "Paid";
+      const customAmtWrap = document.getElementById("verify-custom-amount-wrap");
+      if (customAmtWrap) customAmtWrap.style.display = "none";
+      const customAmtInput = document.getElementById("verify-pay-amount-input");
+      if (customAmtInput) customAmtInput.value = balDue.toFixed(2);
+      const doneBtn = document.getElementById("verify-done-pay-btn");
+      if (doneBtn) doneBtn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Settle Balance (₹ ${formatCurrency(balDue)}) & Update Database`;
+    } else {
+      adminSettleControls.style.display = "none";
+    }
+  }
+
   modal.classList.remove("hidden");
   modal.style.display = "flex";
 };
 
+window.toggleVerifyCustomAmount = function(status) {
+  const wrap = document.getElementById("verify-custom-amount-wrap");
+  const btn = document.getElementById("verify-done-pay-btn");
+  const input = document.getElementById("verify-pay-amount-input");
+  
+  let curBal = 0;
+  if (window.currentVerifiedInvoiceNo) {
+    const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => 
+      String(i.invoiceNo || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase() ||
+      String(i.id || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase()
+    );
+    if (inv) {
+      const payInfo = typeof getInvoicePaidAndBalance === "function" ? getInvoicePaidAndBalance(inv) : { balance: inv.balanceDue || 0 };
+      curBal = payInfo.balance;
+    }
+  }
 
-// NOTE: Settlement controls have been removed from the QR verification modal.
-// Settlements are ONLY processed through the admin dashboard after login.
+  if (status === "Partial") {
+    if (wrap) wrap.style.display = "block";
+    if (input && (!input.value || parseFloat(input.value) <= 0)) {
+      input.value = curBal > 0 ? (curBal / 2).toFixed(2) : "0";
+    }
+    if (btn) btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Record Partial Payment & Update Database';
+  } else {
+    if (wrap) wrap.style.display = "none";
+    if (input) input.value = curBal.toFixed(2);
+    if (btn) btn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Settle Full Balance (₹ ${formatCurrency(curBal)}) & Update Database`;
+  }
+};
+
+window.submitInvoicePaymentSettlement = function() {
+  // Strict Security: Allowed ONLY when authenticated inside the admin dashboard
+  const isAdminLoggedIn = (sessionStorage.getItem("session_authenticated") === "true" || localStorage.getItem("app_authenticated") === "true") && (typeof isLocked === "undefined" || !isLocked);
+  if (!isAdminLoggedIn) {
+    if (typeof showFloatingToast === "function") showFloatingToast("🔒 Access Denied: Admin authentication required to settle bills.", "warning");
+    return;
+  }
+
+  if (!window.currentVerifiedInvoiceNo) return;
+  const invNo = String(window.currentVerifiedInvoiceNo).trim();
+  const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => 
+    String(i.invoiceNo || "").trim().toLowerCase() === invNo.toLowerCase() ||
+    String(i.id || "").trim().toLowerCase() === invNo.toLowerCase()
+  );
+
+  if (!inv) {
+    if (typeof showFloatingToast === "function") showFloatingToast("❌ Error: Invoice record not found.", "warning");
+    return;
+  }
+
+  const payInfo = typeof getInvoicePaidAndBalance === "function" 
+    ? getInvoicePaidAndBalance(inv) 
+    : { total: parseFloat(inv.total) || 0, paid: parseFloat(inv.paidAmount) || 0, balance: parseFloat(inv.balanceDue) || 0 };
+  const totalAmt = payInfo.total;
+  const curPaid = payInfo.paid;
+  const curBal = payInfo.balance;
+
+  const selectedStatus = document.getElementById("verify-pay-status-select")?.value || "Paid";
+  const payMode = document.getElementById("verify-pay-mode-select")?.value || "UPI / Online";
+  const payRef = document.getElementById("verify-pay-ref-input")?.value.trim() || "";
+
+  let settledAmount = 0;
+  let newPaid = 0;
+  let newBal = 0;
+  let finalStatus = "Paid";
+
+  if (selectedStatus === "Partial") {
+    const customAmt = parseFloat(document.getElementById("verify-pay-amount-input")?.value) || 0;
+    if (customAmt <= 0) {
+      if (typeof showFloatingToast === "function") showFloatingToast("⚠️ Please enter a valid payment amount.", "warning");
+      return;
+    }
+    settledAmount = Math.min(customAmt, curBal);
+    newPaid = curPaid + settledAmount;
+    newBal = Math.max(0, curBal - settledAmount);
+    finalStatus = newBal <= 0.01 ? "Paid" : "Partial";
+  } else {
+    // Full settlement of balance
+    settledAmount = curBal;
+    newPaid = totalAmt;
+    newBal = 0;
+    finalStatus = "Paid";
+  }
+
+  inv.paidAmount = newPaid;
+  inv.balanceDue = newBal;
+  inv.balancePaid = (inv.balancePaid || 0) + settledAmount;
+  inv.paymentStatus = finalStatus;
+  inv.paymentMode = payMode;
+  if (payRef) inv.paymentReference = payRef;
+
+  if (inv.details) {
+    inv.details.paidAmount = newPaid;
+    inv.details.balanceDue = newBal;
+    inv.details.balancePaid = (inv.details.balancePaid || 0) + settledAmount;
+    inv.details.paymentStatus = finalStatus;
+    inv.details.paymentMode = payMode;
+    if (payRef) inv.details.paymentReference = payRef;
+  }
+
+  if (!inv.paymentHistory) inv.paymentHistory = [];
+  inv.paymentHistory.push({
+    date: new Date().toISOString(),
+    amount: settledAmount,
+    mode: payMode,
+    reference: payRef,
+    status: finalStatus,
+    source: "Admin Verification Modal Settlement"
+  });
+
+  try {
+    localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+    window.invoicesDb = invoicesDb;
+  } catch (e) {
+    console.warn("Error persisting invoices:", e);
+  }
+  if (window.AaryanDB && typeof window.AaryanDB.saveInvoice === 'function') {
+    try { window.AaryanDB.saveInvoice(inv); } catch (e) {}
+  }
+  if (typeof syncDatabaseToServer === 'function') {
+    try { syncDatabaseToServer("invoices", inv); } catch (e) {}
+  }
+  if (typeof renderInvoicesTable === "function") renderInvoicesTable();
+  if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
+  if (typeof updateDashboardOverview === "function") updateDashboardOverview();
+  if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+
+  if (typeof playSuccessChime === "function") playSuccessChime();
+
+  if (typeof showFloatingToast === "function") {
+    showFloatingToast(`✅ Payment of ₹ ${formatCurrency(settledAmount)} recorded! Invoice #${inv.invoiceNo} marked as ${finalStatus}.`, "success", 4000);
+  }
+
+  openInvoiceVerificationModal(inv.invoiceNo);
+};
+
 
 
 window.copyVerifyUpiId = function() {

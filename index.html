@@ -75,7 +75,7 @@
       } catch (e) {}
     }
     // Build Version Enforcement: Clears stale caches when new build is deployed
-    window.__APP_BUILD_VERSION__ = "v413_production_limit_added_secure_deploy";
+    window.__APP_BUILD_VERSION__ = "v414_differentiated_admin_settle_portal";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -87,8 +87,8 @@
     } catch (e) {}
   </script>
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=413_production_limit_added_secure_deploy">
-  <script src="invoice_utils_v5.js?v=413_production_limit_added_secure_deploy"></script>
+  <link rel="stylesheet" href="index.css?v=414_differentiated_admin_settle_portal">
+  <script src="invoice_utils_v5.js?v=414_differentiated_admin_settle_portal"></script>
 </head>
 <body>
   <!-- HIGH-END LOGIN / LOCK SCREEN OVERLAY (Enforced by default for security) -->
@@ -3043,7 +3043,51 @@
             </button>
           </div>
 
-          <!-- Settlement controls are ONLY available in the admin dashboard after login -->
+          <!-- STORE ADMIN SETTLEMENT PANEL (Rendered dynamically ONLY when logged into the admin dashboard) -->
+          <div id="verify-admin-settle-controls" style="display: none; border-top: 1.5px solid #e2e8f0; padding-top: 14px; margin-top: 10px;">
+            <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 14px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.1);">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                <span style="font-size: 12.5px; font-weight: 800; color: #166534; display: flex; align-items: center; gap: 6px;">
+                  <i class="fa-solid fa-shield-halved text-green"></i> Store Admin Settle Mode
+                </span>
+                <span class="badge-status badge-paid" style="font-size: 10px; padding: 2px 7px;">Authenticated Admin</span>
+              </div>
+
+              <!-- Payment Status Selector -->
+              <div style="margin-bottom: 10px;">
+                <label style="font-size: 11px; color: #374151; font-weight: 700; display: block; margin-bottom: 3px;">Payment Status</label>
+                <select id="verify-pay-status-select" class="form-control" onchange="toggleVerifyCustomAmount(this.value)" style="font-size: 12.5px; padding: 7px 10px; font-weight: 700; color: #15803d; border: 1.5px solid #86efac; background: #ffffff; border-radius: 8px;">
+                  <option value="Paid" selected>✅ Full Settlement of Balance</option>
+                  <option value="Partial">⏳ Partial Payment (Custom Amount)</option>
+                </select>
+              </div>
+
+              <div id="verify-custom-amount-wrap" style="display: none; margin-bottom: 10px;">
+                <label style="font-size: 11px; color: #374151; font-weight: 700; display: block; margin-bottom: 3px;">Amount Settling Now (₹)</label>
+                <input type="number" id="verify-pay-amount-input" class="form-control" placeholder="Enter amount received" min="1" step="any" style="font-size: 13px; padding: 7px 10px; font-weight: 700; color: #0f172a; border-radius: 8px; background: #ffffff;">
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                <div>
+                  <label style="font-size: 10.5px; color: #475569; font-weight: 600; display: block; margin-bottom: 2px;">Payment Mode</label>
+                  <select id="verify-pay-mode-select" class="form-control" style="font-size: 12px; padding: 6px 8px; border-radius: 6px; background: #ffffff;">
+                    <option value="UPI / Online">UPI / Online</option>
+                    <option value="Cash">Cash</option>
+                    <option value="Bank Transfer">Bank Transfer (NEFT/IMPS)</option>
+                    <option value="Cheque">Cheque</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="font-size: 10.5px; color: #475569; font-weight: 600; display: block; margin-bottom: 2px;">Ref / UTR No.</label>
+                  <input type="text" id="verify-pay-ref-input" class="form-control" placeholder="e.g. UTR1293847" style="font-size: 12px; padding: 6px 8px; border-radius: 6px; background: #ffffff;">
+                </div>
+              </div>
+
+              <button type="button" id="verify-done-pay-btn" onclick="submitInvoicePaymentSettlement()" class="btn btn-success" style="width: 100%; padding: 11px; font-weight: 800; font-size: 13.5px; background: linear-gradient(135deg, #16a34a, #15803d); border: none; border-radius: 8px; box-shadow: 0 4px 10px rgba(22, 163, 74, 0.3); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 4px;">
+                <i class="fa-solid fa-circle-check"></i> Settle Balance &amp; Update Database
+              </button>
+            </div>
+          </div>
 
         </div>
 
@@ -4336,7 +4380,7 @@
     </button>
   </nav>
 
-  <script src="index_v5.js?v=413_production_limit_added_secure_deploy"></script>
+  <script src="index_v5.js?v=414_differentiated_admin_settle_portal"></script>
 </body>
 </html>
 
