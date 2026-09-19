@@ -6803,7 +6803,12 @@ body {
   max-width: min(94vw, 520px) !important;
 }
 #invoice-verification-modal .modal-box {
-  max-width: min(94vw, 500px) !important;
+  max-width: min(95vw, 540px) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 25px 60px -12px rgba(15, 23, 42, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+}
+#invoice-verification-modal tr:hover {
+  background: #f8fafc;
 }
 #balance-qr-modal .modal-box {
   max-width: min(94vw, 400px) !important;

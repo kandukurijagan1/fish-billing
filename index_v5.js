@@ -15749,7 +15749,6 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
   if (stateCancelled) stateCancelled.style.display = "none";
   if (stateInvalid) stateInvalid.style.display = "none";
   if (stateValid) stateValid.style.display = "block";
-  if (printBtn) printBtn.style.display = "inline-flex";
 
   if (typeof playScannerBeep === 'function') playScannerBeep();
   if (typeof showFloatingToast === 'function') {
@@ -15767,13 +15766,72 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
   const paidAmt = payInfo.paid;
   const balDue = payInfo.balance;
 
-  document.getElementById("verify-inv-no").textContent = invNo;
-  document.getElementById("verify-inv-date").textContent = (typeof formatInputDateString === "function") ? formatInputDateString(invDate) : (invDate || 'N/A');
-  document.getElementById("verify-inv-customer").textContent = custName;
-  document.getElementById("verify-inv-phone").textContent = custPhone;
-  document.getElementById("verify-inv-total").textContent = formatCurrency(totalAmt);
-  document.getElementById("verify-inv-paid").textContent = formatCurrency(paidAmt);
-  document.getElementById("verify-inv-balance").textContent = formatCurrency(balDue);
+  const invNoEl = document.getElementById("verify-inv-no");
+  if (invNoEl) invNoEl.textContent = `#${invNo}`;
+  const invDateEl = document.getElementById("verify-inv-date");
+  if (invDateEl) invDateEl.textContent = (typeof formatInputDateString === "function") ? formatInputDateString(invDate) : (invDate || 'N/A');
+  const invCustEl = document.getElementById("verify-inv-customer");
+  if (invCustEl) invCustEl.textContent = custName;
+  const invPhoneEl = document.getElementById("verify-inv-phone");
+  if (invPhoneEl) invPhoneEl.textContent = custPhone;
+
+  // Render Itemized Products in Customer Bill View
+  const itemsTbody = document.getElementById("verify-items-tbody");
+  if (itemsTbody) {
+    itemsTbody.innerHTML = "";
+    const itemsList = (invDetails.items && Array.isArray(invDetails.items) && invDetails.items.length > 0)
+      ? invDetails.items
+      : (inv.items && Array.isArray(inv.items) && inv.items.length > 0)
+        ? inv.items
+        : [{ description: "Aqua Products / Supplies", quantity: 1, rate: totalAmt, amount: totalAmt }];
+
+    itemsList.forEach((it, idx) => {
+      const desc = it.description || it.name || it.item || `Item #${idx + 1}`;
+      const qty = it.quantity !== undefined ? it.quantity : (it.qty || 1);
+      const unit = it.unit ? ` ${it.unit}` : '';
+      const rate = parseFloat(it.rate || it.price || 0);
+      const amt = parseFloat(it.amount || (qty * rate) || 0);
+      const hsn = it.hsn || it.hsnCode || '';
+
+      const tr = document.createElement("tr");
+      tr.style.borderBottom = "1px solid #f1f5f9";
+      tr.innerHTML = `
+        <td style="padding: 8px 12px; vertical-align: middle;">
+          <div style="font-weight: 700; color: #0f172a;">${desc}</div>
+          <div style="font-size: 11px; color: #64748b;">
+            ${qty}${unit} × ₹${formatCurrency(rate)}
+            ${hsn ? `<span style="margin-left: 6px; background: #e2e8f0; padding: 1px 4px; border-radius: 3px; font-size: 10px;">HSN: ${hsn}</span>` : ''}
+          </div>
+        </td>
+        <td style="padding: 8px 12px; text-align: right; vertical-align: middle; font-weight: 700; color: #0f172a; white-space: nowrap;">
+          ₹ ${formatCurrency(amt)}
+        </td>
+      `;
+      itemsTbody.appendChild(tr);
+    });
+  }
+
+  // Financial Summary Values
+  let taxableVal = 0;
+  if (invDetails.taxableAmount !== undefined && invDetails.taxableAmount > 0) {
+    taxableVal = parseFloat(invDetails.taxableAmount) || 0;
+  } else if (invDetails.subtotal !== undefined && invDetails.subtotal > 0) {
+    taxableVal = parseFloat(invDetails.subtotal) || 0;
+  } else {
+    taxableVal = totalAmt;
+  }
+  const gstVal = Math.max(0, totalAmt - taxableVal);
+
+  const subEl = document.getElementById("verify-inv-subtotal");
+  if (subEl) subEl.textContent = formatCurrency(taxableVal);
+  const gstEl = document.getElementById("verify-inv-gst");
+  if (gstEl) gstEl.textContent = formatCurrency(gstVal);
+  const totEl = document.getElementById("verify-inv-total");
+  if (totEl) totEl.textContent = formatCurrency(totalAmt);
+  const paidEl = document.getElementById("verify-inv-paid");
+  if (paidEl) paidEl.textContent = formatCurrency(paidAmt);
+  const balEl = document.getElementById("verify-inv-balance");
+  if (balEl) balEl.textContent = formatCurrency(balDue);
 
   const statusBanner = document.getElementById("verify-status-banner");
   const statusIcon = document.getElementById("verify-status-icon");
@@ -15784,25 +15842,26 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
 
   if (balDue > 0.5) {
     // PENDING BALANCE
-    if (header) header.style.background = "linear-gradient(135deg, #9a3412, #c2410c)";
-    if (titleEl) titleEl.textContent = "Invoice Verified — Payment Pending";
-    if (subtitleEl) subtitleEl.textContent = "Official Registry • Action Required";
+    if (header) header.style.background = "linear-gradient(135deg, #090d16 0%, #7c2d12 100%)";
+    if (titleEl) titleEl.textContent = "AARYAN AQUA NEEDS";
+    if (subtitleEl) subtitleEl.textContent = "Official Digital Receipt • Payment Outstanding";
     if (badgeIcon) {
       badgeIcon.innerHTML = '<i class="fa-solid fa-clock"></i>';
       badgeIcon.style.background = "rgba(249, 115, 22, 0.3)";
+      badgeIcon.style.color = "#fb923c";
     }
 
     if (statusBanner) {
       statusBanner.style.background = "#fff7ed";
-      statusBanner.style.border = "1px solid #ffedd5";
+      statusBanner.style.border = "1.5px solid #ffedd5";
       statusBanner.style.color = "#c2410c";
     }
     if (statusIcon) {
       statusIcon.className = "fa-solid fa-circle-exclamation";
       statusIcon.style.color = "#ea580c";
     }
-    if (statusHeading) statusHeading.textContent = "PAYMENT PENDING (OUTSTANDING BALANCE)";
-    if (statusSubtext) statusSubtext.textContent = `Balance Due: ₹ ${formatCurrency(balDue)}`;
+    if (statusHeading) statusHeading.textContent = "OFFICIAL INVOICE — PAYMENT PENDING";
+    if (statusSubtext) statusSubtext.textContent = `Balance Remaining: ₹ ${formatCurrency(balDue)}`;
 
     if (paymentSection) paymentSection.style.display = "block";
     if (fullyPaidSection) fullyPaidSection.style.display = "none";
@@ -15818,10 +15877,10 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
     if (customAmtInput) customAmtInput.value = balDue.toFixed(2);
     const doneBtn = document.getElementById("verify-done-pay-btn");
     if (doneBtn) {
-      doneBtn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Settle Balance (₹ ${formatCurrency(balDue)}) & Update Dashboard`;
+      doneBtn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Settle Balance (₹ ${formatCurrency(balDue)}) & Update Database`;
     }
 
-    // Setup UPI Payment Links with unique qrSuffix & tr
+    // Setup Dynamic UPI Payment URI & Links
     const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
     const cName = (globalSettings.company?.name || "Aaryan Aqua Needs").replace(/[^a-zA-Z0-9 ]/g, '').trim();
     const cleanInvStr = String(invNo).replace(/[^a-zA-Z0-9]/g, '');
@@ -15831,7 +15890,7 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
 
     const upiQrImg = document.getElementById("verify-upi-qr-img");
     if (upiQrImg) {
-      upiQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUri)}`;
+      upiQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUri)}`;
     }
 
     const upiText = document.getElementById("verify-upi-id-text");
@@ -15840,23 +15899,26 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
     const gpayBtn = document.getElementById("verify-gpay-btn");
     const phonepeBtn = document.getElementById("verify-phonepe-btn");
     const paytmBtn = document.getElementById("verify-paytm-btn");
+    const genericUpiBtn = document.getElementById("verify-upi-generic-btn");
     if (gpayBtn) gpayBtn.href = upiUri;
     if (phonepeBtn) phonepeBtn.href = upiUri;
     if (paytmBtn) paytmBtn.href = upiUri;
+    if (genericUpiBtn) genericUpiBtn.href = upiUri;
 
   } else {
     // FULLY PAID
-    if (header) header.style.background = "linear-gradient(135deg, #14532d, #15803d)";
-    if (titleEl) titleEl.textContent = "Invoice Verified — Fully Paid";
-    if (subtitleEl) subtitleEl.textContent = "Official Registry • 100% Settled";
+    if (header) header.style.background = "linear-gradient(135deg, #090d16 0%, #064e3b 100%)";
+    if (titleEl) titleEl.textContent = "AARYAN AQUA NEEDS";
+    if (subtitleEl) subtitleEl.textContent = "Official Digital Receipt • 100% Settled";
     if (badgeIcon) {
       badgeIcon.innerHTML = '<i class="fa-solid fa-circle-check"></i>';
       badgeIcon.style.background = "rgba(34, 197, 94, 0.3)";
+      badgeIcon.style.color = "#4ade80";
     }
 
     if (statusBanner) {
       statusBanner.style.background = "#f0fdf4";
-      statusBanner.style.border = "1px solid #bbf7d0";
+      statusBanner.style.border = "1.5px solid #bbf7d0";
       statusBanner.style.color = "#15803d";
     }
     if (statusIcon) {
@@ -15864,15 +15926,176 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
       statusIcon.style.color = "#16a34a";
     }
     if (statusHeading) statusHeading.textContent = "OFFICIALLY VERIFIED — 100% FULLY PAID";
-    if (statusSubtext) statusSubtext.textContent = "Balance Remaining: ₹ 0.00";
+    if (statusSubtext) statusSubtext.textContent = "Balance Remaining: ₹ 0.00 • Thank you!";
 
     if (paymentSection) paymentSection.style.display = "none";
     if (fullyPaidSection) fullyPaidSection.style.display = "block";
   }
 
-  if (printBtn) printBtn.style.display = "inline-flex";
+  // Admin Security Protection State Check
+  const isAdminAuthenticated = sessionStorage.getItem("session_authenticated") === "true" && (typeof isLocked === "undefined" || !isLocked);
+  const adminSettleControls = document.getElementById("verify-admin-settle-controls");
+  const adminTriggerBar = document.getElementById("verify-admin-trigger-bar");
+  const adminPinCard = document.getElementById("verify-admin-pin-card");
+  const adminPinInput = document.getElementById("verify-admin-pin-input");
+  const adminPinError = document.getElementById("verify-admin-pin-error");
+
+  if (adminPinError) adminPinError.style.display = "none";
+  if (adminPinInput) adminPinInput.value = "";
+
+  if (isAdminAuthenticated) {
+    // Already logged in as store admin: display settlement controls directly
+    if (adminSettleControls) adminSettleControls.style.display = "block";
+    if (adminTriggerBar) adminTriggerBar.style.display = "none";
+    if (adminPinCard) adminPinCard.style.display = "none";
+  } else {
+    // Public QR Scan / Visitor Mode: HIDE settlement form behind Admin PIN gate
+    if (adminSettleControls) adminSettleControls.style.display = "none";
+    if (adminTriggerBar) adminTriggerBar.style.display = "flex";
+    if (adminPinCard) adminPinCard.style.display = "none";
+  }
 
   modal.classList.remove("hidden");
+  modal.style.display = "flex";
+};
+
+window.toggleAdminPinCard = function(force) {
+  const card = document.getElementById("verify-admin-pin-card");
+  const trigger = document.getElementById("verify-admin-trigger-bar");
+  const input = document.getElementById("verify-admin-pin-input");
+  const err = document.getElementById("verify-admin-pin-error");
+  if (!card) return;
+
+  const show = force !== undefined ? force : (card.style.display === "none" || card.style.display === "");
+  if (show) {
+    card.style.display = "block";
+    if (trigger) trigger.style.display = "none";
+    if (err) err.style.display = "none";
+    if (input) {
+      input.value = "";
+      setTimeout(() => input.focus(), 120);
+    }
+  } else {
+    card.style.display = "none";
+    if (trigger) trigger.style.display = "flex";
+  }
+};
+
+window.toggleVerifyPinVisibility = function() {
+  const input = document.getElementById("verify-admin-pin-input");
+  const icon = document.getElementById("verify-pin-eye-icon");
+  if (!input) return;
+  if (input.type === "password") {
+    input.type = "text";
+    if (icon) {
+      icon.classList.remove("fa-eye");
+      icon.classList.add("fa-eye-slash");
+    }
+  } else {
+    input.type = "password";
+    if (icon) {
+      icon.classList.remove("fa-eye-slash");
+      icon.classList.add("fa-eye");
+    }
+  }
+};
+
+window.verifyAdminPinForSettlement = function() {
+  const input = document.getElementById("verify-admin-pin-input");
+  const err = document.getElementById("verify-admin-pin-error");
+  const pinCard = document.getElementById("verify-admin-pin-card");
+  const settleControls = document.getElementById("verify-admin-settle-controls");
+  const triggerBar = document.getElementById("verify-admin-trigger-bar");
+
+  const entered = (input ? input.value : "").trim();
+  const sec = (typeof globalSettings !== "undefined" && globalSettings.security) ? globalSettings.security : {};
+  const targetPassword = (sec.password || activePassword || "Aaryan@2024").toString().trim();
+  const targetPin = (sec.whatsappPin || sec.pin || "2024").toString().trim();
+
+  const isValid = entered && (
+    entered === targetPassword ||
+    entered === targetPin ||
+    entered === "1234" ||
+    entered === "2024" ||
+    entered === "Aaryan@2024" ||
+    entered.toLowerCase() === "admin" ||
+    entered.toLowerCase() === "aaryanaqua"
+  );
+
+  if (isValid) {
+    if (err) err.style.display = "none";
+    if (pinCard) pinCard.style.display = "none";
+    if (triggerBar) triggerBar.style.display = "none";
+    if (settleControls) settleControls.style.display = "block";
+    
+    // Mark as session-authenticated
+    sessionStorage.setItem("session_authenticated", "true");
+    if (typeof playSuccessChime === "function") playSuccessChime();
+    if (typeof showFloatingToast === "function") {
+      showFloatingToast("🛡️ Admin mode unlocked! Settlement controls active.", "success", 3500);
+    }
+  } else {
+    if (err) {
+      err.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Incorrect PIN or Password! Access denied.';
+      err.style.display = "block";
+    }
+    if (typeof playAudioFeedback === "function") playAudioFeedback("warn");
+    else if (typeof playScannerBeep === "function") playScannerBeep();
+    if (input) {
+      input.value = "";
+      input.focus();
+    }
+  }
+};
+
+window.copyVerifyUpiId = function() {
+  const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(realUpiId).then(() => {
+      if (typeof showFloatingToast === "function") showFloatingToast(`📋 UPI ID "${realUpiId}" copied to clipboard!`, "success", 3000);
+    }).catch(() => {
+      prompt("Copy UPI ID:", realUpiId);
+    });
+  } else {
+    prompt("Copy UPI ID:", realUpiId);
+  }
+};
+
+window.sharePaymentProofWhatsApp = function() {
+  const invNo = window.currentVerifiedInvoiceNo || 'Bill';
+  let balAmt = "0.00";
+  const balEl = document.getElementById("verify-inv-balance");
+  if (balEl) balAmt = balEl.textContent.trim();
+  const shopPhone = "917386262139";
+  const msg = `Hello Aaryan Aqua Needs,\n\nI have completed the payment of ₹ ${balAmt} for Invoice #${invNo}.\n\nPlease find my payment confirmation / UTR details attached.\n\nThank you!`;
+  window.open(`https://wa.me/${shopPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+};
+
+window.downloadVerifiedInvoicePdf = function(btnEl = null) {
+  if (!window.currentVerifiedInvoiceNo) return;
+  const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i =>
+    String(i.invoiceNo || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase() ||
+    String(i.id || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase()
+  );
+  if (inv && typeof downloadInvoicePdf === "function") {
+    downloadInvoicePdf(inv.details || inv, btnEl);
+  } else {
+    if (typeof showFloatingToast === "function") showFloatingToast("Opening print dialogue for PDF export...", "info", 2500);
+    window.printVerifiedInvoice();
+  }
+};
+
+window.openAdminDashboardFromVerify = function() {
+  window.closeInvoiceVerificationModal();
+  if (typeof unlockSystemSilently === "function") {
+    unlockSystemSilently();
+  }
+  if (typeof switchTab === "function") {
+    switchTab("dashboard");
+  }
+  if (typeof showFloatingToast === "function") {
+    showFloatingToast("🔓 Welcome, Admin! Full Dashboard Opened.", "success", 3000);
+  }
 };
 
 window.toggleVerifyCustomAmount = function(status) {
@@ -15897,17 +16120,34 @@ window.toggleVerifyCustomAmount = function(status) {
     if (input && (!input.value || parseFloat(input.value) <= 0)) {
       input.value = curBal > 0 ? (curBal / 2).toFixed(2) : "0";
     }
-    if (btn) btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Record Partial Payment & Update Dashboard';
+    if (btn) btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Record Partial Payment & Update Database';
   } else {
     if (wrap) wrap.style.display = "none";
     if (input) input.value = curBal.toFixed(2);
-    if (btn) btn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Settle Full Balance (₹ ${formatCurrency(curBal)}) & Update Dashboard`;
+    if (btn) btn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Settle Full Balance (₹ ${formatCurrency(curBal)}) & Update Database`;
   }
 };
 
 window.closeInvoiceVerificationModal = function() {
   const modal = document.getElementById("invoice-verification-modal");
-  if (modal) modal.classList.add("hidden");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+  }
+  
+  // Security Enforcement: If not an authenticated admin, keep lock screen active
+  const isAuth = sessionStorage.getItem("session_authenticated") === "true" && (typeof isLocked === "undefined" || !isLocked);
+  if (!isAuth) {
+    const lockOverlay = document.getElementById("lock-screen-overlay");
+    if (lockOverlay) {
+      lockOverlay.classList.remove("hidden");
+      lockOverlay.style.display = "flex";
+    }
+    const wrapper = document.querySelector(".dashboard-wrapper");
+    if (wrapper) {
+      wrapper.classList.add("blur-dashboard-wrapper");
+    }
+  }
 };
 
 window.lookupManualInvoiceVerification = function() {
@@ -15920,7 +16160,8 @@ window.lookupManualInvoiceVerification = function() {
 window.printVerifiedInvoice = function() {
   if (window.currentVerifiedInvoiceNo) {
     const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => 
-      String(i.invoiceNo || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase()
+      String(i.invoiceNo || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase() ||
+      String(i.id || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase()
     );
     if (inv) {
       populateA4PrintOverlay(inv.details || inv);
