@@ -973,6 +973,9 @@ const elements = {
   setAutolockTimer: document.getElementById('set-autolock-timer'),
   setLoginUsername: document.getElementById('set-login-username'),
   setLoginPassword: document.getElementById('set-login-password'),
+  setSecurityPin: document.getElementById('set-security-pin'),
+  setStrictBootLock: document.getElementById('set-strict-boot-lock'),
+  setCounterPrivacyMode: document.getElementById('set-counter-privacy-mode'),
   setWaLockEnabled: document.getElementById('set-wa-lock-enabled'),
   setWaPin: document.getElementById('set-wa-pin'),
   setWaAutolock: document.getElementById('set-wa-autolock'),
@@ -1207,6 +1210,92 @@ const AppSecurity = {
         localStorage.removeItem("saved_password");
       });
     }
+  },
+
+  // --- AES-256-GCM MILITARY-GRADE ENCRYPTION & DECRYPTION ---
+  async deriveKey(password, salt) {
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(password),
+      { name: "PBKDF2" },
+      false,
+      ["deriveKey"]
+    );
+    return await crypto.subtle.deriveKey(
+      {
+        name: "PBKDF2",
+        salt: salt,
+        iterations: 100000,
+        hash: "SHA-256"
+      },
+      keyMaterial,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"]
+    );
+  },
+
+  async encryptData(dataString, password) {
+    if (!crypto || !crypto.subtle) {
+      throw new Error("WebCrypto API is required for AES-256 encryption.");
+    }
+    const enc = new TextEncoder();
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await AppSecurity.deriveKey(password, salt);
+    const encryptedContent = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv: iv },
+      key,
+      enc.encode(dataString)
+    );
+
+    const payload = {
+      version: "1.0",
+      algo: "AES-256-GCM-PBKDF2",
+      salt: Array.from(salt),
+      iv: Array.from(iv),
+      data: Array.from(new Uint8Array(encryptedContent)),
+      timestamp: new Date().toISOString()
+    };
+    return JSON.stringify(payload);
+  },
+
+  async decryptData(encryptedJsonString, password) {
+    if (!crypto || !crypto.subtle) {
+      throw new Error("WebCrypto API is required for AES-256 decryption.");
+    }
+    const payload = JSON.parse(encryptedJsonString);
+    if (!payload.salt || !payload.iv || !payload.data) {
+      throw new Error("Invalid encrypted backup package format.");
+    }
+    const salt = new Uint8Array(payload.salt);
+    const iv = new Uint8Array(payload.iv);
+    const encryptedData = new Uint8Array(payload.data);
+    const key = await AppSecurity.deriveKey(password, salt);
+
+    const decryptedContent = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: iv },
+      key,
+      encryptedData
+    );
+    return new TextDecoder().decode(decryptedContent);
+  },
+
+  exportAuditCsv() {
+    const logs = AppSecurity.getAuditLogs();
+    if (!logs || logs.length === 0) {
+      return null;
+    }
+    let csv = "Timestamp,Event Type,Status,Details\n";
+    logs.forEach(l => {
+      const ts = `"${(l.timestamp || '').replace(/"/g, '""')}"`;
+      const type = `"${(l.type || '').replace(/"/g, '""')}"`;
+      const status = `"${(l.status || '').replace(/"/g, '""')}"`;
+      const details = `"${(l.details || '').replace(/"/g, '""')}"`;
+      csv += `${ts},${type},${status},${details}\n`;
+    });
+    return csv;
   }
 };
 window.AppSecurity = AppSecurity;
@@ -3270,11 +3359,23 @@ function initializeApp() {
   // Check rate limit lockout state
   const lockoutStatus = AppSecurity.isLockedOut();
 
-  // v421 STRICT LOCK POLICY:
-  // Electron desktop: ALWAYS lock on boot — user must enter password every launch
-  // Browser/PWA: Only allow same-tab reload carry-over via sessionStorage
-  // "Remember Password" ONLY pre-fills the login form — never auto-unlocks
-  const canStayUnlocked = !isElectronApp && !isManuallyLocked && !lockoutStatus.locked && !isTimedOut && hasSessionAuth;
+  // v424 ENTERPRISE ZERO-TRUST LOCK POLICY:
+  // Strict Boot Lock is enabled by default — EVERY launch & reload requires password/PIN
+  const sec = globalSettings?.security || {};
+  const isStrictBootLock = sec.strictBootLock !== false; // Default: true (Zero-Trust)
+  const canStayUnlocked = !isStrictBootLock && !isElectronApp && !isManuallyLocked && !lockoutStatus.locked && !isTimedOut && hasSessionAuth;
+
+  // Restore Counter Privacy Shield if previously active
+  const isPrivacyActive = localStorage.getItem("counter_privacy_mode") === "true" || sec.counterPrivacyMode === true;
+  if (isPrivacyActive) {
+    document.body.classList.add("counter-privacy-active");
+    const pPill = document.getElementById("live-privacy-shield-pill");
+    const pIcon = document.getElementById("privacy-shield-icon");
+    const pText = document.getElementById("privacy-shield-text");
+    if (pPill) pPill.classList.add("active");
+    if (pIcon) pIcon.className = "fa-solid fa-eye-slash";
+    if (pText) pText.textContent = "Privacy ON";
+  }
 
   if (canStayUnlocked) {
     unlockSystemSilently();
@@ -13354,7 +13455,21 @@ window.importDatabaseBackup = function(e) {
 // --- KEYBOARD SHORTCUTS ---
 function setupKeyboardShortcuts() {
   document.addEventListener("keydown", (e) => {
+    // Instant Lock Screen Hotkey (Alt+L or Ctrl+Shift+L)
+    if ((e.altKey && e.key.toLowerCase() === 'l') || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l')) {
+      e.preventDefault();
+      if (typeof triggerManualLock === 'function') triggerManualLock();
+      return;
+    }
+
     if (isLocked) return;
+
+    // Counter Privacy Shield Hotkey (Alt+P)
+    if (e.altKey && e.key.toLowerCase() === 'p') {
+      e.preventDefault();
+      if (typeof toggleCounterPrivacyShield === 'function') toggleCounterPrivacyShield();
+      return;
+    }
 
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
@@ -13416,6 +13531,9 @@ function loadSettingsFields() {
   elements.setAutolockTimer.value = globalSettings.security?.autolock !== undefined ? globalSettings.security.autolock : "1800";
   elements.setLoginUsername.value = globalSettings.security?.username || "Aaryanaqua";
   elements.setLoginPassword.value = globalSettings.security?.password || globalSettings.security?.pin || "Aaryan@2024";
+  if (elements.setSecurityPin) elements.setSecurityPin.value = globalSettings.security?.securityPin || globalSettings.security?.pin || "2024";
+  if (elements.setStrictBootLock) elements.setStrictBootLock.checked = globalSettings.security?.strictBootLock !== false;
+  if (elements.setCounterPrivacyMode) elements.setCounterPrivacyMode.checked = localStorage.getItem("counter_privacy_mode") === "true" || globalSettings.security?.counterPrivacyMode === true;
 
   if (elements.setWaLockEnabled) elements.setWaLockEnabled.checked = globalSettings.security?.whatsappLockEnabled !== false;
   if (elements.setWaPin) elements.setWaPin.value = globalSettings.security?.whatsappPin || "2024";
@@ -13688,11 +13806,18 @@ window.saveSecuritySettings = async function(e) {
   const waMaskPhones = elements.setWaMaskPhones ? elements.setWaMaskPhones.checked : true;
   const waProtectChats = elements.setWaProtectChats ? elements.setWaProtectChats.checked : true;
 
+  const securityPin = elements.setSecurityPin ? elements.setSecurityPin.value.trim() : (globalSettings.security?.securityPin || "2024");
+  const strictBootLock = elements.setStrictBootLock ? elements.setStrictBootLock.checked : true;
+  const counterPrivacyMode = elements.setCounterPrivacyMode ? elements.setCounterPrivacyMode.checked : false;
+
   globalSettings.security = {
     ...(globalSettings.security || {}),
     autolock,
     username,
     password,
+    securityPin: securityPin || "2024",
+    strictBootLock,
+    counterPrivacyMode,
     whatsappLockEnabled: waLockEnabled,
     whatsappPin: waPin || "2024",
     whatsappAutoLockMinutes: waAutoLock,
@@ -13702,6 +13827,15 @@ window.saveSecuritySettings = async function(e) {
 
   localStorage.setItem("settings", JSON.stringify(globalSettings));
   syncDatabaseToServer("settings", globalSettings);
+
+  // Sync privacy mode state on document.body
+  if (counterPrivacyMode) {
+    document.body.classList.add("counter-privacy-active");
+    localStorage.setItem("counter_privacy_mode", "true");
+  } else {
+    document.body.classList.remove("counter-privacy-active");
+    localStorage.setItem("counter_privacy_mode", "false");
+  }
 
   // If credentials remembered, update SHA-256 token and ensure plaintext is purged
   if (localStorage.getItem("remember_me") === "true") {
@@ -14192,9 +14326,16 @@ window.submitUnlockLogin = async function(e) {
     return;
   }
   
-  if (!userText || !pwdText) {
+  if (!userText && pwdText) {
+    // If only PIN or password was entered, default to Aaryanaqua
+    if (userField) userField.value = "Aaryanaqua";
+  }
+
+  const effectiveUser = userText || "Aaryanaqua";
+  
+  if (!pwdText) {
     if (errBlock) {
-      errBlock.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Please enter both username and password!';
+      errBlock.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Please enter password or 4-digit PIN!';
       errBlock.classList.remove("hidden");
     }
     return;
@@ -14209,9 +14350,9 @@ window.submitUnlockLogin = async function(e) {
   const sec = globalSettings?.security || {};
   const customUser = (sec.username || "").toString().trim().toLowerCase();
   const customPwd = (sec.password || "").toString().trim();
-  const customPin = (sec.whatsappPin || sec.pin || "").toString().trim();
+  const customPin = (sec.securityPin || sec.whatsappPin || sec.pin || "2024").toString().trim();
 
-  const userLower = userText.toLowerCase();
+  const userLower = effectiveUser.toLowerCase();
   const isUserMatch = (
     userLower === "aaryanaqua" ||
     userLower === "admin" ||
@@ -14222,8 +14363,8 @@ window.submitUnlockLogin = async function(e) {
     pwdText === "Aaryan@2024" ||
     pwdText.toLowerCase() === "aaryan@2024" ||
     pwdText === "2024" ||
-    (customPwd && (pwdText === customPwd || pwdText.toLowerCase() === customPwd.toLowerCase())) ||
-    (customPin && pwdText === customPin)
+    pwdText === customPin ||
+    (customPwd && (pwdText === customPwd || pwdText.toLowerCase() === customPwd.toLowerCase()))
   );
 
   // Also verify against stored SHA-256 token if present
@@ -14381,6 +14522,183 @@ window.clearSecurityAuditTrail = function() {
     }
   }
 };
+
+// --- COUNTER PRIVACY SHIELD (FINANCIAL FIGURE MASKING) ---
+window.toggleCounterPrivacyShield = function() {
+  const isCurrentlyActive = document.body.classList.contains("counter-privacy-active");
+  const newActive = !isCurrentlyActive;
+  
+  if (newActive) {
+    document.body.classList.add("counter-privacy-active");
+  } else {
+    document.body.classList.remove("counter-privacy-active");
+  }
+  
+  try {
+    localStorage.setItem("counter_privacy_mode", newActive ? "true" : "false");
+    if (globalSettings && globalSettings.security) {
+      globalSettings.security.counterPrivacyMode = newActive;
+      localStorage.setItem("settings", JSON.stringify(globalSettings));
+    }
+  } catch (_) {}
+
+  const pill = document.getElementById("live-privacy-shield-pill");
+  const icon = document.getElementById("privacy-shield-icon");
+  const text = document.getElementById("privacy-shield-text");
+  const checkbox = document.getElementById("set-counter-privacy-mode");
+  
+  if (pill) {
+    if (newActive) {
+      pill.classList.add("active");
+      if (icon) icon.className = "fa-solid fa-eye-slash";
+      if (text) text.textContent = "Privacy ON";
+    } else {
+      pill.classList.remove("active");
+      if (icon) icon.className = "fa-solid fa-eye";
+      if (text) text.textContent = "Privacy Off";
+    }
+  }
+  if (checkbox) checkbox.checked = newActive;
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast(newActive ? "👁️ Counter Privacy Shield ON (Figures masked from onlookers)" : "👁️ Counter Privacy Shield OFF", 2500);
+  }
+  if (typeof AppSecurity !== 'undefined' && AppSecurity.logEvent) {
+    AppSecurity.logEvent("PRIVACY_SHIELD_TOGGLED", `Counter Privacy Shield set to ${newActive ? 'ON' : 'OFF'}`, "INFO");
+  }
+};
+
+// --- MILITARY-GRADE AES-256 ENCRYPTED BACKUP & RESTORE ---
+window.exportEncryptedBackup = async function() {
+  const pwd = prompt("🔐 Enter Master Password or Security PIN to encrypt this backup:");
+  if (!pwd || !pwd.trim()) return;
+
+  try {
+    loadAllDatabases();
+    const backupObj = {
+      app: "Aaryan Aqua Needs",
+      version: "5.3.0",
+      exportDate: new Date().toISOString(),
+      products: productsDb,
+      parties: partiesDb,
+      invoices: invoicesDb,
+      settings: globalSettings
+    };
+
+    const jsonStr = JSON.stringify(backupObj, null, 2);
+    const encryptedPayload = await AppSecurity.encryptData(jsonStr, pwd.trim());
+
+    const blob = new Blob([encryptedPayload], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const dStr = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `Aaryan_Aqua_Backup_${dStr}.aaryan-enc`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    AppSecurity.logEvent("ENCRYPTED_BACKUP_EXPORTED", `Database encrypted with AES-256 and exported (${invoicesDb.length} invoices, ${productsDb.length} products)`, "SUCCESS");
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("🔒 Military-Grade Encrypted Backup (.aaryan-enc) downloaded successfully!", 4000);
+    }
+  } catch (err) {
+    console.error("Encrypted backup export failed:", err);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("❌ Encryption failed: " + err.message, "danger");
+    }
+  }
+};
+
+window.triggerEncryptedRestore = function() {
+  const input = document.getElementById("encrypted-backup-file-input");
+  if (input) {
+    input.value = "";
+    input.click();
+  }
+};
+
+window.handleEncryptedBackupFile = function(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async function(evt) {
+    const encryptedContent = evt.target.result;
+    const pwd = prompt("🔑 Enter Decryption Password or PIN for this backup:");
+    if (!pwd || !pwd.trim()) return;
+
+    try {
+      const decryptedJson = await AppSecurity.decryptData(encryptedContent, pwd.trim());
+      const backupData = JSON.parse(decryptedJson);
+
+      if (!backupData.products || !backupData.invoices) {
+        throw new Error("Invalid backup contents. Required database collections missing.");
+      }
+
+      if (!confirm(`⚠️ RESTORE CONFIRMATION:\n\nThis will restore:\n• ${backupData.products.length} Products\n• ${(backupData.parties || []).length} Parties\n• ${backupData.invoices.length} Invoices\n\nExisting local data will be replaced with backup data. Proceed?`)) {
+        return;
+      }
+
+      productsDb = backupData.products || [];
+      partiesDb = backupData.parties || [];
+      invoicesDb = backupData.invoices || [];
+      if (backupData.settings) globalSettings = backupData.settings;
+
+      localStorage.setItem("products", JSON.stringify(productsDb));
+      localStorage.setItem("parties", JSON.stringify(partiesDb));
+      localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+      localStorage.setItem("settings", JSON.stringify(globalSettings));
+
+      if (window.AaryanDB && typeof window.AaryanDB.drainOutbox === 'function') {
+        await window.AaryanDB.drainOutbox();
+      }
+
+      loadAllDatabases();
+      updateDashboardOverview();
+      loadProductsDatabaseTable();
+      loadPartiesDatabaseLists();
+      loadInvoicesHistoryTable();
+
+      AppSecurity.logEvent("ENCRYPTED_BACKUP_RESTORED", `Database successfully decrypted and restored from ${file.name}`, "SUCCESS");
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("✅ Database successfully decrypted and restored!", 4000);
+      }
+    } catch (err) {
+      console.error("Restore failed:", err);
+      AppSecurity.logEvent("RESTORE_FAILED", `Failed decrypt attempt for ${file.name}: ${err.message}`, "WARNING");
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("❌ Decryption failed! Incorrect password or corrupted file.", "danger", 5000);
+      }
+    }
+  };
+  reader.readAsText(file);
+};
+
+window.exportSecurityAuditCsv = function() {
+  const csv = AppSecurity.exportAuditCsv();
+  if (!csv) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ No audit events recorded to export.", "warning");
+    }
+    return;
+  }
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const dStr = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `Aaryan_Security_Audit_${dStr}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast("📄 Security Audit Trail exported as CSV spreadsheet!", 3000);
+  }
+};
+
 
 // --- UPLOAD INVOICE PDF TO TELEGRAM BOT API ---
 async function uploadInvoicePdfToTelegram(invoiceDetails, silent = false, precomputedBase64 = null) {

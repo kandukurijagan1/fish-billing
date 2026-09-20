@@ -970,6 +970,57 @@ body {
   100% { transform: scale(1.05); }
 }
 
+/* Counter Privacy Shield & Financial Figure Masking */
+.privacy-shield-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  padding: 4px 10px !important;
+  border-radius: 20px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  transition: all 0.2s ease !important;
+  background: rgba(99, 102, 241, 0.1) !important;
+  border: 1px solid rgba(99, 102, 241, 0.25) !important;
+  color: #6366f1 !important;
+}
+
+.privacy-shield-pill:hover {
+  background: rgba(99, 102, 241, 0.18) !important;
+  border-color: rgba(99, 102, 241, 0.45) !important;
+  transform: translateY(-1px) !important;
+}
+
+.privacy-shield-pill.active {
+  background: rgba(99, 102, 241, 0.22) !important;
+  border-color: rgba(99, 102, 241, 0.6) !important;
+  color: #4f46e5 !important;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.35) !important;
+}
+
+body.counter-privacy-active #stat-total-amount,
+body.counter-privacy-active #stat-total-collected,
+body.counter-privacy-active #stat-total-balance,
+body.counter-privacy-active #stat-total-profit,
+body.counter-privacy-active .maskable-financial {
+  filter: blur(7px) !important;
+  user-select: none !important;
+  transition: filter 0.25s ease !important;
+  cursor: pointer !important;
+}
+
+body.counter-privacy-active #stat-total-amount:hover,
+body.counter-privacy-active #stat-total-collected:hover,
+body.counter-privacy-active #stat-total-balance:hover,
+body.counter-privacy-active #stat-total-profit:hover,
+body.counter-privacy-active .maskable-financial:hover {
+  filter: blur(0px) !important;
+}
+
 @media (max-width: 1200px) {
   .app-top-header-meta {
     gap: 5px !important;

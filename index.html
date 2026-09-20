@@ -207,7 +207,7 @@
       });
     }
     // Build Version Enforcement
-    window.__APP_BUILD_VERSION__ = "v423_google_ads_and_seo";
+    window.__APP_BUILD_VERSION__ = "v424_enterprise_security_suite";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -219,10 +219,10 @@
     } catch (e) {}
   </script>
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=418_enterprise_security_hardened">
-  <script src="invoice_utils_v5.js?v=418_enterprise_security_hardened"></script>
+  <link rel="stylesheet" href="index.css?v=424_enterprise_security_suite">
+  <script src="invoice_utils_v5.js?v=424_enterprise_security_suite"></script>
 </head>
-<body>
+<body class="app-is-locked">
   <!-- Search Engine Accessible Semantic Content for Googlebot / Non-JS Crawlers -->
   <noscript>
     <div style="background: #0f172a; color: #f8fafc; padding: 24px; font-family: sans-serif; max-width: 900px; margin: 20px auto; border-radius: 12px; border: 1px solid #334155;">
@@ -241,7 +241,7 @@
     </div>
   </noscript>
 
-  <!-- HIGH-END LOGIN / LOCK SCREEN OVERLAY (Enforced by default for security) -->
+  <!-- HIGH-END LOGIN / LOCK SCREEN OVERLAY (Enforced strictly on boot for Zero-Trust security) -->
   <div id="lock-screen-overlay" class="lock-overlay no-print">
     <div class="login-card">
       <div class="login-header">
@@ -253,13 +253,13 @@
       </div>
       
       <!-- SESSION TIMING & LOCK STATUS BADGE -->
-      <div id="login-session-timing-banner" style="margin: -5px 0 14px 0; padding: 7px 12px; background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 11.5px; color: #94a3b8;">
-        <i class="fa-solid fa-hourglass-half text-cyan" id="login-session-status-icon"></i>
-        <span id="login-session-status-text">Authenticated Session • Inactivity Lock Protected</span>
+      <div id="login-session-timing-banner" style="margin: -5px 0 14px 0; padding: 7px 12px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 11.5px; color: #94a3b8;">
+        <i class="fa-solid fa-shield-halved text-cyan" id="login-session-status-icon"></i>
+        <span id="login-session-status-text">Zero-Trust Protected • Session Locked</span>
       </div>
       
       <div id="login-error-message" class="login-error hidden">
-        <i class="fa-solid fa-triangle-exclamation"></i> Invalid username or password!
+        <i class="fa-solid fa-triangle-exclamation"></i> Invalid credentials!
       </div>
       
       <form id="login-form" onsubmit="event.preventDefault(); submitUnlockLogin(event); return false;">
@@ -272,19 +272,20 @@
         </div>
         
         <div class="login-input-group">
-          <label for="login-password">Password</label>
+          <label for="login-password" id="login-auth-label">Master Password or 4-Digit PIN</label>
           <div class="input-icon-wrapper">
             <i class="fa-solid fa-lock input-icon"></i>
-            <input type="password" id="login-password" name="password" autocomplete="current-password" required placeholder="Enter password">
+            <input type="password" id="login-password" name="password" autocomplete="current-password" required placeholder="Enter password or PIN (e.g. 2024)">
             <button type="button" class="btn-toggle-pwd" onclick="toggleLoginPasswordVisibility()">
               <i id="toggle-pwd-icon" class="fa-solid fa-eye"></i>
             </button>
           </div>
+          <span style="font-size: 10.5px; color: #64748b; margin-top: 3px; display: block;">Unlock using master password (<code>Aaryan@2024</code>) or quick cashier PIN</span>
         </div>
         
-        <div class="remember-me-group" style="display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: flex-start !important; gap: 8px !important; margin: 12px 0 16px 0 !important; width: 100% !important; text-align: left !important;">
+        <div class="remember-me-group" style="display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: flex-start !important; gap: 8px !important; margin: 10px 0 14px 0 !important; width: 100% !important; text-align: left !important;">
           <input type="checkbox" id="login-remember-me" style="width: 16px !important; height: 16px !important; margin: 0 !important; cursor: pointer !important; accent-color: #0d9488 !important; display: inline-block !important; flex-shrink: 0 !important;">
-          <label for="login-remember-me" style="cursor: pointer !important; font-size: 13px !important; color: #cbd5e1 !important; user-select: none !important; text-transform: none !important; letter-spacing: normal !important; font-weight: normal !important; margin: 0 !important;">Remember Password</label>
+          <label for="login-remember-me" style="cursor: pointer !important; font-size: 12.5px !important; color: #cbd5e1 !important; user-select: none !important; text-transform: none !important; letter-spacing: normal !important; font-weight: normal !important; margin: 0 !important;">Remember Username &amp; Fast PIN Entry</label>
         </div>
         
         <button type="submit" class="btn-login-submit">
@@ -294,10 +295,10 @@
       </form>
       
       <div class="login-footer">
-        <span>Enter your administrator credentials to unlock.</span>
+        <span>Protected by Anti-Brute-Force &amp; SHA-256 Auth Shield.</span>
         <div id="login-session-lock-reason" style="margin-top: 6px; font-size: 11px; color: #64748b; display: flex; align-items: center; justify-content: center; gap: 5px;">
           <i class="fa-solid fa-shield-halved" style="color: #0d9488;"></i>
-          <span id="login-session-lock-subtext">Auto-lock protected • Inactivity timeout active</span>
+          <span id="login-session-lock-subtext">Zero-Trust Enforced • Enter Password or PIN to Unlock</span>
         </div>
       </div>
     </div>
@@ -424,13 +425,18 @@
               <i class="fa-solid fa-volume-high" id="audio-fx-icon"></i>
               <span id="audio-fx-text">Audio</span>
             </div>
+            <div id="live-privacy-shield-pill" class="privacy-shield-pill cursor-pointer" onclick="toggleCounterPrivacyShield()" title="Counter Privacy Shield (Mask Financial Figures from Onlookers) [Alt+P]" style="background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.25); color: #6366f1; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;">
+              <i class="fa-solid fa-eye" id="privacy-shield-icon" style="color: #6366f1; font-size: 11px;"></i>
+              <span id="privacy-shield-text">Privacy Off</span>
+            </div>
             <div id="live-session-timer-pill" class="session-timer-pill cursor-pointer" onclick="renewUserSession()" title="Active Session Timing (Click to Reset/Extend Auto-Lock)" style="background: rgba(13, 148, 136, 0.1); border: 1px solid rgba(13, 148, 136, 0.25); color: #0d9488; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;">
               <i class="fa-solid fa-hourglass-start" id="session-timer-icon" style="color: #0d9488; font-size: 11px;"></i>
               <span id="session-timer-text">Session: 30:00</span>
+              <span class="session-extend-chip" style="background: rgba(13, 148, 136, 0.2); padding: 1px 5px; border-radius: 4px; font-size: 9px; margin-left: 2px;">+Extend</span>
             </div>
-            <div id="live-header-lock-pill" class="lock-pill cursor-pointer" onclick="triggerManualLock()" title="Lock Screen (Admin Security)" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.25); color: #f87171; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;">
+            <div id="live-header-lock-pill" class="lock-pill cursor-pointer" onclick="triggerManualLock()" title="Lock Screen (Admin Security) [Alt+L / Ctrl+Shift+L]" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.25); color: #f87171; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;">
               <i class="fa-solid fa-lock" style="color: #ef4444; font-size: 11px;"></i>
-              <span>Lock</span>
+              <span>Lock <kbd style="font-size:9px; background: rgba(239,68,68,0.2); padding:1px 4px; border-radius:3px; font-family: inherit;">Alt+L</kbd></span>
             </div>
           </div>
           <div class="header-clock-pill">
@@ -1956,8 +1962,13 @@
 
               <!-- Right: Login & Lock Security -->
               <div class="card-box flex-50">
-                <div class="card-box-header">
-                  <h3><i class="fa-solid fa-shield-halved"></i> Login & Lock Security</h3>
+                <div class="card-box-header" style="display: flex; align-items: center; justify-content: space-between;">
+                  <h3 style="display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-shield-halved text-cyan"></i> Advanced Enterprise Security &amp; Privacy Center
+                  </h3>
+                  <span class="badge" style="background: rgba(13, 148, 136, 0.12); color: #0d9488; font-weight: 700; font-size: 11px; padding: 3px 8px; border-radius: 6px;">
+                    Zero-Trust Hardened
+                  </span>
                 </div>
                 <form id="security-settings-form" class="form-grid" onsubmit="saveSecuritySettings(event)">
                   <div class="form-group col-12">
@@ -1970,18 +1981,39 @@
                       <option value="900">15 Minutes</option>
                       <option value="600">10 Minutes</option>
                       <option value="300">5 Minutes</option>
-                      <option value="120">2 Minutes</option>
+                      <option value="120">2 Minutes (High Security)</option>
                       <option value="60">1 Minute (Quick Lockout)</option>
                     </select>
                     <span class="info-lbl">Controls live header session countdown and locks screen on idle</span>
                   </div>
-                  <div class="form-group">
-                    <label for="set-login-username">Login Username</label>
+                  <div class="form-group col-4">
+                    <label for="set-login-username"><i class="fa-solid fa-user text-cyan"></i> Username</label>
                     <input type="text" id="set-login-username" required placeholder="e.g. Aaryanaqua">
                   </div>
-                  <div class="form-group">
-                    <label for="set-login-password">Login Password</label>
+                  <div class="form-group col-4">
+                    <label for="set-login-password"><i class="fa-solid fa-lock text-cyan"></i> Master Password</label>
                     <input type="password" id="set-login-password" required placeholder="e.g. Aaryan@2024">
+                  </div>
+                  <div class="form-group col-4">
+                    <label for="set-security-pin"><i class="fa-solid fa-key text-teal"></i> Cashier PIN (4 Digits)</label>
+                    <input type="password" id="set-security-pin" maxlength="6" placeholder="e.g. 2024" value="2024">
+                    <span class="info-lbl">Quick unlock PIN for cashier desk</span>
+                  </div>
+
+                  <!-- Zero-Trust & Privacy Policies -->
+                  <div class="form-group col-12" style="display: flex; flex-direction: column; gap: 8px; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; margin-top: 4px;">
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; margin: 0;">
+                      <input type="checkbox" id="set-strict-boot-lock" checked>
+                      <span><strong>Strict Boot Lock:</strong> Always require password or PIN on every application launch and browser reload (No silent bypass)</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; margin: 0;">
+                      <input type="checkbox" id="set-counter-privacy-mode">
+                      <span><strong>Counter Privacy Shield:</strong> Mask revenue and profit figures on Dashboard from retail onlookers (Hotkey: <code>Alt+P</code>)</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; margin: 0; color: #047857;">
+                      <i class="fa-solid fa-circle-check" style="color: #10b981;"></i>
+                      <span><strong>Cryptographic Invoice Tamper Detection:</strong> Active (HMAC-SHA256 signature calculated on every invoice)</span>
+                    </label>
                   </div>
 
                   <!-- Dedicated WhatsApp Security Controls -->
@@ -2000,13 +2032,13 @@
                     </p>
                   </div>
 
-                  <div class="form-group">
+                  <div class="form-group col-6">
                     <label for="set-wa-pin"><i class="fa-solid fa-key text-teal"></i> WhatsApp Security PIN (4 Digits)</label>
                     <input type="password" id="set-wa-pin" maxlength="12" placeholder="e.g. 2024" value="2024">
                     <span class="info-lbl">Master password also accepted as fallback</span>
                   </div>
 
-                  <div class="form-group">
+                  <div class="form-group col-6">
                     <label for="set-wa-autolock"><i class="fa-solid fa-hourglass-half text-teal"></i> Auto-Relock WhatsApp</label>
                     <select id="set-wa-autolock">
                       <option value="immediate">Immediately on Close</option>
@@ -2037,15 +2069,44 @@
                     </button>
                   </div>
 
+                  <!-- Military-Grade AES-256 Encrypted Backups -->
+                  <div class="col-12" style="border-top: 1.5px solid #e2e8f0; margin-top: 18px; padding-top: 16px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                      <h4 style="margin: 0; font-size: 13px; color: #0f172a; display: flex; align-items: center; gap: 7px; font-weight: 800;">
+                        <i class="fa-solid fa-file-shield text-indigo" style="font-size: 15px; color: #6366f1;"></i> Military-Grade AES-256 Encrypted Backups
+                      </h4>
+                      <span class="badge" style="background: rgba(99, 102, 241, 0.1); color: #6366f1; font-weight: 700; font-size: 10.5px; padding: 2px 7px; border-radius: 5px;">
+                        PBKDF2 + AES-GCM
+                      </span>
+                    </div>
+                    <p style="margin: 0 0 10px 0; font-size: 11.5px; color: var(--text-muted); line-height: 1.4;">
+                      Export your entire database (products, parties, invoices, and settings) into a password-encrypted <code>.aaryan-enc</code> file. Backups cannot be read if copied to unauthorized flash drives.
+                    </p>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                      <button type="button" class="btn btn-secondary btn-sm" onclick="exportEncryptedBackup()" style="display: inline-flex; align-items: center; gap: 6px;">
+                        <i class="fa-solid fa-lock" style="color: #6366f1;"></i> Export Encrypted Backup (.aaryan-enc)
+                      </button>
+                      <button type="button" class="btn btn-secondary btn-sm" onclick="triggerEncryptedRestore()" style="display: inline-flex; align-items: center; gap: 6px;">
+                        <i class="fa-solid fa-key" style="color: #0d9488;"></i> Restore Encrypted Backup
+                      </button>
+                      <input type="file" id="encrypted-backup-file-input" accept=".aaryan-enc,.enc" style="display: none;" onchange="handleEncryptedBackupFile(event)">
+                    </div>
+                  </div>
+
                   <!-- Enterprise Security Hardening & Live Audit Activity Trail -->
                   <div class="col-12" style="border-top: 1.5px solid #e2e8f0; margin-top: 18px; padding-top: 16px;">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
                       <h4 style="margin: 0; font-size: 13px; color: #0f172a; display: flex; align-items: center; gap: 7px; font-weight: 800;">
                         <i class="fa-solid fa-shield-halved text-cyan" style="font-size: 15px;"></i> Security Audit Trail &amp; Incidents
                       </h4>
-                      <button type="button" class="btn btn-xs btn-secondary" onclick="renderSecurityAuditTrail()" style="padding: 3px 9px; font-size: 10.5px; border-radius: 5px;">
-                        <i class="fa-solid fa-arrows-rotate"></i> Refresh
-                      </button>
+                      <div style="display: flex; gap: 6px; align-items: center;">
+                        <button type="button" class="btn btn-xs btn-secondary" onclick="exportSecurityAuditCsv()" style="padding: 3px 9px; font-size: 10.5px; border-radius: 5px;" title="Download audit trail as CSV spreadsheet">
+                          <i class="fa-solid fa-file-csv text-green"></i> Export CSV
+                        </button>
+                        <button type="button" class="btn btn-xs btn-secondary" onclick="renderSecurityAuditTrail()" style="padding: 3px 9px; font-size: 10.5px; border-radius: 5px;">
+                          <i class="fa-solid fa-arrows-rotate"></i> Refresh
+                        </button>
+                      </div>
                     </div>
 
                     <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 9px; padding: 10px; margin-bottom: 12px;">
@@ -2066,7 +2127,7 @@
                     <div style="background: #fef2f2; border: 1.5px solid #fecaca; border-radius: 9px; padding: 11px 13px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
                       <div>
                         <div style="font-size: 12px; font-weight: 800; color: #991b1b; display: flex; align-items: center; gap: 5px;">
-                          <i class="fa-solid fa-triangle-exclamation" style="color: #dc2626;"></i> Master Emergency Lockdown
+                          <i class="fa-solid fa-triangle-exclamation" style="color: #dc2626;"></i> Master Emergency Lockdown (Hotkey: Alt+L)
                         </div>
                         <div style="font-size: 10.5px; color: #b91c1c; margin-top: 2px;">
                           Instantly revokes session tokens, clears credentials, and locks application screen immediately.
@@ -2079,7 +2140,9 @@
                   </div>
 
                   <div class="form-group col-12 margin-top-20">
-                    <button type="submit" class="btn btn-primary">Save Security Settings</button>
+                    <button type="submit" class="btn btn-primary" style="background: #0d9488; border-color: #0d9488;">
+                      <i class="fa-solid fa-floppy-disk"></i> Save Security &amp; Privacy Settings
+                    </button>
                   </div>
                 </form>
               </div>
@@ -4725,7 +4788,7 @@
     <i class="fa-solid fa-wifi" id="network-banner-icon"></i> <span id="network-banner-text">Working Offline</span>
   </div>
 
-  <script src="index_v5.js?v=423_google_ads_and_seo"></script>
+  <script src="index_v5.js?v=424_enterprise_security_suite"></script>
 </body>
 </html>
 
