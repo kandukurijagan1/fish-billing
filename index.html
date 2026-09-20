@@ -207,7 +207,7 @@
       });
     }
     // Build Version Enforcement
-    window.__APP_BUILD_VERSION__ = "v425_cross_device_sync_suite";
+    window.__APP_BUILD_VERSION__ = "v426_clean_customer_header";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -219,8 +219,8 @@
     } catch (e) {}
   </script>
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=425_cross_device_sync_suite">
-  <script src="invoice_utils_v5.js?v=425_cross_device_sync_suite"></script>
+  <link rel="stylesheet" href="index.css?v=426_clean_customer_header">
+  <script src="invoice_utils_v5.js?v=426_clean_customer_header"></script>
 </head>
 <body class="app-is-locked">
   <!-- Search Engine Accessible Semantic Content for Googlebot / Non-JS Crawlers -->
@@ -346,7 +346,7 @@
         <button class="nav-item" data-tab="settings">
           <i class="fa-solid fa-gear"></i> Settings
         </button>
-        <button type="button" id="btn-pwa-install-sidebar" class="nav-item pwa-sidebar-install-item hidden" onclick="window.triggerPwaInstall()">
+        <button type="button" id="btn-pwa-install-sidebar" class="nav-item pwa-sidebar-install-item hidden" style="display: none !important;" onclick="window.triggerPwaInstall()">
           <i class="fa-solid fa-mobile-screen-button" style="color: #06b6d4;"></i> Install App
         </button>
       </nav>
@@ -408,37 +408,37 @@
               <span id="tg-bot-status-text">Telegram</span>
             </div>
           </div>
-          <div class="header-tools-group">
-            <button type="button" id="btn-pwa-install-header" class="pwa-install-pill hidden cursor-pointer" style="display: none;" onclick="window.triggerPwaInstall()" title="Install Aaryan Aqua App on this Device (Standalone App)">
+          <div class="header-tools-group" style="display: none !important;">
+            <button type="button" id="btn-pwa-install-header" class="pwa-install-pill hidden cursor-pointer" style="display: none !important;" onclick="window.triggerPwaInstall()" title="Install Aaryan Aqua App on this Device (Standalone App)">
               <i class="fa-solid fa-cloud-arrow-down"></i>
               <span>Install App</span>
             </button>
-            <div id="live-turbo-hub-pill" class="turbo-hub-pill cursor-pointer" onclick="openCommandPalette()" title="Turbo Intelligence & Fast Search Hub (Ctrl+K / Alt+K)">
+            <div id="live-turbo-hub-pill" class="turbo-hub-pill cursor-pointer" style="display: none !important;" onclick="openCommandPalette()" title="Turbo Intelligence & Fast Search Hub (Ctrl+K / Alt+K)">
               <i class="fa-solid fa-bolt-lightning text-cyan" id="turbo-hub-icon"></i>
               <span id="turbo-hub-pill-text">Turbo Hub <kbd class="header-kbd">Ctrl+K</kbd></span>
             </div>
-            <div id="live-data-share-pill" class="data-share-pill icon-btn-tool cursor-pointer" onclick="openDataSharingModal()" title="Advanced Data Sharing & P2P Quick Sync">
+            <div id="live-data-share-pill" class="data-share-pill icon-btn-tool cursor-pointer" style="display: none !important;" onclick="openDataSharingModal()" title="Advanced Data Sharing & P2P Quick Sync">
               <i class="fa-solid fa-share-nodes" style="color: #0284c7;"></i>
               <span id="data-share-pill-text" class="header-pill-label">Share</span>
             </div>
-            <div id="live-calculator-pill" class="calc-pill icon-btn-tool cursor-pointer" onclick="toggleQuickCalculator()" title="Quick Calculator & Fast Bill Injection (Alt+C)">
+            <div id="live-calculator-pill" class="calc-pill icon-btn-tool cursor-pointer" style="display: none !important;" onclick="toggleQuickCalculator()" title="Quick Calculator & Fast Bill Injection (Alt+C)">
               <i class="fa-solid fa-calculator" style="color: #38bdf8;"></i>
               <span class="header-pill-label">Calc</span>
             </div>
-            <div id="live-audio-fx-pill" class="audio-fx-pill icon-btn-tool active cursor-pointer" onclick="toggleAudioFeedback()" title="Billing Audio FX (Click to Mute / Unmute)">
+            <div id="live-audio-fx-pill" class="audio-fx-pill icon-btn-tool active cursor-pointer" style="display: none !important;" onclick="toggleAudioFeedback()" title="Billing Audio FX (Click to Mute / Unmute)">
               <i class="fa-solid fa-volume-high" id="audio-fx-icon"></i>
               <span id="audio-fx-text" class="header-pill-label">Audio</span>
             </div>
-            <div id="live-privacy-shield-pill" class="privacy-shield-pill cursor-pointer" onclick="toggleCounterPrivacyShield()" title="Counter Privacy Shield (Mask Financial Figures from Onlookers) [Alt+P]">
+            <div id="live-privacy-shield-pill" class="privacy-shield-pill cursor-pointer" style="display: none !important;" onclick="toggleCounterPrivacyShield()" title="Counter Privacy Shield (Mask Financial Figures from Onlookers) [Alt+P]">
               <i class="fa-solid fa-eye" id="privacy-shield-icon"></i>
               <span id="privacy-shield-text">Privacy Off</span>
             </div>
-            <div id="live-session-timer-pill" class="session-timer-pill cursor-pointer" onclick="renewUserSession()" title="Active Session Timing (Click to Reset/Extend Auto-Lock)">
+            <div id="live-session-timer-pill" class="session-timer-pill cursor-pointer" style="display: none !important;" onclick="renewUserSession()" title="Active Session Timing (Click to Reset/Extend Auto-Lock)">
               <i class="fa-solid fa-hourglass-start" id="session-timer-icon"></i>
               <span id="session-timer-text">Session: 30:00</span>
               <span class="session-extend-chip">+Extend</span>
             </div>
-            <div id="live-header-lock-pill" class="lock-pill cursor-pointer" onclick="triggerManualLock()" title="Lock Screen (Admin Security) [Alt+L / Ctrl+Shift+L]">
+            <div id="live-header-lock-pill" class="lock-pill cursor-pointer" style="display: none !important;" onclick="triggerManualLock()" title="Lock Screen (Admin Security) [Alt+L / Ctrl+Shift+L]">
               <i class="fa-solid fa-lock"></i>
               <span>Lock</span>
             </div>
@@ -4797,7 +4797,7 @@
     <i class="fa-solid fa-wifi" id="network-banner-icon"></i> <span id="network-banner-text">Working Offline</span>
   </div>
 
-  <script src="index_v5.js?v=425_cross_device_sync_suite"></script>
+  <script src="index_v5.js?v=426_clean_customer_header"></script>
 </body>
 </html>
 

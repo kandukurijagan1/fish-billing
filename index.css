@@ -9716,4 +9716,30 @@ section.content-view.hidden {
   #btn-pwa-install-header {
     display: none !important;
   }
+}
 
+/* ============================================================================
+   CUSTOMER PRESENTATION MODE: CLEAN & UNCLUTTERED TOP HEADER
+   ============================================================================ */
+.header-tools-group,
+#btn-pwa-install-header,
+#btn-pwa-install-sidebar,
+.pwa-sidebar-install-item,
+.pwa-install-pill,
+#live-turbo-hub-pill,
+#live-data-share-pill,
+#live-calculator-pill,
+#live-audio-fx-pill,
+#live-privacy-shield-pill,
+#live-session-timer-pill,
+#live-header-lock-pill {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  opacity: 0 !important;
+}
