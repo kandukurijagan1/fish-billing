@@ -3328,6 +3328,11 @@ function initializeApp() {
   updateLiveDateTime();
   setInterval(updateLiveDateTime, 1000);
 
+  // Initialize Google Ads & Analytics Engine (v423)
+  if (typeof window.initGoogleAdsAndAnalytics === 'function') {
+    window.initGoogleAdsAndAnalytics();
+  }
+
   // Mobile touch/click fast-response listener for Generate & Save Invoice
   const saveBtn = document.getElementById("btn-save-generate-invoice");
   if (saveBtn) {
@@ -8251,6 +8256,16 @@ window.openInvoiceSuccessModal = function(invoiceRecord) {
   }
   const totEl = document.getElementById("modal-success-total");
   if (totEl) totEl.textContent = `₹ ${formatCurrency(invoiceRecord.total || 0)}`;
+
+  // Track Google Ads Conversion for New Invoice Creation / Purchase
+  if (typeof window.trackGoogleAdsConversion === 'function') {
+    window.trackGoogleAdsConversion('purchase', {
+      transaction_id: String(invoiceRecord.invoiceNo || ''),
+      value: Number(invoiceRecord.total || 0),
+      currency: 'INR',
+      items_count: invoiceRecord.itemsCount || 1
+    });
+  }
 
   window.updateSuccessModalWhatsAppStatus(invoiceRecord);
 
@@ -13425,6 +13440,14 @@ function loadSettingsFields() {
   elements.setBUpi.value = globalSettings.upiId || "";
 
   elements.setBTerms.value = (globalSettings.terms || []).join("\n");
+
+  const gAdsIdInput = document.getElementById('set-google-ads-id');
+  const gAdsLabelInput = document.getElementById('set-google-ads-label');
+  const gaIdInput = document.getElementById('set-google-analytics-id');
+  if (gAdsIdInput) gAdsIdInput.value = globalSettings.integrations?.googleAdsId || localStorage.getItem('google_ads_id') || "";
+  if (gAdsLabelInput) gAdsLabelInput.value = globalSettings.integrations?.googleAdsLabel || localStorage.getItem('google_ads_label') || "";
+  if (gaIdInput) gaIdInput.value = globalSettings.integrations?.googleAnalyticsId || localStorage.getItem('google_analytics_id') || "";
+
   if (typeof renderSecurityAuditTrail === "function") {
     renderSecurityAuditTrail();
   }
@@ -13733,6 +13756,117 @@ window.saveGlobalSettingsDefaults = function(e) {
   syncDatabaseToServer("settings", globalSettings);
   showFloatingToast("✅ Store configuration defaults saved successfully!", 4000);
   loadAllDatabases();
+};
+
+// ============================================================================
+// GOOGLE ADS & GOOGLE ANALYTICS 4 ENGINE (v423)
+// Real-Time Conversion Tracking, Purchase Tracking, & Dynamic Tag Loader
+// ============================================================================
+window.initGoogleAdsAndAnalytics = function() {
+  try {
+    const integrations = globalSettings.integrations || {};
+    const gAdsId = (integrations.googleAdsId || localStorage.getItem('google_ads_id') || '').trim();
+    const gaId = (integrations.googleAnalyticsId || localStorage.getItem('google_analytics_id') || '').trim();
+    const primaryId = gAdsId || gaId;
+
+    if (!primaryId) return;
+
+    window.dataLayer = window.dataLayer || [];
+    if (typeof window.gtag !== 'function') {
+      window.gtag = function() { window.dataLayer.push(arguments); };
+      window.gtag('js', new Date());
+    }
+
+    // Ensure gtag script is injected only once
+    if (!document.getElementById('google-gtag-script')) {
+      const script = document.createElement('script');
+      script.id = 'google-gtag-script';
+      script.async = true;
+      script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(primaryId)}`;
+      document.head.appendChild(script);
+    }
+
+    if (gAdsId) {
+      window.gtag('config', gAdsId);
+    }
+    if (gaId) {
+      window.gtag('config', gaId);
+    }
+  } catch (err) {
+    console.warn("Google Ads/Analytics initialization error:", err);
+  }
+};
+
+window.trackGoogleAdsConversion = function(eventName, customParams = {}) {
+  try {
+    if (typeof window.gtag !== 'function') return;
+
+    const integrations = globalSettings.integrations || {};
+    const gAdsId = (integrations.googleAdsId || localStorage.getItem('google_ads_id') || '').trim();
+    const gAdsLabel = (integrations.googleAdsLabel || localStorage.getItem('google_ads_label') || '').trim();
+
+    const eventData = {
+      send_to: (gAdsId && gAdsLabel) ? `${gAdsId}/${gAdsLabel}` : gAdsId,
+      ...customParams
+    };
+
+    window.gtag('event', eventName || 'conversion', eventData);
+    console.log(`📊 [Google Ads] Event '${eventName}' dispatched:`, eventData);
+  } catch (e) {
+    console.warn("Google Ads event dispatch failed:", e);
+  }
+};
+
+window.saveGoogleAdsSettings = function(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const adsId = (document.getElementById('set-google-ads-id')?.value || '').trim();
+  const adsLabel = (document.getElementById('set-google-ads-label')?.value || '').trim();
+  const gaId = (document.getElementById('set-google-analytics-id')?.value || '').trim();
+
+  globalSettings.integrations = {
+    ...(globalSettings.integrations || {}),
+    googleAdsId: adsId,
+    googleAdsLabel: adsLabel,
+    googleAnalyticsId: gaId
+  };
+
+  try {
+    localStorage.setItem('settings', JSON.stringify(globalSettings));
+    if (adsId) localStorage.setItem('google_ads_id', adsId);
+    else localStorage.removeItem('google_ads_id');
+
+    if (adsLabel) localStorage.setItem('google_ads_label', adsLabel);
+    else localStorage.removeItem('google_ads_label');
+
+    if (gaId) localStorage.setItem('google_analytics_id', gaId);
+    else localStorage.removeItem('google_analytics_id');
+  } catch (_) {}
+
+  syncDatabaseToServer('settings', globalSettings);
+  window.initGoogleAdsAndAnalytics();
+
+  showFloatingToast('🎯 Google Ads & Analytics tracking settings saved & active!', 4000);
+  if (typeof AppSecurity !== 'undefined' && AppSecurity.logEvent) {
+    AppSecurity.logEvent('GOOGLE_ADS_CONFIGURED', `Google Ads ID: ${adsId || 'None'}, GA4 ID: ${gaId || 'None'}`, 'INFO');
+  }
+};
+
+window.testGoogleAdsConversion = function() {
+  const integrations = globalSettings.integrations || {};
+  const gAdsId = (integrations.googleAdsId || localStorage.getItem('google_ads_id') || '').trim();
+
+  window.trackGoogleAdsConversion('test_ping_conversion', {
+    value: 100.00,
+    currency: 'INR',
+    transaction_id: 'TEST_' + Date.now(),
+    source: 'Settings_Test_Button'
+  });
+
+  if (gAdsId) {
+    showFloatingToast(`🚀 Conversion ping sent to Google Ads (${gAdsId})! Check Tag Assistant / Analytics DebugView.`, 5000);
+  } else {
+    showFloatingToast('ℹ️ Conversion event fired locally. Add your Google Ads ID (AW-...) to link to your account.', 'info');
+  }
 };
 
 async function sendTelegramInvoiceNotification(invoice) {
@@ -17091,6 +17225,16 @@ window.submitInvoicePaymentSettlement = function() {
     });
   } else if (typeof window.broadcastDatabaseMutation === 'function') {
     window.broadcastDatabaseMutation();
+  }
+
+  // Track Google Ads conversion for payment settlement
+  if (typeof window.trackGoogleAdsConversion === 'function') {
+    window.trackGoogleAdsConversion('payment_settled', {
+      transaction_id: String(inv.invoiceNo || ''),
+      value: Number(settledAmount || 0),
+      currency: 'INR',
+      payment_mode: payMode
+    });
   }
 
   if (typeof playSuccessChime === "function") playSuccessChime();

@@ -1,0 +1,17 @@
+User-agent: *
+Allow: /
+
+# Googlebot, Bingbot & Search Engine Crawlers
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+# Disallow internal desktop bundle folders from web indexing
+Disallow: /dist/
+Disallow: /build/
+Disallow: /.git/
+
+# XML Sitemap
+Sitemap: https://aaryanaqua.netlify.app/sitemap.xml
