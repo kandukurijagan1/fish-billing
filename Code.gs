@@ -1147,7 +1147,7 @@ function handleApiGet(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  // 2. Authoritative Sync / Pull from Google Sheets with Fast Delta Validation
+  // 2. Authoritative Sync / Pull from Google Sheets with Fast RAM Cache & Delta Validation
   if (action === "sync" || action === "pull") {
     var auth = authenticateRequest(e, null);
     if (!auth.ok) {
@@ -1155,6 +1155,24 @@ function handleApiGet(e) {
     }
 
     var clientHash = e && e.parameter && e.parameter.hash ? String(e.parameter.hash).trim() : "";
+
+    // ⚡ Fast Cache-First RAM Retrieval (<100ms)
+    var cache = CacheService.getScriptCache();
+    var cachedBundleJson = cache.get("cache_sync_bundle");
+    if (cachedBundleJson) {
+      try {
+        var cachedObj = JSON.parse(cachedBundleJson);
+        if (clientHash && clientHash === cachedObj.hash) {
+          return ContentService.createTextOutput(JSON.stringify({
+            ok: true,
+            notModified: true,
+            hash: cachedObj.hash,
+            serverTime: Date.now()
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+        return ContentService.createTextOutput(cachedBundleJson).setMimeType(ContentService.MimeType.JSON);
+      } catch (ce) {}
+    }
 
     // Read Authoritative Data directly from Google Sheets
     var ssMaster = getMasterSpreadsheet();
@@ -1186,7 +1204,14 @@ function handleApiGet(e) {
       timestamp: new Date().toISOString()
     };
 
-    return ContentService.createTextOutput(JSON.stringify(fullBundle)).setMimeType(ContentService.MimeType.JSON);
+    var fullBundleStr = JSON.stringify(fullBundle);
+    try {
+      if (fullBundleStr.length < 100000) {
+        cache.put("cache_sync_bundle", fullBundleStr, 600); // 10-minute ultra-fast RAM cache
+      }
+    } catch (ce) {}
+
+    return ContentService.createTextOutput(fullBundleStr).setMimeType(ContentService.MimeType.JSON);
   }
 
   // 3. Fast Single Invoice Lookup / Public QR Verification (No Full Download Needed)
