@@ -3294,8 +3294,11 @@ function initializeApp() {
     autofillRememberedCredentials();
   }
 
-  // Reset lock timer on activity
+  // Reset lock timer on activity and start live session timing ticker
   resetAutolockTimer();
+  if (typeof startSessionTimerTick === 'function') {
+    startSessionTimerTick();
+  }
   ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel'].forEach(evt => {
     document.addEventListener(evt, resetAutolockTimer, { passive: true, capture: true });
   });
@@ -13691,7 +13694,11 @@ window.saveSecuritySettings = async function(e) {
 
   showFloatingToast("✅ Login credentials and security settings saved successfully!", 4000);
   loadAllDatabases();
+  lastActivityRecordTime = Date.now();
   resetAutolockTimer();
+  if (typeof updateSessionTimerUI === 'function') {
+    updateSessionTimerUI();
+  }
   if (typeof renderSecurityAuditTrail === "function") {
     renderSecurityAuditTrail();
   }
@@ -13758,22 +13765,118 @@ async function sendTelegramInvoiceNotification(invoice) {
   }
 }
 
-// --- ACTIVITY AUTO-LOCK CONTROLLER ---
-let lastActivityRecordTime = 0;
+// --- ACTIVITY AUTO-LOCK & LIVE SESSION TIMING CONTROLLER (v422) ---
+let lastActivityRecordTime = Date.now();
+let sessionTimerTickInterval = null;
+
+function formatSessionDuration(seconds) {
+  if (seconds <= 0) return "00:00";
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  if (hrs > 0) {
+    return `${hrs}:${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  }
+  return `${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+}
+
+function updateSessionTimerUI() {
+  const pill = document.getElementById("live-session-timer-pill");
+  const textEl = document.getElementById("session-timer-text");
+  const iconEl = document.getElementById("session-timer-icon");
+  if (!pill || !textEl) return;
+
+  if (isLocked) {
+    pill.style.display = "none";
+    return;
+  }
+
+  pill.style.display = "inline-flex";
+
+  if (!lockTimerSeconds || lockTimerSeconds <= 0) {
+    textEl.textContent = "Session: Active ∞";
+    pill.className = "session-timer-pill";
+    if (iconEl) iconEl.className = "fa-solid fa-infinity text-teal";
+    return;
+  }
+
+  const now = Date.now();
+  const lastActive = lastActivityRecordTime || now;
+  const elapsedSec = Math.floor((now - lastActive) / 1000);
+  const remainingSec = Math.max(0, lockTimerSeconds - elapsedSec);
+
+  const timeStr = formatSessionDuration(remainingSec);
+  textEl.textContent = `Session: ${timeStr}`;
+
+  if (remainingSec <= 30) {
+    pill.className = "session-timer-pill critical";
+    if (iconEl) iconEl.className = "fa-solid fa-hourglass-end text-rose fa-shake";
+  } else if (remainingSec <= 120) {
+    pill.className = "session-timer-pill warning";
+    if (iconEl) iconEl.className = "fa-solid fa-hourglass-half text-amber";
+  } else {
+    pill.className = "session-timer-pill";
+    if (iconEl) iconEl.className = "fa-solid fa-hourglass-start text-teal";
+  }
+
+  // Trigger auto-lock strictly if session timing exhausted
+  if (remainingSec <= 0 && !isLocked) {
+    triggerLockOverlay();
+  }
+}
+
+function startSessionTimerTick() {
+  if (sessionTimerTickInterval) clearInterval(sessionTimerTickInterval);
+  updateSessionTimerUI();
+  sessionTimerTickInterval = setInterval(updateSessionTimerUI, 1000);
+}
+
+window.renewUserSession = function() {
+  if (isLocked) return;
+  lastActivityRecordTime = Date.now();
+  resetAutolockTimer();
+  updateSessionTimerUI();
+  const durationLabel = lockTimerSeconds > 0 ? `${Math.round(lockTimerSeconds / 60)} min` : "unlimited";
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast(`⏱️ Active session timing renewed (${durationLabel})!`, 2500);
+  }
+  if (typeof AppSecurity !== 'undefined' && AppSecurity.logEvent) {
+    AppSecurity.logEvent("SESSION_RENEWED", `Session timing renewed to ${lockTimerSeconds}s`, "INFO");
+  }
+};
+
+window.onAutoLockSettingChange = function(newVal) {
+  const parsed = parseInt(newVal, 10);
+  if (!Number.isNaN(parsed)) {
+    lockTimerSeconds = parsed;
+    lastActivityRecordTime = Date.now();
+    resetAutolockTimer();
+    updateSessionTimerUI();
+    const label = parsed > 0 ? `${Math.round(parsed / 60)} min` : "disabled";
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`⏱️ Session timing preview: Auto-lock set to ${label}`, 2000);
+    }
+  }
+};
+
 function resetAutolockTimer() {
   if (isLocked) return;
 
   const now = Date.now();
-  if (now - lastActivityRecordTime > 5000) {
+  if (!lastActivityRecordTime || now - lastActivityRecordTime > 3000) {
     lastActivityRecordTime = now;
     try {
       localStorage.setItem("last_active_time", now);
       localStorage.setItem("app_locked", "false");
     } catch (_) {}
+    updateSessionTimerUI();
   }
 
   clearTimeout(autolockInterval);
-  if (!lockTimerSeconds || lockTimerSeconds <= 0) return;
+  if (!lockTimerSeconds || lockTimerSeconds <= 0) {
+    updateSessionTimerUI();
+    return;
+  }
 
   autolockInterval = setTimeout(triggerLockOverlay, lockTimerSeconds * 1000);
 }
@@ -13783,7 +13886,8 @@ function unlockSystemSilently() {
   localStorage.setItem("app_locked", "false");
   localStorage.setItem("app_authenticated", "true");
   sessionStorage.setItem("session_authenticated", "true");
-  localStorage.setItem("last_active_time", Date.now());
+  lastActivityRecordTime = Date.now();
+  localStorage.setItem("last_active_time", lastActivityRecordTime);
   document.body.classList.remove("app-is-locked");
   
   const overlay = document.getElementById("lock-screen-overlay");
@@ -13799,7 +13903,8 @@ function unlockSystemSilently() {
     }
   }
 
-  // Restart inactivity auto-lock timer
+  // Restart live session timer tick & inactivity auto-lock timer
+  startSessionTimerTick();
   if (typeof resetAutolockTimer === 'function') {
     resetAutolockTimer();
   }
@@ -13883,6 +13988,20 @@ function triggerLockOverlay() {
   if (wrapper) wrapper.classList.add("blur-dashboard-wrapper");
   const overlay = document.getElementById("lock-screen-overlay");
   if (overlay) overlay.classList.remove("hidden");
+
+  // Update lock screen session timing indicator
+  const sessionStatusText = document.getElementById("login-session-status-text");
+  if (sessionStatusText) {
+    sessionStatusText.textContent = "Session Locked • Enter Password to Resume";
+  }
+  const sessionLockSubtext = document.getElementById("login-session-lock-subtext");
+  if (sessionLockSubtext) {
+    const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    sessionLockSubtext.textContent = `Auto-locked at ${timeStr} • Inactivity timeout reached`;
+  }
+  if (typeof updateSessionTimerUI === 'function') {
+    updateSessionTimerUI();
+  }
 
   // Check rate limit status upon lock
   const lockStatus = AppSecurity.isLockedOut();

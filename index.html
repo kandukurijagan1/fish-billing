@@ -68,7 +68,7 @@
       });
     }
     // Build Version Enforcement
-    window.__APP_BUILD_VERSION__ = "v421_enforce_lock_screen";
+    window.__APP_BUILD_VERSION__ = "v422_live_session_timing";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -93,6 +93,12 @@
         </div>
         <h2>AARYAN AQUA NEEDS</h2>
         <p>GST Billing & Management System</p>
+      </div>
+      
+      <!-- SESSION TIMING & LOCK STATUS BADGE -->
+      <div id="login-session-timing-banner" style="margin: -5px 0 14px 0; padding: 7px 12px; background: rgba(15, 23, 42, 0.5); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 11.5px; color: #94a3b8;">
+        <i class="fa-solid fa-hourglass-half text-cyan" id="login-session-status-icon"></i>
+        <span id="login-session-status-text">Authenticated Session • Inactivity Lock Protected</span>
       </div>
       
       <div id="login-error-message" class="login-error hidden">
@@ -132,6 +138,10 @@
       
       <div class="login-footer">
         <span>Enter your administrator credentials to unlock.</span>
+        <div id="login-session-lock-reason" style="margin-top: 6px; font-size: 11px; color: #64748b; display: flex; align-items: center; justify-content: center; gap: 5px;">
+          <i class="fa-solid fa-shield-halved" style="color: #0d9488;"></i>
+          <span id="login-session-lock-subtext">Auto-lock protected • Inactivity timeout active</span>
+        </div>
       </div>
     </div>
   </div>
@@ -256,6 +266,10 @@
             <div id="live-audio-fx-pill" class="audio-fx-pill active cursor-pointer" onclick="toggleAudioFeedback()" title="Billing Audio FX (Click to Mute / Unmute)">
               <i class="fa-solid fa-volume-high" id="audio-fx-icon"></i>
               <span id="audio-fx-text">Audio</span>
+            </div>
+            <div id="live-session-timer-pill" class="session-timer-pill cursor-pointer" onclick="renewUserSession()" title="Active Session Timing (Click to Reset/Extend Auto-Lock)" style="background: rgba(13, 148, 136, 0.1); border: 1px solid rgba(13, 148, 136, 0.25); color: #0d9488; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;">
+              <i class="fa-solid fa-hourglass-start" id="session-timer-icon" style="color: #0d9488; font-size: 11px;"></i>
+              <span id="session-timer-text">Session: 30:00</span>
             </div>
             <div id="live-header-lock-pill" class="lock-pill cursor-pointer" onclick="triggerManualLock()" title="Lock Screen (Admin Security)" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.25); color: #f87171; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;">
               <i class="fa-solid fa-lock" style="color: #ef4444; font-size: 11px;"></i>
@@ -1790,17 +1804,19 @@
                 </div>
                 <form id="security-settings-form" class="form-grid" onsubmit="saveSecuritySettings(event)">
                   <div class="form-group col-12">
-                    <label for="set-autolock-timer">Inactivity Auto-Lock Timer</label>
-                    <select id="set-autolock-timer">
-                      <option value="0">Never / Disabled (Recommended for Fast Billing)</option>
+                    <label for="set-autolock-timer"><i class="fa-solid fa-hourglass-half text-teal"></i> Session Timing &amp; Inactivity Auto-Lock</label>
+                    <select id="set-autolock-timer" onchange="if(typeof onAutoLockSettingChange === 'function') onAutoLockSettingChange(this.value)">
+                      <option value="0">Never / Disabled (Always Unlocked)</option>
+                      <option value="7200">2 Hours</option>
                       <option value="3600">1 Hour</option>
-                      <option value="1800" selected>30 Minutes</option>
+                      <option value="1800" selected>30 Minutes (Standard Enterprise)</option>
                       <option value="900">15 Minutes</option>
+                      <option value="600">10 Minutes</option>
                       <option value="300">5 Minutes</option>
                       <option value="120">2 Minutes</option>
-                      <option value="60">1 Minute</option>
+                      <option value="60">1 Minute (Quick Lockout)</option>
                     </select>
-                    <span class="info-lbl">Locks screen dynamically on no keyboard/mouse input</span>
+                    <span class="info-lbl">Controls live header session countdown and locks screen on idle</span>
                   </div>
                   <div class="form-group">
                     <label for="set-login-username">Login Username</label>
@@ -4502,7 +4518,7 @@
     <i class="fa-solid fa-wifi" id="network-banner-icon"></i> <span id="network-banner-text">Working Offline</span>
   </div>
 
-  <script src="index_v5.js?v=421_enforce_lock_screen"></script>
+  <script src="index_v5.js?v=422_live_session_timing"></script>
 </body>
 </html>
 

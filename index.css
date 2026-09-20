@@ -926,6 +926,50 @@ body {
   font-variant-numeric: tabular-nums !important;
 }
 
+/* Live Active Session Timing Pill */
+.session-timer-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  padding: 4px 10px !important;
+  border-radius: 20px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  font-variant-numeric: tabular-nums !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  transition: all 0.2s ease !important;
+  background: rgba(13, 148, 136, 0.1) !important;
+  border: 1px solid rgba(13, 148, 136, 0.25) !important;
+  color: #0f766e !important;
+}
+
+.session-timer-pill:hover {
+  background: rgba(13, 148, 136, 0.2) !important;
+  border-color: rgba(13, 148, 136, 0.45) !important;
+  transform: translateY(-1px) !important;
+}
+
+.session-timer-pill.warning {
+  background: rgba(245, 158, 11, 0.14) !important;
+  border-color: rgba(245, 158, 11, 0.4) !important;
+  color: #b45309 !important;
+}
+
+.session-timer-pill.critical {
+  background: rgba(239, 68, 68, 0.18) !important;
+  border-color: rgba(239, 68, 68, 0.45) !important;
+  color: #dc2626 !important;
+  animation: sessionPulse 1s infinite alternate !important;
+}
+
+@keyframes sessionPulse {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.05); }
+}
+
 @media (max-width: 1200px) {
   .app-top-header-meta {
     gap: 5px !important;
@@ -2540,7 +2584,8 @@ body.app-is-locked #pwa-mobile-install-banner,
 body.app-is-locked #app-network-banner,
 body.app-is-locked .mobile-sidebar-overlay,
 body.app-is-locked #quick-calculator-modal,
-body.app-is-locked #global-command-palette-modal {
+body.app-is-locked #global-command-palette-modal,
+body.app-is-locked #live-session-timer-pill {
   display: none !important;
   pointer-events: none !important;
 }
