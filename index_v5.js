@@ -3254,13 +3254,10 @@ function initializeApp() {
     }
   });
 
-  // Security Enforcement & Session Verification
+  // Security Enforcement & Session Verification (v421 — strict lock enforcement)
   const isManuallyLocked = localStorage.getItem("app_locked") === "true";
   const hasSessionAuth = sessionStorage.getItem("session_authenticated") === "true";
-  const hasAppAuth = localStorage.getItem("app_authenticated") === "true";
-  const rememberMe = localStorage.getItem("remember_me") === "true";
   const savedPwd = localStorage.getItem("saved_password") || "";
-  const authToken = localStorage.getItem(AppSecurity.AUTH_TOKEN_KEY) || "";
   const lastActive = parseInt(localStorage.getItem("last_active_time") || "0", 10);
   const lockTimeout = lockTimerSeconds > 0 ? (lockTimerSeconds * 1000) : 0;
   const isTimedOut = lockTimeout > 0 && lastActive > 0 && (Date.now() - lastActive > lockTimeout);
@@ -3273,9 +3270,11 @@ function initializeApp() {
   // Check rate limit lockout state
   const lockoutStatus = AppSecurity.isLockedOut();
 
-  // Determine if session can remain seamlessly active
-  const hasValidAuthToken = !!(authToken || savedPwd);
-  const canStayUnlocked = !isManuallyLocked && !lockoutStatus.locked && !isTimedOut && (hasSessionAuth || (rememberMe && hasValidAuthToken && hasAppAuth));
+  // v421 STRICT LOCK POLICY:
+  // Electron desktop: ALWAYS lock on boot — user must enter password every launch
+  // Browser/PWA: Only allow same-tab reload carry-over via sessionStorage
+  // "Remember Password" ONLY pre-fills the login form — never auto-unlocks
+  const canStayUnlocked = !isElectronApp && !isManuallyLocked && !lockoutStatus.locked && !isTimedOut && hasSessionAuth;
 
   if (canStayUnlocked) {
     unlockSystemSilently();
@@ -7878,8 +7877,7 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
   }
 
   try {
-    isLocked = false;
-    localStorage.setItem("app_locked", "false");
+    // v421: Only update activity timestamp — do NOT disable the lock system
     localStorage.setItem("last_active_time", Date.now());
 
     if (typeof syncBillingInputsToCurrentInvoice === 'function') {

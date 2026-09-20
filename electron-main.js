@@ -76,6 +76,16 @@ function createWindow() {
   // Load the application
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
+  // v421: Force lock screen on every Electron launch — clear any stale session tokens
+  mainWindow.webContents.on('did-finish-load', () => {
+    mainWindow.webContents.executeJavaScript(`
+      try {
+        sessionStorage.removeItem('session_authenticated');
+        localStorage.setItem('app_locked', 'true');
+      } catch(e) {}
+    `).catch(() => {});
+  });
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
   });
