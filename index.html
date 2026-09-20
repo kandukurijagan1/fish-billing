@@ -68,7 +68,7 @@
       });
     }
     // Build Version Enforcement
-    window.__APP_BUILD_VERSION__ = "v419_secure_fast_transfer";
+    window.__APP_BUILD_VERSION__ = "v420_clean_desktop_runtime";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -237,7 +237,7 @@
             </div>
           </div>
           <div class="header-tools-group">
-            <button type="button" id="btn-pwa-install-header" class="pwa-install-pill hidden cursor-pointer" onclick="window.triggerPwaInstall()" title="Install Aaryan Aqua App on this Device (Standalone App)">
+            <button type="button" id="btn-pwa-install-header" class="pwa-install-pill hidden cursor-pointer" style="display: none;" onclick="window.triggerPwaInstall()" title="Install Aaryan Aqua App on this Device (Standalone App)">
               <i class="fa-solid fa-cloud-arrow-down"></i>
               <span>Install App</span>
             </button>
@@ -4456,7 +4456,7 @@
   </nav>
 
   <!-- PWA MOBILE INSTALL BANNER -->
-  <div id="pwa-mobile-install-banner" class="pwa-mobile-banner hidden no-print">
+  <div id="pwa-mobile-install-banner" class="pwa-mobile-banner hidden no-print" style="display: none;">
     <div class="pwa-banner-content">
       <img src="icon-192.png" alt="Aaryan Aqua" class="pwa-banner-icon">
       <div class="pwa-banner-text">
@@ -4475,7 +4475,7 @@
   </div>
 
   <!-- iOS PWA INSTALL GUIDE MODAL -->
-  <div id="ios-pwa-modal" class="modal-overlay hidden no-print" onclick="window.closeIosInstallModal(event)">
+  <div id="ios-pwa-modal" class="modal-overlay hidden no-print" style="display: none;" onclick="window.closeIosInstallModal(event)">
     <div class="modal-card ios-pwa-card" onclick="event.stopPropagation()">
       <div class="modal-header">
         <h3><i class="fa-brands fa-apple"></i> Install on iPhone / iPad</h3>
@@ -4498,11 +4498,11 @@
   </div>
 
   <!-- APP NETWORK STATUS NOTIFICATION BAR -->
-  <div id="app-network-banner" class="app-network-banner hidden no-print">
+  <div id="app-network-banner" class="app-network-banner hidden no-print" style="display: none;">
     <i class="fa-solid fa-wifi" id="network-banner-icon"></i> <span id="network-banner-text">Working Offline</span>
   </div>
 
-  <script src="index_v5.js?v=419_secure_fast_transfer"></script>
+  <script src="index_v5.js?v=420_clean_desktop_runtime"></script>
 </body>
 </html>
 

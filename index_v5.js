@@ -10,6 +10,14 @@ window.isInitialSyncDone = false;
 let dbEventSource = null;
 let isSavingInvoice = false;
 
+// Native Runtime Environment Flagging
+const isElectronApp = typeof navigator !== 'undefined' && (/electron/i.test(navigator.userAgent || '') || !!(typeof window !== 'undefined' && window.process && window.process.versions && window.process.versions.electron));
+if (isElectronApp && typeof document !== 'undefined') {
+  if (document.documentElement) document.documentElement.classList.add('is-electron-app');
+  if (document.body) document.body.classList.add('is-electron-app');
+  else window.addEventListener('DOMContentLoaded', () => { if (document.body) document.body.classList.add('is-electron-app'); });
+}
+
 // Synchronous 0ms local snapshot hydration
 try {
   productsDb = JSON.parse(localStorage.getItem("products") || "[]");
@@ -17536,20 +17544,33 @@ window.deferredPwaPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => {
   // Prevent default mini-infobar from appearing on mobile
   e.preventDefault();
+  // Never show PWA installation prompts if already in Electron desktop app or installed standalone PWA
+  const isDesktopOrStandalone = (typeof isElectronApp !== 'undefined' && isElectronApp) || 
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || 
+    window.navigator.standalone;
+  if (isDesktopOrStandalone) return;
+
   window.deferredPwaPrompt = e;
   
-  // Reveal native app install buttons
+  // Reveal native app install buttons on web browsers only
   const headerInstallBtn = document.getElementById('btn-pwa-install-header');
-  if (headerInstallBtn) headerInstallBtn.classList.remove('hidden');
+  if (headerInstallBtn) {
+    headerInstallBtn.classList.remove('hidden');
+    headerInstallBtn.style.display = 'inline-flex';
+  }
 
   const sidebarInstallBtn = document.getElementById('btn-pwa-install-sidebar');
-  if (sidebarInstallBtn) sidebarInstallBtn.classList.remove('hidden');
+  if (sidebarInstallBtn) {
+    sidebarInstallBtn.classList.remove('hidden');
+    sidebarInstallBtn.style.display = 'flex';
+  }
 
-  // Reveal bottom mobile banner if not dismissed this session
-  if (!sessionStorage.getItem('pwa_banner_dismissed')) {
+  // Reveal bottom mobile banner ONLY on mobile devices (<= 768px) and if not dismissed this session
+  if (!sessionStorage.getItem('pwa_banner_dismissed') && window.innerWidth <= 768) {
     const mobileBanner = document.getElementById('pwa-mobile-install-banner');
-    if (mobileBanner && window.innerWidth <= 768) {
+    if (mobileBanner) {
       mobileBanner.classList.remove('hidden');
+      mobileBanner.style.display = 'flex';
     }
   }
   console.log('[PWA] Native app installation prompt ready.');
@@ -17587,7 +17608,10 @@ window.triggerPwaInstall = async function() {
 window.dismissPwaBanner = function() {
   sessionStorage.setItem('pwa_banner_dismissed', 'true');
   const mobileBanner = document.getElementById('pwa-mobile-install-banner');
-  if (mobileBanner) mobileBanner.classList.add('hidden');
+  if (mobileBanner) {
+    mobileBanner.classList.add('hidden');
+    mobileBanner.style.display = 'none';
+  }
 };
 
 window.closeIosInstallModal = function(e) {
@@ -17602,9 +17626,15 @@ window.addEventListener('appinstalled', (evt) => {
   console.log('[PWA] Aaryan Aqua successfully installed to home screen / OS!');
   showFloatingToast("🎉 Aaryan Aqua App installed! You can now launch it directly from your Home Screen or Desktop.", 5000);
   const headerInstallBtn = document.getElementById('btn-pwa-install-header');
-  if (headerInstallBtn) headerInstallBtn.classList.add('hidden');
+  if (headerInstallBtn) {
+    headerInstallBtn.classList.add('hidden');
+    headerInstallBtn.style.display = 'none';
+  }
   const sidebarInstallBtn = document.getElementById('btn-pwa-install-sidebar');
-  if (sidebarInstallBtn) sidebarInstallBtn.classList.add('hidden');
+  if (sidebarInstallBtn) {
+    sidebarInstallBtn.classList.add('hidden');
+    sidebarInstallBtn.style.display = 'none';
+  }
   window.dismissPwaBanner();
 });
 
@@ -17661,28 +17691,42 @@ window.triggerHapticFeedback = function(durationMs = 12) {
 };
 
 // --- 4. APP NETWORK ONLINE / OFFLINE DETECTOR ---
-function updateAppNetworkStatus() {
+function updateAppNetworkStatus(isInitial = false) {
   const banner = document.getElementById('app-network-banner');
   const text = document.getElementById('network-banner-text');
   const icon = document.getElementById('network-banner-icon');
   if (!banner || !text) return;
 
   if (navigator.onLine) {
-    banner.classList.add('online');
-    banner.classList.remove('hidden');
-    text.textContent = '🟢 Back Online — Syncing records with Cloud Mesh...';
-    if (icon) icon.className = 'fa-solid fa-cloud-arrow-up';
-    setTimeout(() => {
+    if (!isInitial) {
+      banner.classList.add('online');
+      banner.classList.remove('hidden');
+      banner.style.display = 'flex';
+      text.textContent = '🟢 Back Online — Syncing records with Cloud Mesh...';
+      if (icon) icon.className = 'fa-solid fa-cloud-arrow-up';
+      setTimeout(() => {
+        banner.classList.add('hidden');
+        banner.style.display = 'none';
+      }, 2800);
+    } else {
       banner.classList.add('hidden');
-    }, 2800);
+      banner.style.display = 'none';
+    }
   } else {
     banner.classList.remove('online');
     banner.classList.remove('hidden');
+    banner.style.display = 'flex';
     text.textContent = '⚠️ Working Offline — Invoices saved locally & auto-sync when online.';
     if (icon) icon.className = 'fa-solid fa-wifi';
   }
 }
 
-window.addEventListener('online', updateAppNetworkStatus);
-window.addEventListener('offline', updateAppNetworkStatus);
+window.addEventListener('online', () => updateAppNetworkStatus(false));
+window.addEventListener('offline', () => updateAppNetworkStatus(false));
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => updateAppNetworkStatus(true));
+} else {
+  updateAppNetworkStatus(true);
+}
 
