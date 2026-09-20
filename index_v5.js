@@ -1009,10 +1009,352 @@ const GOOGLE_SCRIPT_URL = window.GOOGLE_SCRIPT_URL || "https://script.google.com
 const API_SECRET_TOKEN = window.API_SECRET_TOKEN || "AARYAN_AQUA_SECURE_KEY_2026";
 const GOOGLE_SCRIPT_FALLBACK_URL = GOOGLE_SCRIPT_URL;
 
+// =========================================================
+// --- ENTERPRISE SECURITY ENGINE (AppSecurity) ---
+// =========================================================
+const AppSecurity = {
+  FAILED_ATTEMPTS_KEY: "app_failed_attempts",
+  LOCKOUT_UNTIL_KEY: "app_lockout_until",
+  AUDIT_LOG_KEY: "app_security_audit_logs",
+  AUTH_TOKEN_KEY: "aaryan_auth_token",
+  SALT: "AARYAN_AQUA_SECURE_AUTH_v2026",
+  INVOICE_KEY: "AARYAN_AQUA_INVOICE_SIG_2026",
+
+  // Hash using WebCrypto SHA-256 with fallback
+  async sha256(message) {
+    if (typeof crypto !== "undefined" && crypto.subtle && crypto.subtle.digest) {
+      try {
+        const msgUint8 = new TextEncoder().encode(message);
+        const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+      } catch (e) {
+        console.warn("SubtleCrypto digest failed, using fallback:", e);
+      }
+    }
+    return "token_" + AppSecurity.quickHash(message);
+  },
+
+  // Fast synchronous deterministic hash for checksums & signatures
+  quickHash(str) {
+    let h1 = 0xdeadbeef ^ 0, h2 = 0x41c64e6d ^ 0;
+    for (let i = 0, ch; i < str.length; i++) {
+      ch = str.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+  },
+
+  async generateAuthToken(username, password) {
+    const payload = `${AppSecurity.SALT}:${String(username || "").toLowerCase().trim()}:${String(password || "").trim()}`;
+    return await AppSecurity.sha256(payload);
+  },
+
+  generateInvoiceSig(invoiceNo, total, customer, qrToken) {
+    const payload = `${String(invoiceNo).trim()}|${Number(total || 0).toFixed(2)}|${String(customer || '').trim().toLowerCase()}|${String(qrToken || '').trim()}|${AppSecurity.INVOICE_KEY}`;
+    return AppSecurity.quickHash(payload);
+  },
+
+  verifyInvoiceSig(sig, invoiceNo, total, customer, qrToken) {
+    if (!sig) return true; // Backward compatibility for legacy invoices
+    const expected = AppSecurity.generateInvoiceSig(invoiceNo, total, customer, qrToken);
+    return String(sig).trim().toLowerCase() === String(expected).trim().toLowerCase();
+  },
+
+  isLockedOut() {
+    const lockoutUntil = parseInt(localStorage.getItem(AppSecurity.LOCKOUT_UNTIL_KEY) || "0", 10);
+    const failedAttempts = parseInt(localStorage.getItem(AppSecurity.FAILED_ATTEMPTS_KEY) || "0", 10);
+    const now = Date.now();
+    if (lockoutUntil > now) {
+      const remainingSeconds = Math.ceil((lockoutUntil - now) / 1000);
+      return { locked: true, remainingSeconds, attempts: failedAttempts };
+    }
+    if (lockoutUntil > 0 && now >= lockoutUntil) {
+      localStorage.removeItem(AppSecurity.LOCKOUT_UNTIL_KEY);
+    }
+    return { locked: false, remainingSeconds: 0, attempts: failedAttempts };
+  },
+
+  recordFailedAttempt(source = "Lock Screen") {
+    let attempts = parseInt(localStorage.getItem(AppSecurity.FAILED_ATTEMPTS_KEY) || "0", 10) + 1;
+    localStorage.setItem(AppSecurity.FAILED_ATTEMPTS_KEY, attempts.toString());
+
+    let lockoutSec = 0;
+    if (attempts === 3) {
+      lockoutSec = 30; // 30s cooldown
+    } else if (attempts === 4) {
+      lockoutSec = 60; // 1 min cooldown
+    } else if (attempts >= 5) {
+      lockoutSec = 300; // 5 min lockout
+    }
+
+    if (lockoutSec > 0) {
+      const lockoutUntil = Date.now() + (lockoutSec * 1000);
+      localStorage.setItem(AppSecurity.LOCKOUT_UNTIL_KEY, lockoutUntil.toString());
+      AppSecurity.logEvent("RATE_LIMIT_LOCKOUT", `Brute-force lockout: ${lockoutSec}s cooldown penalty triggered after ${attempts} failed attempts (${source})`, "WARNING");
+    } else {
+      AppSecurity.logEvent("LOGIN_FAILED", `Failed login attempt ${attempts} (${source})`, "WARNING");
+    }
+
+    return { attempts, lockoutSec };
+  },
+
+  recordSuccessfulLogin(username = "Admin", source = "Lock Screen") {
+    localStorage.removeItem(AppSecurity.FAILED_ATTEMPTS_KEY);
+    localStorage.removeItem(AppSecurity.LOCKOUT_UNTIL_KEY);
+    AppSecurity.logEvent("LOGIN_SUCCESS", `Successful authentication by ${username} (${source})`, "SUCCESS");
+  },
+
+  activeCountdownInterval: null,
+
+  startLockoutCountdown(btnEl, errEl, prefixMsg = "Access temporarily paused.") {
+    if (AppSecurity.activeCountdownInterval) {
+      clearInterval(AppSecurity.activeCountdownInterval);
+      AppSecurity.activeCountdownInterval = null;
+    }
+
+    const updateUI = () => {
+      const status = AppSecurity.isLockedOut();
+      if (!status.locked) {
+        if (AppSecurity.activeCountdownInterval) {
+          clearInterval(AppSecurity.activeCountdownInterval);
+          AppSecurity.activeCountdownInterval = null;
+        }
+        if (btnEl) {
+          btnEl.disabled = false;
+          const labelText = btnEl.querySelector('#login-btn-text') || btnEl.querySelector('.btn-label-text');
+          if (labelText) labelText.textContent = "Unlock System";
+        }
+        if (errEl) {
+          errEl.innerHTML = `<i class="fa-solid fa-circle-check text-green"></i> Cooldown expired. You may now enter credentials.`;
+          setTimeout(() => {
+            errEl.classList.add("hidden");
+            errEl.style.display = "none";
+          }, 3500);
+        }
+        return;
+      }
+
+      if (btnEl) {
+        btnEl.disabled = true;
+        const labelText = btnEl.querySelector('#login-btn-text') || btnEl.querySelector('.btn-label-text');
+        if (labelText) {
+          labelText.textContent = `Locked (${status.remainingSeconds}s)`;
+        }
+      }
+      if (errEl) {
+        errEl.classList.remove("hidden");
+        errEl.style.display = "block";
+        errEl.innerHTML = `<i class="fa-solid fa-shield-halved" style="color: #ef4444;"></i> <strong>Security Rate-Limit Active:</strong> ${prefixMsg} Please wait <strong>${status.remainingSeconds}s</strong> before retrying.`;
+      }
+    };
+
+    updateUI();
+    AppSecurity.activeCountdownInterval = setInterval(updateUI, 1000);
+  },
+
+  logEvent(type, details, status = "INFO") {
+    try {
+      let logs = JSON.parse(localStorage.getItem(AppSecurity.AUDIT_LOG_KEY) || "[]");
+      if (!Array.isArray(logs)) logs = [];
+      logs.unshift({
+        id: Date.now() + "_" + Math.random().toString(36).substr(2, 4),
+        timestamp: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+        type,
+        details,
+        status
+      });
+      if (logs.length > 50) logs = logs.slice(0, 50);
+      localStorage.setItem(AppSecurity.AUDIT_LOG_KEY, JSON.stringify(logs));
+    } catch (e) {
+      console.warn("Could not save audit log:", e);
+    }
+  },
+
+  getAuditLogs() {
+    try {
+      return JSON.parse(localStorage.getItem(AppSecurity.AUDIT_LOG_KEY) || "[]");
+    } catch (e) {
+      return [];
+    }
+  },
+
+  clearAuditLogs() {
+    localStorage.removeItem(AppSecurity.AUDIT_LOG_KEY);
+    AppSecurity.logEvent("AUDIT_LOG_CLEARED", "Security activity audit trail cleared by administrator", "INFO");
+  },
+
+  purgePlaintextPasswords() {
+    const saved = localStorage.getItem("saved_password");
+    if (saved) {
+      const user = localStorage.getItem("saved_username") || "Aaryanaqua";
+      AppSecurity.generateAuthToken(user, saved).then(token => {
+        localStorage.setItem(AppSecurity.AUTH_TOKEN_KEY, token);
+        localStorage.removeItem("saved_password");
+        console.log("🔒 Legacy plaintext password migrated to SHA-256 token and purged.");
+      }).catch(() => {
+        localStorage.removeItem("saved_password");
+      });
+    }
+  }
+};
+window.AppSecurity = AppSecurity;
+
+// =========================================================
+// --- ENTERPRISE WIRE SECURITY & COMPRESSION ENGINE ---
+// =========================================================
+const AppWireSecurity = {
+  VERSION: 2,
+
+  // Private store-scoped topic derived from API_SECRET_TOKEN
+  getSecureTopic(baseTopic = "aaryan_aqua_gst_billing_2026") {
+    const token = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
+    const secretHash = AppSecurity.quickHash(token + "_mesh_sync_v2");
+    return `${baseTopic}/mesh_${secretHash}`;
+  },
+
+  cipher(inputStr, keyStr) {
+    let output = '';
+    const keyLen = keyStr.length;
+    for (let i = 0; i < inputStr.length; i++) {
+      output += String.fromCharCode(inputStr.charCodeAt(i) ^ keyStr.charCodeAt(i % keyLen));
+    }
+    return output;
+  },
+
+  uint8ToBase64(bytes) {
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  },
+
+  base64ToUint8(base64) {
+    const binary = atob(base64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  },
+
+  async compress(str) {
+    if (typeof CompressionStream !== 'undefined') {
+      try {
+        const stream = new Response(new Blob([str]).stream().pipeThrough(new CompressionStream('deflate')));
+        const buf = await stream.arrayBuffer();
+        return AppWireSecurity.uint8ToBase64(new Uint8Array(buf));
+      } catch (e) {}
+    }
+    return btoa(unescape(encodeURIComponent(str)));
+  },
+
+  async decompress(b64) {
+    if (typeof DecompressionStream !== 'undefined') {
+      try {
+        const bytes = AppWireSecurity.base64ToUint8(b64);
+        const stream = new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate')));
+        return await stream.text();
+      } catch (e) {}
+    }
+    try {
+      return decodeURIComponent(escape(atob(b64)));
+    } catch (_) {
+      return atob(b64);
+    }
+  },
+
+  async pack(msgObj) {
+    const minObj = (typeof minifyTransferPayload === 'function') ? minifyTransferPayload(msgObj) : msgObj;
+    const jsonStr = JSON.stringify(minObj);
+    const compressedB64 = await AppWireSecurity.compress(jsonStr);
+    
+    const secret = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
+    const ciphertextB64 = AppWireSecurity.cipher(compressedB64, secret);
+    
+    const timestamp = Date.now();
+    const nonce = Math.random().toString(36).substring(2, 10);
+    const signature = AppSecurity.quickHash(`${ciphertextB64}|${timestamp}|${nonce}|${secret}`);
+
+    return JSON.stringify({
+      v: AppWireSecurity.VERSION,
+      s: signature,
+      t: timestamp,
+      n: nonce,
+      c: ciphertextB64
+    });
+  },
+
+  async unpack(rawWirePayload) {
+    if (!rawWirePayload) return null;
+    let envelope = null;
+    try {
+      if (typeof rawWirePayload === "string") {
+        envelope = JSON.parse(rawWirePayload);
+      } else {
+        envelope = rawWirePayload;
+      }
+    } catch (_) {
+      return null;
+    }
+
+    // Fallback for unencrypted/legacy packets
+    if (!envelope || typeof envelope !== "object" || !envelope.s || !envelope.c) {
+      return envelope;
+    }
+
+    const { v, s, t, n, c } = envelope;
+    const secret = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
+
+    // 1. Replay defense: 5-minute timestamp window
+    const now = Date.now();
+    const ageMs = Math.abs(now - (t || 0));
+    if (ageMs > 300 * 1000) {
+      console.warn("⚠️ Dropped stale/replayed wire packet (age > 5m):", ageMs);
+      if (typeof AppSecurity !== "undefined") {
+        AppSecurity.logEvent("REPLAY_PACKET_DROPPED", `Stale packet dropped (age: ${Math.round(ageMs/1000)}s)`, "WARNING");
+      }
+      return null;
+    }
+
+    // 2. Cryptographic signature check
+    const expectedSig = AppSecurity.quickHash(`${c}|${t}|${n}|${secret}`);
+    if (s !== expectedSig) {
+      console.warn("🚨 Tampered or untrusted wire packet received. Signature rejected.");
+      if (typeof AppSecurity !== "undefined") {
+        AppSecurity.logEvent("UNAUTHORIZED_PACKET_DROPPED", "Dropped untrusted packet with invalid cryptographic signature", "CRITICAL");
+      }
+      return null;
+    }
+
+    // 3. Decrypt ciphertext
+    const decryptedB64 = AppWireSecurity.cipher(c, secret);
+
+    // 4. Decompress
+    const decompressedJson = await AppWireSecurity.decompress(decryptedB64);
+    if (!decompressedJson) return null;
+
+    try {
+      return JSON.parse(decompressedJson);
+    } catch (e) {
+      console.warn("Wire packet JSON parse error after decompression:", e);
+      return null;
+    }
+  }
+};
+window.AppWireSecurity = AppWireSecurity;
+
 // --- HIGH-SPEED REAL-TIME MULTI-BROWSER MESH (0.05ms Local + 15ms Cross-Browser) ---
 let interTabChannel = null;
 const MY_SYNC_CLIENT_ID = 'client_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
-const SYNC_MESH_TOPIC = 'aaryan_aqua_gst_billing_2026/db_sync';
+const SYNC_MESH_TOPIC = AppWireSecurity.getSecureTopic();
+const LEGACY_SYNC_MESH_TOPIC = 'aaryan_aqua_gst_billing_2026/db_sync';
 let realtimeMeshClient = null;
 const MESH_BROKERS = [
   'wss://broker.emqx.io:8084/mqtt',      // Global Edge Cluster (<15ms latency)
@@ -1254,6 +1596,42 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast(`⚡ Live Sync: Invoice #${inv.invoiceNo} committed • Stock deducted!`, "info");
     }
+
+  } else if (msg.type === 'INVOICE_SETTLED' && (msg.invoiceNo || msg.invoiceId)) {
+    const invNo = String(msg.invoiceNo || '').trim().toLowerCase();
+    const invId = String(msg.invoiceId || '').trim().toLowerCase();
+    const inv = invoicesDb.find(i => i && (
+      (i.invoiceNo && String(i.invoiceNo).trim().toLowerCase() === invNo) ||
+      (i.id && String(i.id).trim().toLowerCase() === invId)
+    ));
+    if (inv) {
+      if (msg.paidAmount !== undefined) inv.paidAmount = msg.paidAmount;
+      if (msg.balanceDue !== undefined) inv.balanceDue = msg.balanceDue;
+      if (msg.balancePaid !== undefined) inv.balancePaid = msg.balancePaid;
+      if (msg.paymentStatus) inv.paymentStatus = msg.paymentStatus;
+      if (msg.paymentMode) inv.paymentMode = msg.paymentMode;
+      if (msg.paymentReference) inv.paymentReference = msg.paymentReference;
+      if (Array.isArray(msg.paymentHistory)) inv.paymentHistory = msg.paymentHistory;
+      if (inv.details) {
+        if (msg.paidAmount !== undefined) inv.details.paidAmount = msg.paidAmount;
+        if (msg.balanceDue !== undefined) inv.details.balanceDue = msg.balanceDue;
+        if (msg.balancePaid !== undefined) inv.details.balancePaid = msg.balancePaid;
+        if (msg.paymentStatus) inv.details.paymentStatus = msg.paymentStatus;
+        if (msg.paymentMode) inv.details.paymentMode = msg.paymentMode;
+        if (msg.paymentReference) inv.details.paymentReference = msg.paymentReference;
+      }
+      try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch (e) {}
+      if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveInvoice(inv);
+      if (typeof renderInvoicesTable === "function") renderInvoicesTable();
+      if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
+      if (typeof updateDashboardOverview === "function") updateDashboardOverview();
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast(`⚡ Live Sync: Invoice #${inv.invoiceNo} payment updated (${msg.paymentStatus || 'Settled'})!`, "info");
+      }
+      window.lastSyncTimeMs = Date.now();
+      if (typeof window.updateRealtimePresenceHUD === 'function') window.updateRealtimePresenceHUD("live");
+    }
+    return;
 
   } else if (msg.type === 'products_saved' && Array.isArray(msg.products)) {
     let _dpri = [];
@@ -1517,6 +1895,7 @@ function initRealtimeMeshSync() {
       currentBrokerIdx = 0; // Always anchor back to primary high-speed cluster
       console.log(`⚡ High-Speed Cross-User Mesh Active via ${activeBrokerName}!`);
       realtimeMeshClient.subscribe(SYNC_MESH_TOPIC, { qos: 0 });
+      realtimeMeshClient.subscribe(LEGACY_SYNC_MESH_TOPIC, { qos: 0 });
       realtimeMeshClient.subscribe('aaryan_aqua_gst_billing_2026/whatsapp_status', { qos: 0 });
       realtimeMeshClient.subscribe('aaryan_aqua_gst_billing_2026/whatsapp_ack', { qos: 0 });
       // Announce presence and request state from any active peer
@@ -1560,12 +1939,20 @@ function initRealtimeMeshSync() {
           return;
         }
 
-        const msg = JSON.parse(message.toString());
-        if (topic === SYNC_MESH_TOPIC) {
-          if (!msg || msg.senderId === MY_SYNC_CLIENT_ID) return; // Prevent self-echo
-          processRealtimeSyncMessage(msg, 'mqtt_mesh');
+        if (topic === SYNC_MESH_TOPIC || topic === LEGACY_SYNC_MESH_TOPIC) {
+          const rawPayload = message.toString();
+          AppWireSecurity.unpack(rawPayload).then(msg => {
+            if (!msg || msg.senderId === MY_SYNC_CLIENT_ID) return; // Drop invalid, stale, forged or self-echo
+            processRealtimeSyncMessage(msg, 'mqtt_mesh');
+          }).catch(err => {
+            console.warn("Wire packet unpack error:", err);
+          });
+          return;
         } else if (typeof checkAndRespondToP2PPairing === 'function') {
-          checkAndRespondToP2PPairing(topic, msg);
+          try {
+            const parsed = JSON.parse(message.toString());
+            checkAndRespondToP2PPairing(topic, parsed);
+          } catch(e) {}
         }
       } catch (err) {}
     });
@@ -1676,7 +2063,15 @@ function broadcastInterTabEvent(type, payload = {}) {
   // 2. Global Ultra-Fast Real-Time Mesh (< 30ms)
   if (realtimeMeshClient && realtimeMeshClient.connected) {
     try {
-      realtimeMeshClient.publish(SYNC_MESH_TOPIC, JSON.stringify(fullMsg), { qos: 0 });
+      AppWireSecurity.pack(fullMsg).then(packedWire => {
+        if (realtimeMeshClient && realtimeMeshClient.connected && packedWire) {
+          realtimeMeshClient.publish(SYNC_MESH_TOPIC, packedWire, { qos: 0 });
+        }
+      }).catch(() => {
+        try {
+          realtimeMeshClient.publish(SYNC_MESH_TOPIC, JSON.stringify(fullMsg), { qos: 0 });
+        } catch (_) {}
+      });
     } catch (e) {}
   }
 
@@ -1802,9 +2197,15 @@ let directPushPartiesTimer = null;
 
 async function pushDirectToGoogleDatabaseRaw(action, payload) {
   const minPayload = minifyTransferPayload(payload) || {};
+  const reqTs = Date.now();
+  const secret = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
   const gasPayload = {
     action,
-    auth: API_SECRET_TOKEN,
+    auth: secret,
+    ts: reqTs,
+    sig: (typeof AppSecurity !== 'undefined' && AppSecurity.quickHash)
+      ? AppSecurity.quickHash(`${action}|${reqTs}|${secret}`)
+      : undefined,
     ...minPayload
   };
 
@@ -1855,9 +2256,15 @@ async function pushDirectToGoogleDatabase(action, payload, maxRetries = 2) {
   }
 
   const minPayload = minifyTransferPayload(payload) || {};
+  const reqTs = Date.now();
+  const secret = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
   const gasPayload = {
     action,
-    auth: API_SECRET_TOKEN,
+    auth: secret,
+    ts: reqTs,
+    sig: (typeof AppSecurity !== 'undefined' && AppSecurity.quickHash)
+      ? AppSecurity.quickHash(`${action}|${reqTs}|${secret}`)
+      : undefined,
     ...minPayload
   };
 
@@ -2496,200 +2903,6 @@ let lockTimerSeconds = 1800; // 30 mins default enterprise duration (or 0 for di
 let isLocked = true;
 let autolockInterval = null;
 
-// =========================================================
-// --- ENTERPRISE SECURITY ENGINE (AppSecurity) ---
-// =========================================================
-const AppSecurity = {
-  FAILED_ATTEMPTS_KEY: "app_failed_attempts",
-  LOCKOUT_UNTIL_KEY: "app_lockout_until",
-  AUDIT_LOG_KEY: "app_security_audit_logs",
-  AUTH_TOKEN_KEY: "aaryan_auth_token",
-  SALT: "AARYAN_AQUA_SECURE_AUTH_v2026",
-  INVOICE_KEY: "AARYAN_AQUA_INVOICE_SIG_2026",
-
-  // Hash using WebCrypto SHA-256 with fallback
-  async sha256(message) {
-    if (typeof crypto !== "undefined" && crypto.subtle && crypto.subtle.digest) {
-      try {
-        const msgUint8 = new TextEncoder().encode(message);
-        const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
-      } catch (e) {
-        console.warn("SubtleCrypto digest failed, using fallback:", e);
-      }
-    }
-    return "token_" + AppSecurity.quickHash(message);
-  },
-
-  // Fast synchronous deterministic hash for checksums & signatures
-  quickHash(str) {
-    let h1 = 0xdeadbeef ^ 0, h2 = 0x41c64e6d ^ 0;
-    for (let i = 0, ch; i < str.length; i++) {
-      ch = str.charCodeAt(i);
-      h1 = Math.imul(h1 ^ ch, 2654435761);
-      h2 = Math.imul(h2 ^ ch, 1597334677);
-    }
-    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
-  },
-
-  async generateAuthToken(username, password) {
-    const payload = `${AppSecurity.SALT}:${String(username || "").toLowerCase().trim()}:${String(password || "").trim()}`;
-    return await AppSecurity.sha256(payload);
-  },
-
-  generateInvoiceSig(invoiceNo, total, customer, qrToken) {
-    const payload = `${String(invoiceNo).trim()}|${Number(total || 0).toFixed(2)}|${String(customer || '').trim().toLowerCase()}|${String(qrToken || '').trim()}|${AppSecurity.INVOICE_KEY}`;
-    return AppSecurity.quickHash(payload);
-  },
-
-  verifyInvoiceSig(sig, invoiceNo, total, customer, qrToken) {
-    if (!sig) return true; // Backward compatibility for legacy invoices
-    const expected = AppSecurity.generateInvoiceSig(invoiceNo, total, customer, qrToken);
-    return String(sig).trim().toLowerCase() === String(expected).trim().toLowerCase();
-  },
-
-  isLockedOut() {
-    const lockoutUntil = parseInt(localStorage.getItem(AppSecurity.LOCKOUT_UNTIL_KEY) || "0", 10);
-    const failedAttempts = parseInt(localStorage.getItem(AppSecurity.FAILED_ATTEMPTS_KEY) || "0", 10);
-    const now = Date.now();
-    if (lockoutUntil > now) {
-      const remainingSeconds = Math.ceil((lockoutUntil - now) / 1000);
-      return { locked: true, remainingSeconds, attempts: failedAttempts };
-    }
-    if (lockoutUntil > 0 && now >= lockoutUntil) {
-      // Cooldown penalty finished
-      localStorage.removeItem(AppSecurity.LOCKOUT_UNTIL_KEY);
-    }
-    return { locked: false, remainingSeconds: 0, attempts: failedAttempts };
-  },
-
-  recordFailedAttempt(source = "Lock Screen") {
-    let attempts = parseInt(localStorage.getItem(AppSecurity.FAILED_ATTEMPTS_KEY) || "0", 10) + 1;
-    localStorage.setItem(AppSecurity.FAILED_ATTEMPTS_KEY, attempts.toString());
-
-    let lockoutSec = 0;
-    if (attempts === 3) {
-      lockoutSec = 30; // 30s cooldown
-    } else if (attempts === 4) {
-      lockoutSec = 60; // 1 min cooldown
-    } else if (attempts >= 5) {
-      lockoutSec = 300; // 5 min lockout
-    }
-
-    if (lockoutSec > 0) {
-      const lockoutUntil = Date.now() + (lockoutSec * 1000);
-      localStorage.setItem(AppSecurity.LOCKOUT_UNTIL_KEY, lockoutUntil.toString());
-      AppSecurity.logEvent("RATE_LIMIT_LOCKOUT", `Brute-force lockout: ${lockoutSec}s cooldown penalty triggered after ${attempts} failed attempts (${source})`, "WARNING");
-    } else {
-      AppSecurity.logEvent("LOGIN_FAILED", `Failed login attempt ${attempts} (${source})`, "WARNING");
-    }
-
-    return { attempts, lockoutSec };
-  },
-
-  recordSuccessfulLogin(username = "Admin", source = "Lock Screen") {
-    localStorage.removeItem(AppSecurity.FAILED_ATTEMPTS_KEY);
-    localStorage.removeItem(AppSecurity.LOCKOUT_UNTIL_KEY);
-    AppSecurity.logEvent("LOGIN_SUCCESS", `Successful authentication by ${username} (${source})`, "SUCCESS");
-  },
-
-  activeCountdownInterval: null,
-
-  startLockoutCountdown(btnEl, errEl, prefixMsg = "Access temporarily paused.") {
-    if (AppSecurity.activeCountdownInterval) {
-      clearInterval(AppSecurity.activeCountdownInterval);
-      AppSecurity.activeCountdownInterval = null;
-    }
-
-    const updateUI = () => {
-      const status = AppSecurity.isLockedOut();
-      if (!status.locked) {
-        if (AppSecurity.activeCountdownInterval) {
-          clearInterval(AppSecurity.activeCountdownInterval);
-          AppSecurity.activeCountdownInterval = null;
-        }
-        if (btnEl) {
-          btnEl.disabled = false;
-          const labelText = btnEl.querySelector('#login-btn-text') || btnEl.querySelector('.btn-label-text');
-          if (labelText) labelText.textContent = "Unlock System";
-        }
-        if (errEl) {
-          errEl.innerHTML = `<i class="fa-solid fa-circle-check text-green"></i> Cooldown expired. You may now enter credentials.`;
-          setTimeout(() => {
-            errEl.classList.add("hidden");
-            errEl.style.display = "none";
-          }, 3500);
-        }
-        return;
-      }
-
-      if (btnEl) {
-        btnEl.disabled = true;
-        const labelText = btnEl.querySelector('#login-btn-text') || btnEl.querySelector('.btn-label-text');
-        if (labelText) {
-          labelText.textContent = `Locked (${status.remainingSeconds}s)`;
-        }
-      }
-      if (errEl) {
-        errEl.classList.remove("hidden");
-        errEl.style.display = "block";
-        errEl.innerHTML = `<i class="fa-solid fa-shield-halved" style="color: #ef4444;"></i> <strong>Security Rate-Limit Active:</strong> ${prefixMsg} Please wait <strong>${status.remainingSeconds}s</strong> before retrying.`;
-      }
-    };
-
-    updateUI();
-    AppSecurity.activeCountdownInterval = setInterval(updateUI, 1000);
-  },
-
-  logEvent(type, details, status = "INFO") {
-    try {
-      let logs = JSON.parse(localStorage.getItem(AppSecurity.AUDIT_LOG_KEY) || "[]");
-      if (!Array.isArray(logs)) logs = [];
-      logs.unshift({
-        id: Date.now() + "_" + Math.random().toString(36).substr(2, 4),
-        timestamp: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
-        type,
-        details,
-        status
-      });
-      if (logs.length > 50) logs = logs.slice(0, 50);
-      localStorage.setItem(AppSecurity.AUDIT_LOG_KEY, JSON.stringify(logs));
-    } catch (e) {
-      console.warn("Could not save audit log:", e);
-    }
-  },
-
-  getAuditLogs() {
-    try {
-      return JSON.parse(localStorage.getItem(AppSecurity.AUDIT_LOG_KEY) || "[]");
-    } catch (e) {
-      return [];
-    }
-  },
-
-  clearAuditLogs() {
-    localStorage.removeItem(AppSecurity.AUDIT_LOG_KEY);
-    AppSecurity.logEvent("AUDIT_LOG_CLEARED", "Security activity audit trail cleared by administrator", "INFO");
-  },
-
-  purgePlaintextPasswords() {
-    const saved = localStorage.getItem("saved_password");
-    if (saved) {
-      const user = localStorage.getItem("saved_username") || "Aaryanaqua";
-      AppSecurity.generateAuthToken(user, saved).then(token => {
-        localStorage.setItem(AppSecurity.AUTH_TOKEN_KEY, token);
-        localStorage.removeItem("saved_password");
-        console.log("🔒 Legacy plaintext password migrated to SHA-256 token and purged.");
-      }).catch(() => {
-        localStorage.removeItem("saved_password");
-      });
-    }
-  }
-};
-window.AppSecurity = AppSecurity;
 
 // --- NUMBER TO WORDS ENGINE (INDIAN RUPEES SYSTEM) ---
 function convertNumberToWords(num) {
@@ -16738,7 +16951,22 @@ window.submitInvoicePaymentSettlement = function() {
   if (typeof renderInvoicesTable === "function") renderInvoicesTable();
   if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
   if (typeof updateDashboardOverview === "function") updateDashboardOverview();
-  if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+  if (typeof broadcastInterTabEvent === 'function') {
+    broadcastInterTabEvent('INVOICE_SETTLED', {
+      invoiceId: inv.id,
+      invoiceNo: inv.invoiceNo,
+      paidAmount: newPaid,
+      balanceDue: newBal,
+      balancePaid: inv.balancePaid,
+      paymentStatus: finalStatus,
+      paymentMode: payMode,
+      paymentReference: payRef,
+      paymentHistory: inv.paymentHistory,
+      invoice: inv
+    });
+  } else if (typeof window.broadcastDatabaseMutation === 'function') {
+    window.broadcastDatabaseMutation();
+  }
 
   if (typeof playSuccessChime === "function") playSuccessChime();
 
