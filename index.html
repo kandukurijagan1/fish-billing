@@ -275,12 +275,12 @@
           <label for="login-password" id="login-auth-label">Master Password or 4-Digit PIN</label>
           <div class="input-icon-wrapper">
             <i class="fa-solid fa-lock input-icon"></i>
-            <input type="password" id="login-password" name="password" autocomplete="current-password" required placeholder="Enter password or PIN (e.g. 2024)">
-            <button type="button" class="btn-toggle-pwd" onclick="toggleLoginPasswordVisibility()">
+            <input type="password" id="login-password" name="password" autocomplete="current-password" required placeholder="Enter master password or PIN">
+            <button type="button" class="btn-toggle-pwd" onclick="toggleLoginPasswordVisibility()" title="Toggle password visibility">
               <i id="toggle-pwd-icon" class="fa-solid fa-eye"></i>
             </button>
           </div>
-          <span style="font-size: 10.5px; color: #64748b; margin-top: 3px; display: block;">Unlock using master password (<code>Aaryan@2024</code>) or quick cashier PIN</span>
+          <span style="font-size: 10.5px; color: #64748b; margin-top: 3px; display: block;">Authorized personnel only • Enter credentials to unlock</span>
         </div>
         
         <div class="remember-me-group" style="display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: flex-start !important; gap: 8px !important; margin: 10px 0 14px 0 !important; width: 100% !important; text-align: left !important;">
@@ -1996,11 +1996,11 @@
                   </div>
                   <div class="form-group col-4">
                     <label for="set-login-password"><i class="fa-solid fa-lock text-cyan"></i> Master Password</label>
-                    <input type="password" id="set-login-password" required placeholder="e.g. Aaryan@2024">
+                    <input type="password" id="set-login-password" required placeholder="Enter new master password">
                   </div>
                   <div class="form-group col-4">
                     <label for="set-security-pin"><i class="fa-solid fa-key text-teal"></i> Cashier PIN (4 Digits)</label>
-                    <input type="password" id="set-security-pin" maxlength="6" placeholder="e.g. 2024" value="2024">
+                    <input type="password" id="set-security-pin" maxlength="6" placeholder="Enter 4-digit PIN">
                     <span class="info-lbl">Quick unlock PIN for cashier desk</span>
                   </div>
 
@@ -2038,7 +2038,7 @@
 
                   <div class="form-group col-6">
                     <label for="set-wa-pin"><i class="fa-solid fa-key text-teal"></i> WhatsApp Security PIN (4 Digits)</label>
-                    <input type="password" id="set-wa-pin" maxlength="12" placeholder="e.g. 2024" value="2024">
+                    <input type="password" id="set-wa-pin" maxlength="12" placeholder="Enter 4-digit PIN">
                     <span class="info-lbl">Master password also accepted as fallback</span>
                   </div>
 
@@ -3441,7 +3441,7 @@
               <button type="button" onclick="hideModalAdminUnlockForm()" style="background: none; border: none; font-size: 14px; color: #64748b; cursor: pointer; padding: 0 4px;">✕</button>
             </div>
             <div style="display: flex; gap: 8px; align-items: center;">
-              <input type="password" id="modal-admin-pwd-input" class="form-control" placeholder="Aaryan@2024 or PIN 2024" style="font-size: 12.5px; padding: 8px 10px; border-radius: 8px; flex: 1; border: 1.5px solid #86efac; background: #ffffff;" onkeydown="if(event.key==='Enter') submitModalAdminUnlock();">
+              <input type="password" id="modal-admin-pwd-input" class="form-control" placeholder="Enter admin password or PIN" style="font-size: 12.5px; padding: 8px 10px; border-radius: 8px; flex: 1; border: 1.5px solid #86efac; background: #ffffff;" onkeydown="if(event.key==='Enter') submitModalAdminUnlock();">
               <button type="button" class="btn btn-success" onclick="submitModalAdminUnlock()" style="padding: 8px 14px; font-size: 12px; font-weight: 800; border-radius: 8px; white-space: nowrap; background: #16a34a; color: white; border: none; cursor: pointer; display: flex; align-items: center; gap: 5px;">
                 <i class="fa-solid fa-unlock"></i> Unlock &amp; Settle
               </button>
