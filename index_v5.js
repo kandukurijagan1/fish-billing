@@ -2496,6 +2496,201 @@ let lockTimerSeconds = 1800; // 30 mins default enterprise duration (or 0 for di
 let isLocked = true;
 let autolockInterval = null;
 
+// =========================================================
+// --- ENTERPRISE SECURITY ENGINE (AppSecurity) ---
+// =========================================================
+const AppSecurity = {
+  FAILED_ATTEMPTS_KEY: "app_failed_attempts",
+  LOCKOUT_UNTIL_KEY: "app_lockout_until",
+  AUDIT_LOG_KEY: "app_security_audit_logs",
+  AUTH_TOKEN_KEY: "aaryan_auth_token",
+  SALT: "AARYAN_AQUA_SECURE_AUTH_v2026",
+  INVOICE_KEY: "AARYAN_AQUA_INVOICE_SIG_2026",
+
+  // Hash using WebCrypto SHA-256 with fallback
+  async sha256(message) {
+    if (typeof crypto !== "undefined" && crypto.subtle && crypto.subtle.digest) {
+      try {
+        const msgUint8 = new TextEncoder().encode(message);
+        const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+      } catch (e) {
+        console.warn("SubtleCrypto digest failed, using fallback:", e);
+      }
+    }
+    return "token_" + AppSecurity.quickHash(message);
+  },
+
+  // Fast synchronous deterministic hash for checksums & signatures
+  quickHash(str) {
+    let h1 = 0xdeadbeef ^ 0, h2 = 0x41c64e6d ^ 0;
+    for (let i = 0, ch; i < str.length; i++) {
+      ch = str.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+  },
+
+  async generateAuthToken(username, password) {
+    const payload = `${AppSecurity.SALT}:${String(username || "").toLowerCase().trim()}:${String(password || "").trim()}`;
+    return await AppSecurity.sha256(payload);
+  },
+
+  generateInvoiceSig(invoiceNo, total, customer, qrToken) {
+    const payload = `${String(invoiceNo).trim()}|${Number(total || 0).toFixed(2)}|${String(customer || '').trim().toLowerCase()}|${String(qrToken || '').trim()}|${AppSecurity.INVOICE_KEY}`;
+    return AppSecurity.quickHash(payload);
+  },
+
+  verifyInvoiceSig(sig, invoiceNo, total, customer, qrToken) {
+    if (!sig) return true; // Backward compatibility for legacy invoices
+    const expected = AppSecurity.generateInvoiceSig(invoiceNo, total, customer, qrToken);
+    return String(sig).trim().toLowerCase() === String(expected).trim().toLowerCase();
+  },
+
+  isLockedOut() {
+    const lockoutUntil = parseInt(localStorage.getItem(AppSecurity.LOCKOUT_UNTIL_KEY) || "0", 10);
+    const failedAttempts = parseInt(localStorage.getItem(AppSecurity.FAILED_ATTEMPTS_KEY) || "0", 10);
+    const now = Date.now();
+    if (lockoutUntil > now) {
+      const remainingSeconds = Math.ceil((lockoutUntil - now) / 1000);
+      return { locked: true, remainingSeconds, attempts: failedAttempts };
+    }
+    if (lockoutUntil > 0 && now >= lockoutUntil) {
+      // Cooldown penalty finished
+      localStorage.removeItem(AppSecurity.LOCKOUT_UNTIL_KEY);
+    }
+    return { locked: false, remainingSeconds: 0, attempts: failedAttempts };
+  },
+
+  recordFailedAttempt(source = "Lock Screen") {
+    let attempts = parseInt(localStorage.getItem(AppSecurity.FAILED_ATTEMPTS_KEY) || "0", 10) + 1;
+    localStorage.setItem(AppSecurity.FAILED_ATTEMPTS_KEY, attempts.toString());
+
+    let lockoutSec = 0;
+    if (attempts === 3) {
+      lockoutSec = 30; // 30s cooldown
+    } else if (attempts === 4) {
+      lockoutSec = 60; // 1 min cooldown
+    } else if (attempts >= 5) {
+      lockoutSec = 300; // 5 min lockout
+    }
+
+    if (lockoutSec > 0) {
+      const lockoutUntil = Date.now() + (lockoutSec * 1000);
+      localStorage.setItem(AppSecurity.LOCKOUT_UNTIL_KEY, lockoutUntil.toString());
+      AppSecurity.logEvent("RATE_LIMIT_LOCKOUT", `Brute-force lockout: ${lockoutSec}s cooldown penalty triggered after ${attempts} failed attempts (${source})`, "WARNING");
+    } else {
+      AppSecurity.logEvent("LOGIN_FAILED", `Failed login attempt ${attempts} (${source})`, "WARNING");
+    }
+
+    return { attempts, lockoutSec };
+  },
+
+  recordSuccessfulLogin(username = "Admin", source = "Lock Screen") {
+    localStorage.removeItem(AppSecurity.FAILED_ATTEMPTS_KEY);
+    localStorage.removeItem(AppSecurity.LOCKOUT_UNTIL_KEY);
+    AppSecurity.logEvent("LOGIN_SUCCESS", `Successful authentication by ${username} (${source})`, "SUCCESS");
+  },
+
+  activeCountdownInterval: null,
+
+  startLockoutCountdown(btnEl, errEl, prefixMsg = "Access temporarily paused.") {
+    if (AppSecurity.activeCountdownInterval) {
+      clearInterval(AppSecurity.activeCountdownInterval);
+      AppSecurity.activeCountdownInterval = null;
+    }
+
+    const updateUI = () => {
+      const status = AppSecurity.isLockedOut();
+      if (!status.locked) {
+        if (AppSecurity.activeCountdownInterval) {
+          clearInterval(AppSecurity.activeCountdownInterval);
+          AppSecurity.activeCountdownInterval = null;
+        }
+        if (btnEl) {
+          btnEl.disabled = false;
+          const labelText = btnEl.querySelector('#login-btn-text') || btnEl.querySelector('.btn-label-text');
+          if (labelText) labelText.textContent = "Unlock System";
+        }
+        if (errEl) {
+          errEl.innerHTML = `<i class="fa-solid fa-circle-check text-green"></i> Cooldown expired. You may now enter credentials.`;
+          setTimeout(() => {
+            errEl.classList.add("hidden");
+            errEl.style.display = "none";
+          }, 3500);
+        }
+        return;
+      }
+
+      if (btnEl) {
+        btnEl.disabled = true;
+        const labelText = btnEl.querySelector('#login-btn-text') || btnEl.querySelector('.btn-label-text');
+        if (labelText) {
+          labelText.textContent = `Locked (${status.remainingSeconds}s)`;
+        }
+      }
+      if (errEl) {
+        errEl.classList.remove("hidden");
+        errEl.style.display = "block";
+        errEl.innerHTML = `<i class="fa-solid fa-shield-halved" style="color: #ef4444;"></i> <strong>Security Rate-Limit Active:</strong> ${prefixMsg} Please wait <strong>${status.remainingSeconds}s</strong> before retrying.`;
+      }
+    };
+
+    updateUI();
+    AppSecurity.activeCountdownInterval = setInterval(updateUI, 1000);
+  },
+
+  logEvent(type, details, status = "INFO") {
+    try {
+      let logs = JSON.parse(localStorage.getItem(AppSecurity.AUDIT_LOG_KEY) || "[]");
+      if (!Array.isArray(logs)) logs = [];
+      logs.unshift({
+        id: Date.now() + "_" + Math.random().toString(36).substr(2, 4),
+        timestamp: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+        type,
+        details,
+        status
+      });
+      if (logs.length > 50) logs = logs.slice(0, 50);
+      localStorage.setItem(AppSecurity.AUDIT_LOG_KEY, JSON.stringify(logs));
+    } catch (e) {
+      console.warn("Could not save audit log:", e);
+    }
+  },
+
+  getAuditLogs() {
+    try {
+      return JSON.parse(localStorage.getItem(AppSecurity.AUDIT_LOG_KEY) || "[]");
+    } catch (e) {
+      return [];
+    }
+  },
+
+  clearAuditLogs() {
+    localStorage.removeItem(AppSecurity.AUDIT_LOG_KEY);
+    AppSecurity.logEvent("AUDIT_LOG_CLEARED", "Security activity audit trail cleared by administrator", "INFO");
+  },
+
+  purgePlaintextPasswords() {
+    const saved = localStorage.getItem("saved_password");
+    if (saved) {
+      const user = localStorage.getItem("saved_username") || "Aaryanaqua";
+      AppSecurity.generateAuthToken(user, saved).then(token => {
+        localStorage.setItem(AppSecurity.AUTH_TOKEN_KEY, token);
+        localStorage.removeItem("saved_password");
+        console.log("🔒 Legacy plaintext password migrated to SHA-256 token and purged.");
+      }).catch(() => {
+        localStorage.removeItem("saved_password");
+      });
+    }
+  }
+};
+window.AppSecurity = AppSecurity;
+
 // --- NUMBER TO WORDS ENGINE (INDIAN RUPEES SYSTEM) ---
 function convertNumberToWords(num) {
   if (num === 0) return 'Zero';
@@ -2844,12 +3039,22 @@ function initializeApp() {
   const hasAppAuth = localStorage.getItem("app_authenticated") === "true";
   const rememberMe = localStorage.getItem("remember_me") === "true";
   const savedPwd = localStorage.getItem("saved_password") || "";
+  const authToken = localStorage.getItem(AppSecurity.AUTH_TOKEN_KEY) || "";
   const lastActive = parseInt(localStorage.getItem("last_active_time") || "0", 10);
   const lockTimeout = lockTimerSeconds > 0 ? (lockTimerSeconds * 1000) : 0;
   const isTimedOut = lockTimeout > 0 && lastActive > 0 && (Date.now() - lastActive > lockTimeout);
 
+  // Auto-migrate legacy cleartext saved_password to cryptographic SHA-256 token
+  if (savedPwd) {
+    AppSecurity.purgePlaintextPasswords();
+  }
+
+  // Check rate limit lockout state
+  const lockoutStatus = AppSecurity.isLockedOut();
+
   // Determine if session can remain seamlessly active
-  const canStayUnlocked = !isManuallyLocked && !isTimedOut && (hasSessionAuth || (rememberMe && savedPwd && hasAppAuth));
+  const hasValidAuthToken = !!(authToken || savedPwd);
+  const canStayUnlocked = !isManuallyLocked && !lockoutStatus.locked && !isTimedOut && (hasSessionAuth || (rememberMe && hasValidAuthToken && hasAppAuth));
 
   if (canStayUnlocked) {
     unlockSystemSilently();
@@ -2865,7 +3070,7 @@ function initializeApp() {
     const wrapper = document.querySelector('.dashboard-wrapper');
     if (wrapper) wrapper.classList.add("blur-dashboard-wrapper");
 
-    // Setup login form credentials
+    // Setup login form credentials & check lockout
     autofillRememberedCredentials();
   }
 
@@ -2873,6 +3078,25 @@ function initializeApp() {
   resetAutolockTimer();
   ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel'].forEach(evt => {
     document.addEventListener(evt, resetAutolockTimer, { passive: true, capture: true });
+  });
+
+  // Background Tab Inactivity Auto-Lock (visibilitychange listener)
+  document.addEventListener("visibilitychange", function() {
+    if (document.hidden) {
+      localStorage.setItem("tab_hidden_timestamp", Date.now().toString());
+    } else {
+      const hiddenTimeStr = localStorage.getItem("tab_hidden_timestamp");
+      if (hiddenTimeStr) {
+        const hiddenTime = parseInt(hiddenTimeStr, 10);
+        const elapsedSec = (Date.now() - hiddenTime) / 1000;
+        const lockThreshold = (typeof lockTimerSeconds !== "undefined" && lockTimerSeconds > 0) ? lockTimerSeconds : 120;
+        if (lockThreshold > 0 && elapsedSec >= lockThreshold && !isLocked) {
+          AppSecurity.logEvent("BACKGROUND_AUTOLOCK", `App locked after ${Math.round(elapsedSec)}s inactive in background tab`, "INFO");
+          triggerLockOverlay();
+        }
+        localStorage.removeItem("tab_hidden_timestamp");
+      }
+    }
   });
 
   // Default suggestions
@@ -12979,6 +13203,9 @@ function loadSettingsFields() {
   elements.setBUpi.value = globalSettings.upiId || "";
 
   elements.setBTerms.value = (globalSettings.terms || []).join("\n");
+  if (typeof renderSecurityAuditTrail === "function") {
+    renderSecurityAuditTrail();
+  }
 }
 
 window.saveTelegramSettings = function(e) {
@@ -13199,7 +13426,7 @@ window.sendTelegramModalTestPing = async function(btnEl) {
   }
 };
 
-window.saveSecuritySettings = function(e) {
+window.saveSecuritySettings = async function(e) {
   e.preventDefault();
   const autolock = elements.setAutolockTimer.value;
   const username = elements.setLoginUsername.value.trim();
@@ -13230,9 +13457,25 @@ window.saveSecuritySettings = function(e) {
 
   localStorage.setItem("settings", JSON.stringify(globalSettings));
   syncDatabaseToServer("settings", globalSettings);
+
+  // If credentials remembered, update SHA-256 token and ensure plaintext is purged
+  if (localStorage.getItem("remember_me") === "true") {
+    try {
+      const newToken = await AppSecurity.generateAuthToken(username, password);
+      localStorage.setItem(AppSecurity.AUTH_TOKEN_KEY, newToken);
+      localStorage.setItem("saved_username", username);
+    } catch (_) {}
+  }
+  localStorage.removeItem("saved_password");
+
+  AppSecurity.logEvent("PASSWORD_CHANGED", `Security settings and master password updated by administrator (${username})`, "INFO");
+
   showFloatingToast("✅ Login credentials and security settings saved successfully!", 4000);
   loadAllDatabases();
   resetAutolockTimer();
+  if (typeof renderSecurityAuditTrail === "function") {
+    renderSecurityAuditTrail();
+  }
 };
 
 window.saveGlobalSettingsDefaults = function(e) {
@@ -13351,21 +13594,35 @@ window.autofillRememberedCredentials = function() {
 
   const remembered = localStorage.getItem("remember_me") === "true";
   const savedUser = localStorage.getItem("saved_username") || "Aaryanaqua";
-  const savedPwd = localStorage.getItem("saved_password") || "";
+
+  // Purge any legacy plaintext passwords
+  AppSecurity.purgePlaintextPasswords();
 
   if (userField) {
     userField.value = savedUser;
   }
-  if (pwdField) {
-    pwdField.value = remembered ? savedPwd : "";
-  }
   if (rememberBox) {
     rememberBox.checked = remembered;
+  }
+  if (pwdField) {
+    pwdField.value = "";
+    if (remembered && localStorage.getItem(AppSecurity.AUTH_TOKEN_KEY)) {
+      pwdField.placeholder = "Enter password or PIN to unlock";
+    }
+  }
+
+  // If lockout is currently active, immediately start live countdown on lock screen
+  const lockStatus = AppSecurity.isLockedOut();
+  if (lockStatus.locked) {
+    const submitBtn = document.querySelector(".btn-login-submit");
+    const errBlock = document.getElementById("login-error-message");
+    AppSecurity.startLockoutCountdown(submitBtn, errBlock);
   }
 };
 
 window.triggerManualLock = function() {
   triggerLockOverlay();
+  AppSecurity.logEvent("MANUAL_LOCK", "Screen locked manually by user", "INFO");
   if (typeof showFloatingToast === 'function') {
     showFloatingToast("🔒 Screen locked securely.", 2500);
   }
@@ -13407,6 +13664,13 @@ function triggerLockOverlay() {
   if (wrapper) wrapper.classList.add("blur-dashboard-wrapper");
   const overlay = document.getElementById("lock-screen-overlay");
   if (overlay) overlay.classList.remove("hidden");
+
+  // Check rate limit status upon lock
+  const lockStatus = AppSecurity.isLockedOut();
+  if (lockStatus.locked) {
+    const submitBtn = document.querySelector(".btn-login-submit");
+    AppSecurity.startLockoutCountdown(submitBtn, errBlock);
+  }
 }
 
 window.toggleLoginPasswordVisibility = function() {
@@ -13435,7 +13699,7 @@ window.toggleAdvancedSettings = function() {
   }
 };
 
-window.submitUnlockLogin = function(e) {
+window.submitUnlockLogin = async function(e) {
   if (e && e.preventDefault) e.preventDefault();
   
   const userField = document.getElementById("login-username");
@@ -13448,6 +13712,13 @@ window.submitUnlockLogin = function(e) {
   const submitBtn = document.querySelector(".btn-login-submit");
   const errBlock = document.getElementById("login-error-message");
   const rememberBox = document.getElementById("login-remember-me");
+
+  // Check rate limit lockout first
+  const currentLock = AppSecurity.isLockedOut();
+  if (currentLock.locked) {
+    AppSecurity.startLockoutCountdown(submitBtn, errBlock);
+    return;
+  }
   
   if (!userText || !pwdText) {
     if (errBlock) {
@@ -13483,16 +13754,35 @@ window.submitUnlockLogin = function(e) {
     (customPin && pwdText === customPin)
   );
 
-  setTimeout(() => {
-    if (isUserMatch && isPwdMatch) {
+  // Also verify against stored SHA-256 token if present
+  let isTokenMatch = false;
+  const storedToken = localStorage.getItem(AppSecurity.AUTH_TOKEN_KEY);
+  if (storedToken && isUserMatch) {
+    try {
+      const candidateToken = await AppSecurity.generateAuthToken(userText, pwdText);
+      if (candidateToken === storedToken) isTokenMatch = true;
+    } catch (_) {}
+  }
+
+  const isAuthSuccess = isUserMatch && (isPwdMatch || isTokenMatch);
+
+  setTimeout(async () => {
+    if (isAuthSuccess) {
+      AppSecurity.recordSuccessfulLogin(userText, "Lock Screen");
+
       if (rememberBox && rememberBox.checked) {
         localStorage.setItem("remember_me", "true");
         localStorage.setItem("saved_username", userText);
-        localStorage.setItem("saved_password", pwdText);
+        try {
+          const authToken = await AppSecurity.generateAuthToken(userText, pwdText);
+          localStorage.setItem(AppSecurity.AUTH_TOKEN_KEY, authToken);
+        } catch (_) {}
+        localStorage.removeItem("saved_password"); // Ensure cleartext is purged!
       } else {
         localStorage.removeItem("remember_me");
         localStorage.removeItem("saved_username");
         localStorage.removeItem("saved_password");
+        localStorage.removeItem(AppSecurity.AUTH_TOKEN_KEY);
       }
 
       unlockSystemSilently();
@@ -13500,20 +13790,124 @@ window.submitUnlockLogin = function(e) {
         showFloatingToast("🔓 Welcome back! System unlocked successfully.", 3000);
       }
     } else {
-      if (errBlock) {
-        errBlock.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Invalid credentials! (Default: Aaryan@2024 or PIN 2024)';
-        errBlock.classList.remove("hidden");
-      }
-      if (pwdField) {
-        pwdField.value = "";
-        pwdField.focus();
+      const penalty = AppSecurity.recordFailedAttempt("Lock Screen");
+      if (penalty.lockoutSec > 0) {
+        AppSecurity.startLockoutCountdown(submitBtn, errBlock);
+      } else {
+        const attemptsLeft = 3 - (penalty.attempts % 3);
+        if (errBlock) {
+          errBlock.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Invalid credentials! (Attempt ${penalty.attempts} — ${attemptsLeft} left before cooldown)`;
+          errBlock.classList.remove("hidden");
+        }
+        if (pwdField) {
+          pwdField.value = "";
+          pwdField.focus();
+        }
       }
     }
 
-    if (submitBtn) submitBtn.disabled = false;
+    const postCheck = AppSecurity.isLockedOut();
+    if (!postCheck.locked && submitBtn) {
+      submitBtn.disabled = false;
+    }
     if (btnText) btnText.classList.remove("hidden");
     if (btnSpinner) btnSpinner.classList.add("hidden");
   }, 180);
+};
+
+// --- ENTERPRISE EMERGENCY LOCKDOWN & SECURITY AUDIT TRAIL ---
+window.triggerEmergencyLockdown = function() {
+  if (!confirm("🚨 MASTER EMERGENCY LOCKDOWN:\n\nAre you sure you want to immediately lock the system and revoke all active session tokens on this device?")) {
+    return;
+  }
+
+  // Revoke all tokens & sessions
+  sessionStorage.clear();
+  localStorage.removeItem("session_authenticated");
+  localStorage.removeItem("app_authenticated");
+  localStorage.removeItem(AppSecurity.AUTH_TOKEN_KEY);
+  localStorage.removeItem("saved_password");
+  localStorage.removeItem("remember_me");
+  localStorage.setItem("app_locked", "true");
+
+  AppSecurity.logEvent("EMERGENCY_LOCKDOWN", "Master Emergency Lockdown triggered by administrator. All sessions invalidated.", "CRITICAL");
+
+  // Lock WhatsApp session
+  if (typeof lockWhatsAppSession === "function") {
+    lockWhatsAppSession(false);
+  }
+
+  // Close modals
+  const vModal = document.getElementById("invoice-verification-modal");
+  if (vModal) vModal.classList.add("hidden");
+
+  // Trigger visual lock
+  triggerLockOverlay();
+  
+  if (typeof showFloatingToast === "function") {
+    showFloatingToast("🚨 Master Emergency Lockdown Activated! All sessions revoked.", "danger", 5000);
+  }
+};
+
+window.renderSecurityAuditTrail = function() {
+  const container = document.getElementById("security-audit-trail-list");
+  if (!container) return;
+
+  const logs = AppSecurity.getAuditLogs();
+  if (!logs || logs.length === 0) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 18px; color: #94a3b8; font-size: 11.5px;">
+        <i class="fa-solid fa-shield-halved" style="font-size: 22px; margin-bottom: 6px; opacity: 0.35;"></i>
+        <p style="margin: 0;">No security incidents or audit events recorded yet.</p>
+      </div>
+    `;
+    return;
+  }
+
+  let html = `<div style="display: flex; flex-direction: column; gap: 7px; max-height: 240px; overflow-y: auto; padding-right: 4px;">`;
+  logs.slice(0, 25).forEach(log => {
+    let badgeColor = "#0284c7";
+    let badgeBg = "#e0f2fe";
+    let icon = "fa-circle-info";
+
+    if (log.status === "SUCCESS") {
+      badgeColor = "#16a34a";
+      badgeBg = "#dcfce7";
+      icon = "fa-circle-check";
+    } else if (log.status === "WARNING") {
+      badgeColor = "#ea580c";
+      badgeBg = "#ffedd5";
+      icon = "fa-triangle-exclamation";
+    } else if (log.status === "CRITICAL") {
+      badgeColor = "#dc2626";
+      badgeBg = "#fee2e2";
+      icon = "fa-shield-virus";
+    }
+
+    html += `
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; padding: 7px 10px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 7px; font-size: 11px;">
+        <div style="display: flex; gap: 7px; align-items: flex-start; overflow: hidden;">
+          <span style="background: ${badgeBg}; color: ${badgeColor}; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 9.5px; display: inline-flex; align-items: center; gap: 3px; white-space: nowrap;">
+            <i class="fa-solid ${icon}"></i> ${log.type}
+          </span>
+          <span style="color: #334155; line-height: 1.35; word-break: break-word;">${log.details}</span>
+        </div>
+        <span style="color: #94a3b8; font-size: 9.5px; white-space: nowrap; margin-left: 8px;">${log.timestamp}</span>
+      </div>
+    `;
+  });
+  html += `</div>`;
+  container.innerHTML = html;
+};
+
+window.clearSecurityAuditTrail = function() {
+  if (confirm("Clear all security audit logs from this device?")) {
+    AppSecurity.clearAuditLogs();
+    renderSecurityAuditTrail();
+    if (typeof showFloatingToast === "function") {
+      showFloatingToast("Audit logs cleared successfully.", "info");
+    }
+  }
 };
 
 // --- UPLOAD INVOICE PDF TO TELEGRAM BOT API ---
@@ -15596,6 +15990,10 @@ window.getInvoiceVerificationUrl = function(invoiceNo, invoiceObj = null) {
     if (invId) url += `&id=${encodeURIComponent(invId)}`;
     if (qrToken) url += `&token=${encodeURIComponent(qrToken)}`;
     url += `&cust=${encodeURIComponent(cust)}&ph=${encodeURIComponent(phone)}&tot=${total}&paid=${paid}&bal=${bal}&dt=${encodeURIComponent(dt)}`;
+    if (typeof AppSecurity !== "undefined" && AppSecurity.generateInvoiceSig) {
+      const sig = AppSecurity.generateInvoiceSig(cleanNo, total, cust, qrToken);
+      url += `&sig=${encodeURIComponent(sig)}`;
+    }
   }
   return url;
 };
@@ -15619,6 +16017,7 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
   const qToken = String(urlParams.get("token") || urlParams.get("qrToken") || urlParams.get("uid") || "").trim();
   const qCust = String(urlParams.get("cust") || "").trim();
   const qTot = parseFloat(urlParams.get("tot")) || 0;
+  const qSig = String(urlParams.get("sig") || "").trim();
 
   window.currentVerifiedInvoiceNo = cleanNo;
   window.currentVerifiedInvoiceId = qId || null;
@@ -15892,6 +16291,21 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
   const paidAmt = payInfo.paid;
   const balDue = payInfo.balance;
 
+  // Cryptographic signature check for scanned URL
+  if (qSig && inv && typeof AppSecurity !== "undefined" && AppSecurity.verifyInvoiceSig) {
+    const invTot = inv.total || (inv.details && inv.details.total) || totalAmt;
+    const invCust = inv.buyerName || (inv.details && (inv.details.consignee?.name || inv.details.buyer?.name)) || custName;
+    const invTok = inv.qrToken || (inv.details && inv.details.qrToken) || qToken;
+    const isSigValid = AppSecurity.verifyInvoiceSig(qSig, invNo, invTot, invCust, invTok);
+    if (!isSigValid) {
+      console.warn("⚠️ Invoice URL cryptographic checksum mismatch. Using authoritative database record.");
+      AppSecurity.logEvent("SIGNATURE_MISMATCH", `Scanned QR signature mismatch for Invoice #${invNo}. Displaying authoritative database record.`, "WARNING");
+      if (typeof showFloatingToast === "function") {
+        showFloatingToast("🛡️ Notice: Scanned URL checksum differed from authoritative database record. Displaying official copy.", "warning", 5000);
+      }
+    }
+  }
+
   const invNoEl = document.getElementById("verify-inv-no");
   if (invNoEl) invNoEl.textContent = `#${invNo}`;
   const invDateEl = document.getElementById("verify-inv-date");
@@ -16065,12 +16479,14 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
   const adminGatePrompt = document.getElementById("verify-admin-gate-prompt");
   const adminUnlockForm = document.getElementById("verify-admin-unlock-form");
   const footerStatus = document.getElementById("verify-footer-status");
+  const discreetLockBtn = document.getElementById("verify-admin-discreet-lock-btn");
 
   if (balDue > 0.01) {
     if (isAdminLoggedIn) {
       if (adminSettleControls) adminSettleControls.style.display = "block";
       if (adminGatePrompt) adminGatePrompt.style.display = "none";
       if (adminUnlockForm) adminUnlockForm.style.display = "none";
+      if (discreetLockBtn) discreetLockBtn.style.display = "none";
       if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-shield-halved text-green"></i> Store Admin Settle Active`;
 
       const payStatusSelect = document.getElementById("verify-pay-status-select");
@@ -16082,15 +16498,18 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
       const doneBtn = document.getElementById("verify-done-pay-btn");
       if (doneBtn) doneBtn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Settle Balance (₹ ${formatCurrency(balDue)}) & Update Database`;
     } else {
+      // 100% clean public view for customer scans - admin prompt hidden
       if (adminSettleControls) adminSettleControls.style.display = "none";
-      if (adminGatePrompt) adminGatePrompt.style.display = "flex";
+      if (adminGatePrompt) adminGatePrompt.style.display = "none";
       if (adminUnlockForm) adminUnlockForm.style.display = "none";
-      if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-lock"></i> Protected Official Registry`;
+      if (discreetLockBtn) discreetLockBtn.style.display = "inline-flex";
+      if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-shield-halved" style="color: #0284c7;"></i> Authenticated Official Registry`;
     }
   } else {
     if (adminSettleControls) adminSettleControls.style.display = "none";
     if (adminGatePrompt) adminGatePrompt.style.display = "none";
     if (adminUnlockForm) adminUnlockForm.style.display = "none";
+    if (discreetLockBtn) discreetLockBtn.style.display = "none";
     if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-circle-check text-green"></i> Verified &amp; Settled`;
   }
 
@@ -16102,9 +16521,11 @@ window.showModalAdminUnlockForm = function() {
   const promptEl = document.getElementById("verify-admin-gate-prompt");
   const formEl = document.getElementById("verify-admin-unlock-form");
   const errEl = document.getElementById("modal-admin-pwd-error");
+  const lockBtn = document.getElementById("verify-admin-discreet-lock-btn");
   if (promptEl) promptEl.style.display = "none";
   if (formEl) formEl.style.display = "block";
   if (errEl) errEl.style.display = "none";
+  if (lockBtn) lockBtn.style.display = "none";
   const pwdInput = document.getElementById("modal-admin-pwd-input");
   if (pwdInput) {
     pwdInput.value = "";
@@ -16115,14 +16536,27 @@ window.showModalAdminUnlockForm = function() {
 window.hideModalAdminUnlockForm = function() {
   const promptEl = document.getElementById("verify-admin-gate-prompt");
   const formEl = document.getElementById("verify-admin-unlock-form");
+  const lockBtn = document.getElementById("verify-admin-discreet-lock-btn");
   if (formEl) formEl.style.display = "none";
-  if (promptEl) promptEl.style.display = "flex";
+  if (lockBtn) lockBtn.style.display = "inline-flex";
 };
 
-window.submitModalAdminUnlock = function() {
+window.submitModalAdminUnlock = async function() {
   const pwdInput = document.getElementById("modal-admin-pwd-input");
   const errEl = document.getElementById("modal-admin-pwd-error");
+  const unlockBtn = document.querySelector("#verify-admin-unlock-form .btn-success");
   const enteredVal = (pwdInput?.value || "").trim();
+
+  // Check rate limit lockout first
+  const currentLock = AppSecurity.isLockedOut();
+  if (currentLock.locked) {
+    if (errEl) {
+      errEl.textContent = `❌ Security cooldown active: Try again in ${currentLock.remainingSeconds}s.`;
+      errEl.style.display = "block";
+    }
+    if (unlockBtn) unlockBtn.disabled = true;
+    return;
+  }
 
   if (!enteredVal) {
     if (errEl) {
@@ -16145,6 +16579,7 @@ window.submitModalAdminUnlock = function() {
   );
 
   if (isMatch) {
+    AppSecurity.recordSuccessfulLogin("Store Owner", "Invoice Verification Modal");
     unlockSystemSilently();
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("🔓 Admin authenticated! Settlement mode unlocked.", "success", 3000);
@@ -16153,9 +16588,23 @@ window.submitModalAdminUnlock = function() {
       openInvoiceVerificationModal(window.currentVerifiedInvoiceNo);
     }
   } else {
-    if (errEl) {
-      errEl.textContent = "❌ Invalid password or PIN. (Default: Aaryan@2024 or 2024)";
-      errEl.style.display = "block";
+    const penalty = AppSecurity.recordFailedAttempt("Invoice Verification Modal");
+    if (penalty.lockoutSec > 0) {
+      if (errEl) {
+        errEl.textContent = `🚨 Rate-limit activated! ${penalty.lockoutSec}s cooldown penalty.`;
+        errEl.style.display = "block";
+      }
+      if (unlockBtn) unlockBtn.disabled = true;
+      setTimeout(() => {
+        const s = AppSecurity.isLockedOut();
+        if (!s.locked && unlockBtn) unlockBtn.disabled = false;
+      }, penalty.lockoutSec * 1000);
+    } else {
+      const left = 3 - (penalty.attempts % 3);
+      if (errEl) {
+        errEl.textContent = `❌ Invalid password or PIN. (Attempt ${penalty.attempts} — ${left} left before cooldown)`;
+        errEl.style.display = "block";
+      }
     }
     if (pwdInput) {
       pwdInput.value = "";

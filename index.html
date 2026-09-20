@@ -58,7 +58,7 @@
   <script>
     if ('serviceWorker' in navigator && (window.location.protocol.startsWith('http') || window.location.protocol === 'file:')) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('./sw.js?v=416_native_pwa_standalone_app')
+        navigator.serviceWorker.register('./sw.js?v=418_enterprise_security_hardened')
           .then(function(reg) {
             console.log('[PWA] Service Worker active, scope:', reg.scope);
           })
@@ -68,7 +68,7 @@
       });
     }
     // Build Version Enforcement
-    window.__APP_BUILD_VERSION__ = "v417_lock_system_bulletproof";
+    window.__APP_BUILD_VERSION__ = "v418_enterprise_security_hardened";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -80,8 +80,8 @@
     } catch (e) {}
   </script>
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=417_lock_system_bulletproof">
-  <script src="invoice_utils_v5.js?v=417_lock_system_bulletproof"></script>
+  <link rel="stylesheet" href="index.css?v=418_enterprise_security_hardened">
+  <script src="invoice_utils_v5.js?v=418_enterprise_security_hardened"></script>
 </head>
 <body>
   <!-- HIGH-END LOGIN / LOCK SCREEN OVERLAY (Enforced by default for security) -->
@@ -1864,6 +1864,47 @@
                     </button>
                   </div>
 
+                  <!-- Enterprise Security Hardening & Live Audit Activity Trail -->
+                  <div class="col-12" style="border-top: 1.5px solid #e2e8f0; margin-top: 18px; padding-top: 16px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                      <h4 style="margin: 0; font-size: 13px; color: #0f172a; display: flex; align-items: center; gap: 7px; font-weight: 800;">
+                        <i class="fa-solid fa-shield-halved text-cyan" style="font-size: 15px;"></i> Security Audit Trail &amp; Incidents
+                      </h4>
+                      <button type="button" class="btn btn-xs btn-secondary" onclick="renderSecurityAuditTrail()" style="padding: 3px 9px; font-size: 10.5px; border-radius: 5px;">
+                        <i class="fa-solid fa-arrows-rotate"></i> Refresh
+                      </button>
+                    </div>
+
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 9px; padding: 10px; margin-bottom: 12px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <span style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em;">
+                          Recent Device Access Logs
+                        </span>
+                        <button type="button" onclick="clearSecurityAuditTrail()" style="background: none; border: none; font-size: 10.5px; color: #94a3b8; cursor: pointer; text-decoration: underline;">
+                          Clear
+                        </button>
+                      </div>
+                      <div id="security-audit-trail-list">
+                        <!-- Populated dynamically by renderSecurityAuditTrail() -->
+                      </div>
+                    </div>
+
+                    <!-- Master Emergency Lockdown Banner -->
+                    <div style="background: #fef2f2; border: 1.5px solid #fecaca; border-radius: 9px; padding: 11px 13px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                      <div>
+                        <div style="font-size: 12px; font-weight: 800; color: #991b1b; display: flex; align-items: center; gap: 5px;">
+                          <i class="fa-solid fa-triangle-exclamation" style="color: #dc2626;"></i> Master Emergency Lockdown
+                        </div>
+                        <div style="font-size: 10.5px; color: #b91c1c; margin-top: 2px;">
+                          Instantly revokes session tokens, clears credentials, and locks application screen immediately.
+                        </div>
+                      </div>
+                      <button type="button" class="btn btn-xs btn-danger" onclick="triggerEmergencyLockdown()" style="padding: 7px 12px; font-size: 11px; font-weight: 800; white-space: nowrap; background: #dc2626; border: none; border-radius: 7px; color: white; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                        <i class="fa-solid fa-lock"></i> Lockdown
+                      </button>
+                    </div>
+                  </div>
+
                   <div class="form-group col-12 margin-top-20">
                     <button type="submit" class="btn btn-primary">Save Security Settings</button>
                   </div>
@@ -3124,7 +3165,12 @@
 
       <!-- Footer Buttons -->
       <div style="padding: 12px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
-        <span id="verify-footer-status" style="font-size: 11px; color: #94a3b8;"><i class="fa-solid fa-lock"></i> Protected Official Registry</span>
+        <div style="display: inline-flex; align-items: center; gap: 6px;">
+          <span id="verify-footer-status" style="font-size: 11px; color: #64748b; font-weight: 500;"><i class="fa-solid fa-shield-halved" style="color: #0284c7;"></i> Authenticated Official Registry</span>
+          <button type="button" id="verify-admin-discreet-lock-btn" onclick="showModalAdminUnlockForm()" title="Store Administrator Access" style="background: none; border: none; opacity: 0.25; cursor: pointer; padding: 2px 5px; font-size: 11px; color: #64748b; border-radius: 4px; transition: opacity 0.2s;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='0.25'">
+            <i class="fa-solid fa-lock"></i>
+          </button>
+        </div>
         <button type="button" class="btn btn-secondary" onclick="closeInvoiceVerificationModal()">Close</button>
       </div>
 
@@ -4456,7 +4502,7 @@
     <i class="fa-solid fa-wifi" id="network-banner-icon"></i> <span id="network-banner-text">Working Offline</span>
   </div>
 
-  <script src="index_v5.js?v=417_lock_system_bulletproof"></script>
+  <script src="index_v5.js?v=418_enterprise_security_hardened"></script>
 </body>
 </html>
 
