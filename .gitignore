@@ -6,3 +6,4 @@ build/icon.ico
 
 # Local Netlify folder
 .netlify
+scratch/

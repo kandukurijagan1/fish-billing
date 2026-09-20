@@ -207,7 +207,7 @@
       });
     }
     // Build Version Enforcement
-    window.__APP_BUILD_VERSION__ = "v424_enterprise_security_suite";
+    window.__APP_BUILD_VERSION__ = "v425_cross_device_sync_suite";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -219,8 +219,8 @@
     } catch (e) {}
   </script>
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=424_enterprise_security_suite">
-  <script src="invoice_utils_v5.js?v=424_enterprise_security_suite"></script>
+  <link rel="stylesheet" href="index.css?v=425_cross_device_sync_suite">
+  <script src="invoice_utils_v5.js?v=425_cross_device_sync_suite"></script>
 </head>
 <body class="app-is-locked">
   <!-- Search Engine Accessible Semantic Content for Googlebot / Non-JS Crawlers -->
@@ -393,6 +393,10 @@
               <i class="fa-solid fa-cloud" style="color: #10b981;"></i>
               <span id="sync-status-text">🟢 1s Google DB • Live</span>
             </div>
+            <button type="button" id="btn-header-cloud-sync" class="cloud-quick-sync-btn cursor-pointer" onclick="window.quickSyncCloud(this)" title="Sync latest data with Google Cloud &amp; other laptops">
+              <i class="fa-solid fa-arrows-rotate"></i>
+              <span>Sync Cloud</span>
+            </button>
             <div id="live-whatsapp-pill" class="whatsapp-sync-pill connected cursor-pointer" onclick="openWhatsAppBotModal()" title="WhatsApp Bot Connected (+918367047947)">
               <span class="radar-dot" id="wa-radar-indicator"></span>
               <i class="fa-brands fa-whatsapp" id="wa-bot-status-icon" style="color: #16a34a;"></i>
@@ -3815,6 +3819,11 @@
                   <li>Tap <strong>Menu (⋮)</strong> or <strong>Settings</strong> &gt; <strong>Linked Devices</strong></li>
                   <li>Tap <strong>Link a Device</strong> and point your phone camera at this QR code</li>
                 </ol>
+                <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 7px 10px; margin-top: 8px; font-size: 11px; color: #1e40af; line-height: 1.45;">
+                  <i class="fa-solid fa-circle-info" style="color: #2563eb;"></i> <strong>Phone saying "Can't link new devices right now"?</strong><br>
+                  • <strong>4-Device Limit:</strong> WhatsApp allows max 4 linked devices. In WhatsApp &gt; <strong>Linked Devices</strong>, tap any old device and log out.<br>
+                  • <strong>Or tap "Link with phone number instead"</strong> on your phone &amp; enter your number below!
+                </div>
               </div>
 
               <!-- LIVE QR STATUS / COUNTDOWN BADGE -->
@@ -3824,14 +3833,14 @@
               </div>
 
               <!-- LOADING INDICATOR -->
-              <div id="wa-qr-loading" style="display: none; color: #64748b; padding: 15px 0;">
+              <div id="wa-qr-loading" style="display: flex; flex-direction: column; align-items: center; justify-content: center; color: #64748b; padding: 20px 0; min-height: 180px;">
                 <i class="fa-solid fa-spinner fa-spin fa-2x" style="margin-bottom: 8px; color: #0891b2;"></i>
-                <p style="margin: 0; font-size: 13px; font-weight: 500;">Generating Fresh Live QR Code...<br><span style="font-size: 11px; color: #94a3b8;">Connecting directly to WhatsApp Web</span></p>
+                <p style="margin: 0; font-size: 13px; font-weight: 500;">Connecting directly to WhatsApp Web...<br><span style="font-size: 11px; color: #94a3b8;">Fresh QR code appears here automatically</span></p>
               </div>
 
               <!-- LIVE WHATSAPP LOGIN QR CODE (With Expired Overlay) -->
-              <div style="position: relative; display: inline-block; background: #ffffff; padding: 12px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 4px 14px rgba(0,0,0,0.08); margin-bottom: 12px;">
-                <img id="wa-qr-image" src="whatsapp_qr.png" alt="WhatsApp Login QR Code" style="display: block; width: 220px; height: 220px; object-fit: contain; border-radius: 6px; margin: 0 auto; background: #ffffff;" onerror="if(!this.dataset.errored){this.dataset.errored='1';this.src='whatsapp_qr.png?t='+Date.now();}">
+              <div id="wa-qr-box" style="display: none; position: relative; background: #ffffff; padding: 12px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 4px 14px rgba(0,0,0,0.08); margin-bottom: 12px;">
+                <img id="wa-qr-image" src="" alt="WhatsApp Login QR Code" style="display: none; width: 220px; height: 220px; object-fit: contain; border-radius: 6px; margin: 0 auto; background: #ffffff;">
                 
                 <!-- EXPIRED OVERLAY -->
                 <div id="wa-qr-expired-overlay" style="display: none; position: absolute; inset: 0; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(2px); border-radius: 12px; flex-direction: column; align-items: center; justify-content: center; color: white; padding: 16px; z-index: 5;">
@@ -4788,7 +4797,7 @@
     <i class="fa-solid fa-wifi" id="network-banner-icon"></i> <span id="network-banner-text">Working Offline</span>
   </div>
 
-  <script src="index_v5.js?v=424_enterprise_security_suite"></script>
+  <script src="index_v5.js?v=425_cross_device_sync_suite"></script>
 </body>
 </html>
 

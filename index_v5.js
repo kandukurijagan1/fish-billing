@@ -798,7 +798,12 @@ TurboDataStore.rebuildIndexes();
       const cleanT = t.replace(/^#/, '').replace(/^inv_/, '');
 
       if (invId && (invId === t || invId === `inv_${cleanT}` || invId.replace(/^inv_/, '') === cleanT)) return true;
-      if (cleanNo && (cleanNo === cleanT || invNo === t || invNo === `#${cleanT}` || `inv_${cleanNo}` === t)) return true;
+      // Real active invoices with positive total, items, or customer details are NEVER deleted by plain invoice number
+      const hasItems = (Array.isArray(inv.items) && inv.items.length > 0) || (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0);
+      const hasTotal = parseFloat(inv.total) > 0 || (inv.details && parseFloat(inv.details.total) > 0);
+      const hasCustomer = !!(inv.customerName || (inv.buyer && inv.buyer.name) || (inv.details && (inv.details.customerName || (inv.details.buyer && inv.details.buyer.name))));
+      const isRealInvoice = hasItems || hasTotal || hasCustomer;
+      if (!isRealInvoice && cleanNo && (cleanNo === cleanT || invNo === t || invNo === `#${cleanT}` || `inv_${cleanNo}` === t)) return true;
     }
     return false;
   };
@@ -1830,7 +1835,8 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
         const id = String(inv.id || (inv.details && inv.details.id) || '').trim();
         const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '').trim().toLowerCase();
         if (id && deletedSet.has(id.toLowerCase())) return;
-        if (invNo && deletedSet.has(invNo)) return;
+        const hasContent = (Array.isArray(inv.items) && inv.items.length > 0) || (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0) || (parseFloat(inv.total) > 0);
+        if (!hasContent && invNo && deletedSet.has(invNo)) return;
         const key = id || invNo;
         if (key) peerInvMap.set(key, inv);
       });
@@ -2308,7 +2314,8 @@ async function pushDirectToGoogleDatabaseRaw(action, payload) {
 
   const bodyStr = JSON.stringify(gasPayload);
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 6000);
+  // 30-second timeout ensures Google Apps Script cold executions reliably complete
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
     const res = await fetch(GOOGLE_SCRIPT_URL, {
@@ -2691,7 +2698,8 @@ window.triggerDatabaseSync = async function(forceReload = false) {
         const id = String(inv.id || (inv.details && inv.details.id) || '').trim();
         const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '').trim().toLowerCase();
         if (id && deletedSet.has(id.toLowerCase())) return;
-        if (invNo && deletedSet.has(invNo)) return;
+        const hasContentB = (Array.isArray(inv.items) && inv.items.length > 0) || (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0) || (parseFloat(inv.total) > 0);
+        if (!hasContentB && invNo && deletedSet.has(invNo)) return;
         const key = id || invNo;
         if (key && !unifiedMap.has(key)) {
           unifiedMap.set(key, inv);
@@ -2736,14 +2744,26 @@ window.triggerDatabaseSync = async function(forceReload = false) {
       window.updateRealtimePresenceHUD("live");
     }
   })
-  .catch((err) => {
+  .catch(async (err) => {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      console.warn("Google Apps Script sync timeout (>6s). Serving cached Google database snapshot.");
+      console.warn("Google Apps Script sync timeout (>30s). Serving local/CDN database snapshot.");
       if (typeof window.updateCloudSyncBadge === 'function') window.updateCloudSyncBadge("synced");
     } else {
       console.warn("Google Apps Script sync notice:", err.message);
       if (typeof window.updateCloudSyncBadge === 'function') window.updateCloudSyncBadge("offline");
+    }
+    // High-speed static snapshot fallback if database is currently empty (<50ms)
+    if ((!invoicesDb || invoicesDb.length === 0) || (!productsDb || productsDb.length === 0)) {
+      try {
+        const fallbackRes = await fetch('initial_db.json?_t=' + Date.now());
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json();
+          if (fallbackData && typeof window.hydrateFromSnapshot === 'function') {
+            window.hydrateFromSnapshot(fallbackData);
+          }
+        }
+      } catch (fbErr) {}
     }
     if (typeof window.updateRealtimePresenceHUD === 'function') {
       window.updateRealtimePresenceHUD(navigator.onLine ? "live" : "offline");
@@ -2756,6 +2776,150 @@ window.triggerDatabaseSync = async function(forceReload = false) {
   });
 
   return activeSyncPromise;
+};
+
+// --- HIGH-SPEED SNAPSHOT HYDRATION ENGINE (<50ms 0-WAIT SEEDING) ---
+window.hydrateFromSnapshot = function(data) {
+  if (!data) return;
+  let changed = false;
+
+  // 1. Hydrate Products
+  if (Array.isArray(data.products) && data.products.length > 0) {
+    const prodMap = new Map();
+    (productsDb || []).forEach(p => { if (p && p.id) prodMap.set(p.id, p); });
+    data.products.forEach(p => {
+      if (p && p.id) {
+        if (!prodMap.has(p.id)) {
+          prodMap.set(p.id, p);
+          changed = true;
+        } else {
+          const cur = prodMap.get(p.id);
+          if ((!cur.stock && p.stock) || (p.updatedAt && cur.updatedAt && new Date(p.updatedAt) > new Date(cur.updatedAt))) {
+            prodMap.set(p.id, Object.assign({}, cur, p));
+            changed = true;
+          }
+        }
+      }
+    });
+    productsDb = Array.from(prodMap.values());
+    window.productsDb = productsDb;
+    try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
+    if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllProducts(productsDb);
+  }
+
+  // 2. Hydrate Parties
+  if (Array.isArray(data.parties) && data.parties.length > 0) {
+    const partyMap = new Map();
+    (partiesDb || []).forEach(p => { if (p && p.id) partyMap.set(p.id, p); });
+    data.parties.forEach(p => {
+      if (p && p.id && !partyMap.has(p.id)) {
+        partyMap.set(p.id, p);
+        changed = true;
+      }
+    });
+    partiesDb = Array.from(partyMap.values());
+    window.partiesDb = partiesDb;
+    try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
+    if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllParties(partiesDb);
+  }
+
+  // 3. Hydrate Invoices
+  if (Array.isArray(data.invoices) && data.invoices.length > 0) {
+    const invMap = new Map();
+    (invoicesDb || []).forEach(inv => {
+      if (!inv) return;
+      const key = String(inv.id || inv.invoiceNo || '').trim();
+      if (key) invMap.set(key, inv);
+    });
+    data.invoices.forEach(inv => {
+      if (!inv) return;
+      const key = String(inv.id || inv.invoiceNo || '').trim();
+      if (key && !invMap.has(key)) {
+        invMap.set(key, inv);
+        changed = true;
+      }
+    });
+    invoicesDb = window.filterOutDeletedInvoices(Array.from(invMap.values()));
+    invoicesDb.sort((a, b) => String(a.invoiceNo || "").localeCompare(String(b.invoiceNo || "")));
+    window.invoicesDb = invoicesDb;
+    try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
+    if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllInvoices(invoicesDb);
+  }
+
+  // 4. Hydrate Settings
+  const rawSettings = data.settings || data.globalSettings;
+  if (rawSettings && typeof rawSettings === 'object' && Object.keys(rawSettings).length > 0) {
+    if (!globalSettings || !globalSettings.company || !globalSettings.company.name) {
+      globalSettings = rawSettings;
+      window.globalSettings = globalSettings;
+      try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(e){}
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
+    if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+    if (typeof loadProductsDatabaseTable === 'function') loadProductsDatabaseTable();
+    if (typeof loadPartiesDatabaseLists === 'function') loadPartiesDatabaseLists();
+    if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
+    if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+    if (typeof calculateSummaryAndTable === 'function') calculateSummaryAndTable();
+    if (typeof autoSuggestInvoiceNo === 'function') autoSuggestInvoiceNo();
+    if (typeof renderFrequentProductsBar === 'function') renderFrequentProductsBar();
+  }
+};
+
+// --- ONE-CLICK CLOUD SYNC FOR HEADER BUTTON ---
+window.quickSyncCloud = async function(btnEl) {
+  let origHtml = "";
+  if (btnEl) {
+    origHtml = btnEl.innerHTML;
+    btnEl.innerHTML = '<i class="fa-solid fa-arrows-rotate fa-spin"></i> <span>Syncing...</span>';
+    btnEl.disabled = true;
+  }
+  try {
+    if (typeof window.updateCloudSyncBadge === 'function') {
+      window.updateCloudSyncBadge("syncing");
+    }
+
+    // Step 1: Instant local snapshot fetch (<50ms)
+    try {
+      const initRes = await fetch('initial_db.json?_t=' + Date.now());
+      if (initRes.ok) {
+        const initData = await initRes.json();
+        if (initData) window.hydrateFromSnapshot(initData);
+      }
+    } catch (e) {}
+
+    // Step 2: Authoritative Google Cloud Master database fetch
+    if (typeof window.triggerDatabaseSync === 'function') {
+      await window.triggerDatabaseSync(true);
+    }
+
+    if (btnEl) {
+      btnEl.innerHTML = '<i class="fa-solid fa-check text-success"></i> <span>Synced!</span>';
+      setTimeout(() => {
+        btnEl.innerHTML = origHtml;
+        btnEl.disabled = false;
+      }, 2500);
+    }
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`☁️ Synchronized! (${invoicesDb.length} Invoices, ${productsDb.length} Products, ${partiesDb.length} Customers)`, "success");
+    }
+  } catch (err) {
+    console.warn("quickSyncCloud error:", err);
+    if (btnEl) {
+      btnEl.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-danger"></i> <span>Retry</span>';
+      setTimeout(() => {
+        btnEl.innerHTML = origHtml;
+        btnEl.disabled = false;
+      }, 3000);
+    }
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Cloud Sync notice: " + err.message, "warning");
+    }
+  }
 };
 
 // Immediate Kickoff on Script Load (Zero-Wait Millisecond 0 Google Database Fetch)
@@ -3125,9 +3289,21 @@ function initializeApp() {
   fetchWhatsAppBotStatus();
   initWhatsAppEventSource();
 
+  // Fast non-blocking fetch of initial_db.json from static CDN (<50ms)
+  fetch('initial_db.json?_t=' + Date.now(), { cache: 'no-store' })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (data && (data.invoices || data.products)) {
+        if (typeof window.hydrateFromSnapshot === 'function') {
+          window.hydrateFromSnapshot(data);
+        }
+      }
+    })
+    .catch(() => {});
+
   // Trigger cloud sync to join any in-flight startup request or refresh data
   if (typeof window.triggerDatabaseSync === 'function') {
-    window.triggerDatabaseSync().catch(e => console.warn("Initial sync note:", e));
+    window.triggerDatabaseSync(true).catch(e => console.warn("Initial sync note:", e));
   }
 
   // Update header cloud sync status pill
@@ -3471,6 +3647,9 @@ if (document.readyState === 'loading') {
   initializeApp();
 }
 
+// --- AUTHORITATIVE INITIAL BOOTSTRAP DATABASE (0ms Instant Loading on Any Device/Laptop) ---
+const INITIAL_BOOTSTRAP_SNAPSHOT = {"version":"1.0.0","generatedAt":"2026-09-20T18:04:28.789Z","invoices":[{"id":"inv_1789924736074_48","qrToken":"Q-0001-Z1HMA98H","invoiceNo":"0001","invoiceDate":"2026-09-20","customerName":"hari","buyer":{"name":"hari","address":"Repalle","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"hari","state":"Andhra Pradesh","stateCode":"37"},"items":[{"id":"1789924708639_280","productId":"prod-1789924485015-616","baleNo":"1","description":"GEO CAR","hsn":"5667886","packSize":"25","quantity":37,"unit":"Bucket","rate":3599,"gstRate":0,"discount":30,"amount":93214.09999999999}],"itemsCount":1,"taxable":93214.1,"cgst":0,"sgst":0,"igst":0,"roundOff":-0.1,"total":93214,"paymentStatus":"Paid","paymentMode":"UPI / QR","paidAmount":93214,"balancePaid":0,"balanceDue":0,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789924736074_48","qrToken":"Q-0001-Z1HMA98H","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0001","invoiceDate":"2026-09-20","paymentDate":"2026-09-20","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Paid","paymentMode":"UPI / QR","paidAmount":93214,"balancePaid":0,"balanceDue":0,"buyer":{"name":"hari","address":"Repalle","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"hari","state":"Andhra Pradesh","stateCode":"37"},"items":[{"id":"1789924708639_280","productId":"prod-1789924485015-616","baleNo":"1","description":"GEO CAR","hsn":"5667886","packSize":"25","quantity":37,"unit":"Bucket","rate":3599,"gstRate":0,"discount":30,"amount":93214.09999999999}],"supplyPlace":"Andhra Pradesh","taxable":93214.1,"cgst":0,"sgst":0,"igst":0,"total":93214,"pdfUrl":"https://drive.google.com/file/d/1jYvHx34qHsJq_QSSOERK4nmLIJtCLW1_/view?usp=sharing"},"pdfUrl":"https://drive.google.com/file/d/1jYvHx34qHsJq_QSSOERK4nmLIJtCLW1_/view?usp=sharing"},{"id":"inv_1789925299558_884","qrToken":"Q-0002-B49YWHXT","invoiceNo":"0002","invoiceDate":"2026-09-20","customerName":"Cash Customer","buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"state":"Andhra Pradesh","stateCode":"37"},"items":[{"id":"1789925231957_227","productId":"prod-1789924485015-616","baleNo":"1","description":"GEO CAR","hsn":"5667886","packSize":"25","quantity":33,"unit":"Bucket","rate":3599,"gstRate":0,"discount":30,"amount":83136.9}],"itemsCount":1,"taxable":83136.9,"cgst":0,"sgst":0,"igst":0,"roundOff":0.1,"total":83137,"paymentStatus":"Paid","paymentMode":"Bank Transfer","paidAmount":83137,"balancePaid":83137,"balanceDue":0,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789925299558_884","qrToken":"Q-0002-B49YWHXT","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0002","invoiceDate":"2026-09-20","paymentDate":"2026-09-20","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Paid","paymentMode":"Bank Transfer","paidAmount":83137,"balancePaid":83137,"balanceDue":0,"buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"state":"Andhra Pradesh","stateCode":"37"},"items":[{"id":"1789925231957_227","productId":"prod-1789924485015-616","baleNo":"1","description":"GEO CAR","hsn":"5667886","packSize":"25","quantity":33,"unit":"Bucket","rate":3599,"gstRate":0,"discount":30,"amount":83136.9}],"supplyPlace":"Andhra Pradesh","taxable":83136.9,"cgst":0,"sgst":0,"igst":0,"total":83137,"pdfUrl":"https://drive.google.com/file/d/1oJkqBHQGk7Th5Nrl1nE8Z7fK8xEEw3P-/view?usp=sharing"},"_ts":1789925299558,"pdfUrl":"https://drive.google.com/file/d/1oJkqBHQGk7Th5Nrl1nE8Z7fK8xEEw3P-/view?usp=sharing","paymentHistory":[{"date":"2026-09-20T17:29:24.075Z","amount":83137,"mode":"Bank Transfer","status":"Paid","source":"Admin Verification Modal Settlement"}]},{"id":"inv_1789831709460_181","qrToken":"Q-0003-L5P0YPF5","invoiceNo":"0003","invoiceDate":"2026-09-19","customerName":"JAGAN","buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789831704293_350","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":1,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":5920.2}],"itemsCount":1,"taxable":5920.2,"cgst":0,"sgst":0,"igst":0,"roundOff":-0.2,"total":5920,"paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":5920,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789831709460_181","qrToken":"Q-0003-L5P0YPF5","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0003","invoiceDate":"2026-09-19","paymentDate":"2026-09-19","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":5920,"buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789831704293_350","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":1,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":5920.2}],"supplyPlace":"Andhra Pradesh","taxable":5920.2,"cgst":0,"sgst":0,"igst":0,"total":5920,"pdfUrl":"https://drive.google.com/file/d/1A3t7wRRh7a7L-u4wCAE4bEcrVVcDXlgA/view?usp=sharing"},"waAutoSent":true,"pdfUrl":"https://drive.google.com/file/d/1A3t7wRRh7a7L-u4wCAE4bEcrVVcDXlgA/view?usp=sharing"},{"id":"inv_1789834327560_22","qrToken":"Q-0004-59U0ZBJW","invoiceNo":"0004","invoiceDate":"2026-09-19","customerName":"JAGAN","buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789834323721_49","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"itemsCount":1,"taxable":29601,"cgst":0,"sgst":0,"igst":0,"roundOff":0,"total":29601,"paymentStatus":"Partial","paymentMode":"UPI / Online","paidAmount":9601,"balancePaid":9601,"balanceDue":20000,"transportMode":"ugyj","destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789834327560_22","qrToken":"Q-0004-59U0ZBJW","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0004","invoiceDate":"2026-09-19","paymentDate":"2026-09-19","buyerOrderNo":"hgbn","buyerOrderDate":"2026-09-19","transportMode":"ugyj","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Partial","paymentMode":"UPI / Online","paidAmount":9601,"balancePaid":9601,"balanceDue":20000,"buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789834323721_49","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"supplyPlace":"Andhra Pradesh","taxable":29601,"cgst":0,"sgst":0,"igst":0,"total":29601,"pdfUrl":"https://drive.google.com/file/d/1J2vdHNE4QZs7qlSGjS21mxWxOyQp6lFI/view?usp=sharing"},"waAutoSent":true,"pdfUrl":"https://drive.google.com/file/d/1J2vdHNE4QZs7qlSGjS21mxWxOyQp6lFI/view?usp=sharing","paymentHistory":[{"date":"2026-09-19T16:16:16.335Z","amount":9601,"mode":"UPI / Online","status":"Partial","source":"QR Verification Portal Settlement"}]},{"id":"inv_1789834640715_722","qrToken":"Q-0005-BZGSFY4Y","invoiceNo":"0005","invoiceDate":"2026-09-19","customerName":"JAGAN","buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789834636492_247","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":11840.4}],"itemsCount":1,"taxable":11840.4,"cgst":0,"sgst":0,"igst":0,"roundOff":-0.4,"total":11840,"paymentStatus":"Partial","paymentMode":"Cash","paidAmount":1840,"balancePaid":1840,"balanceDue":10000,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789834640715_722","qrToken":"Q-0005-BZGSFY4Y","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0005","invoiceDate":"2026-09-19","paymentDate":"2026-09-19","buyerOrderNo":"uygjh","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Partial","paymentMode":"Cash","paidAmount":1840,"balancePaid":1840,"balanceDue":10000,"buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789834636492_247","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":11840.4}],"supplyPlace":"Andhra Pradesh","taxable":11840.4,"cgst":0,"sgst":0,"igst":0,"total":11840,"pdfUrl":"https://drive.google.com/file/d/1Uxn1Z02rVb9QMZY3ohEN-MjhX2CKVO4W/view?usp=sharing"},"pdfUrl":"https://drive.google.com/file/d/1Uxn1Z02rVb9QMZY3ohEN-MjhX2CKVO4W/view?usp=sharing","paymentHistory":[{"date":"2026-09-19T16:49:51.154Z","amount":1840,"mode":"Cash","status":"Partial","source":"Admin Verification Modal Settlement"}]},{"id":"inv_1789837623716_832","qrToken":"Q-0006-3X5W99H6","invoiceNo":"0006","invoiceDate":"2026-09-19","customerName":"JAGAN","buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789837604002_277","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":11840.4},{"id":"1789837619468_564","productId":"prod-1789824170501-324","baleNo":"2","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":11840.4}],"itemsCount":2,"taxable":23680.8,"cgst":0,"sgst":0,"igst":0,"roundOff":0.2,"total":23681,"paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":23681,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789837623716_832","qrToken":"Q-0006-3X5W99H6","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0006","invoiceDate":"2026-09-19","paymentDate":"2026-09-19","buyerOrderDate":"2026-09-19","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":23681,"buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789837604002_277","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":11840.4},{"id":"1789837619468_564","productId":"prod-1789824170501-324","baleNo":"2","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":11840.4}],"supplyPlace":"Andhra Pradesh","taxable":23680.8,"cgst":0,"sgst":0,"igst":0,"total":23681}},{"id":"inv_1789837742259_920","qrToken":"Q-0007-6GMR84TM","invoiceNo":"0007","invoiceDate":"2026-09-19","customerName":"JAGAN","buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789837742240_995","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"itemsCount":1,"taxable":29601,"cgst":0,"sgst":0,"igst":0,"roundOff":0,"total":29601,"paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":29601,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789837742259_920","qrToken":"Q-0007-6GMR84TM","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0007","invoiceDate":"2026-09-19","paymentDate":"2026-09-19","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":29601,"buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789837742240_995","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"supplyPlace":"Andhra Pradesh","taxable":29601,"cgst":0,"sgst":0,"igst":0,"total":29601}},{"id":"inv_1789837765693_130","qrToken":"Q-0008-6YPP209D","invoiceNo":"0008","invoiceDate":"2026-09-19","customerName":"JAGAN","buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789837760498_372","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":1,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":5920.2}],"itemsCount":1,"taxable":5920.2,"cgst":0,"sgst":0,"igst":0,"roundOff":-0.2,"total":5920,"paymentStatus":"Partial","paymentMode":"UPI / Online","paidAmount":2920,"balancePaid":2920,"balanceDue":3000,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789837765693_130","qrToken":"Q-0008-6YPP209D","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0008","invoiceDate":"2026-09-19","paymentDate":"2026-09-19","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Partial","paymentMode":"UPI / Online","paidAmount":2920,"balancePaid":2920,"balanceDue":3000,"buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789837760498_372","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":1,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":5920.2}],"supplyPlace":"Andhra Pradesh","taxable":5920.2,"cgst":0,"sgst":0,"igst":0,"total":5920},"waAutoSent":true,"paymentHistory":[{"date":"2026-09-19T17:14:56.840Z","amount":920,"mode":"UPI / Online","status":"Partial","source":"QR Verification Portal Settlement"},{"date":"2026-09-20T03:09:43.570Z","amount":1000,"mode":"UPI / Online","status":"Partial","source":"QR Verification Portal Settlement"},{"date":"2026-09-20T03:14:03.833Z","amount":1000,"mode":"UPI / Online","status":"Partial","source":"QR Verification Portal Settlement"}]},{"id":"inv_1789872929716_939","qrToken":"Q-0009-4NG4Y055","invoiceNo":"0009","invoiceDate":"2026-09-20","customerName":"JAGAN","buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789872907109_151","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":5,"amount":12498.199999999999}],"itemsCount":1,"taxable":12498.2,"cgst":0,"sgst":0,"igst":0,"roundOff":-0.2,"total":12498,"paymentStatus":"Paid","paymentMode":"UPI / Online","paidAmount":12498,"balancePaid":11498,"balanceDue":0,"transportMode":"yfuhnb","destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789872929716_939","qrToken":"Q-0009-4NG4Y055","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0009","invoiceDate":"2026-09-20","paymentDate":"2026-09-20","buyerOrderNo":"gjhbmn","buyerOrderDate":"2026-09-20","transportMode":"yfuhnb","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Paid","paymentMode":"UPI / Online","paidAmount":12498,"balancePaid":11498,"balanceDue":0,"buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789872907109_151","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":5,"amount":12498.199999999999}],"supplyPlace":"Andhra Pradesh","taxable":12498.2,"cgst":0,"sgst":0,"igst":0,"total":12498,"pdfUrl":"https://drive.google.com/file/d/1iZkRhNvoGkmxux4H03fw3kAPp8ZO4mKW/view?usp=sharing"},"waAutoSent":true,"pdfUrl":"https://drive.google.com/file/d/1iZkRhNvoGkmxux4H03fw3kAPp8ZO4mKW/view?usp=sharing","paymentHistory":[{"date":"2026-09-20T03:09:22.181Z","amount":11498,"mode":"UPI / Online","status":"Paid","source":"QR Verification Portal Settlement"}]},{"id":"inv_1789874678678_37","qrToken":"Q-0010-64YEH4KR","invoiceNo":"0010","invoiceDate":"2026-09-20","customerName":"abc","buyer":{"name":"abc","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"abc","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789874673846_124","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"itemsCount":1,"taxable":29601,"cgst":0,"sgst":0,"igst":0,"roundOff":0,"total":29601,"paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":29601,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789874678678_37","qrToken":"Q-0010-64YEH4KR","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0010","invoiceDate":"2026-09-20","paymentDate":"2026-09-20","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":29601,"buyer":{"name":"abc","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"abc","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789874673846_124","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"supplyPlace":"Andhra Pradesh","taxable":29601,"cgst":0,"sgst":0,"igst":0,"total":29601}},{"id":"inv_1789876080820_593","qrToken":"Q-0011-06US85T0","invoiceNo":"0011","invoiceDate":"2026-09-20","customerName":"JAGAN","buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789876070247_767","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"itemsCount":1,"taxable":29601,"cgst":0,"sgst":0,"igst":0,"roundOff":0,"total":29601,"paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":29601,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789876080820_593","qrToken":"Q-0011-06US85T0","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0011","invoiceDate":"2026-09-20","paymentDate":"2026-09-20","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":29601,"buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789876070247_767","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"supplyPlace":"Andhra Pradesh","taxable":29601,"cgst":0,"sgst":0,"igst":0,"total":29601},"_ts":1789876080820}],"products":[{"id":"prod-1789924485015-616","description":"GEO CAR","hsn":"5667886","packSize":"25","unit":"Bucket","rate":3599,"costPrice":1988.45,"price":1988.45,"gstRate":0,"discount":44.75,"stock":180,"status":"In Stock","totalValue":357921,"updatedAt":"2026-09-20T17:32:18.489Z"}],"parties":[{"id":"party-1789825147707-894","type":"receiver","name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947","updatedAt":"2026-09-19T13:39:07.707Z"},{"id":"party-1789825174872-232","type":"consignee","name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947","updatedAt":"2026-09-19T13:39:34.872Z"},{"id":"pty_1789874678666_576","name":"abc","type":"receiver","phone":"8367047947","state":"Andhra Pradesh","stateCode":"37","createdAt":"2026-09-20T03:24:38.666Z"}],"settings":{"company":{"name":"AARYAN AQUA NEEDS","tagline":"QUALITY PRODUCTS FOR BETTER AQUACULTURE","address":"Door No: 10-13-94/42A REVENUE WARD 7\nAP HOUSING BOARD COLONY, REPALLE Village,\nREPALLE Mandal, Bapatla District, Pincode 522265","phones":"+91 74166 05652","email":"aaryanaquaneeds@gmail.com","gstin":"37ACNFA4687Q1ZC","state":"Andhra Pradesh","stateCode":"37","website":"www.aaryan-aqua.com"},"bank":{"name":"State Bank of India","accountName":"Aaryan aqua Needs","accountNo":"45413424177","ifsc":"SBIN0000911","branch":"Repalle"},"upiId":"7386262139@upi","telegram":{"token":"8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g","chatId":"6877857251, 7906132548","botUsername":"fishbilling_bot_bot","autoSend":true},"security":{"autolock":"60","username":"Aaryanaqua","password":"Aaryan@2024","whatsappLockEnabled":false,"whatsappPin":"2024","whatsappAutoLockMinutes":"15","whatsappMaskPhones":true,"whatsappProtectChats":true,"securityPin":"2024","strictBootLock":true,"counterPrivacyMode":false},"terms":["We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct."]}};
+
 // --- LOCAL STORAGE DATABASES SEEDING (EXCLUSIVELY GOOGLE DATABASE ARCHITECTURE) ---
 function seedDatabasesIfEmpty() {
   try {
@@ -3482,40 +3661,67 @@ function seedDatabasesIfEmpty() {
     console.warn("Unable to parse saved settings:", err);
   }
 
+  // 1. Seed Settings
   if (!localStorage.getItem("settings")) {
-    const defaultSettings = {
-      company: {
-        name: "Aaryan Aqua Needs",
-        tagline: "Quality Products for Better Aquaculture",
-        address: "Door No: 10-13-94/42A REVENUE WARD 7\nAP HOUSING BOARD COLONY, REPALLE Village,\nREPALLE Mandal, Bapatla District, Pincode 522265",
-        phones: "+91 74166 05652",
-        email: "aaryanaquaneeds@gmail.com",
-        website: "www.aaryan-aqua.com",
-        gstin: "37ACNFA4687Q1ZC",
-        state: "Andhra Pradesh",
-        stateCode: "37"
-      },
-      bank: {
-        name: "State Bank of India",
-        accountName: "Aaryan aqua Needs",
-        accountNo: "45413424177",
-        ifsc: "SBIN0000911",
-        branch: "Repalle"
-      },
-      upiId: "7386262139@upi",
-      telegram: {
-        token: "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g",
-        chatId: "6877857251, 7906132548",
-        botUsername: "fishbilling_bot_bot",
-        autoSend: true
-      },
-      security: { autolock: "120", username: "Aaryanaqua", password: "Aaryan@2024" },
-      terms: [
-        "We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct."
-      ]
-    };
-    localStorage.setItem("settings", JSON.stringify(defaultSettings));
+    localStorage.setItem("settings", JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.settings));
+    globalSettings = INITIAL_BOOTSTRAP_SNAPSHOT.settings;
+    window.globalSettings = globalSettings;
   }
+
+  // 2. Seed Products if empty
+  try {
+    const localProds = JSON.parse(localStorage.getItem("products") || "[]");
+    if (!Array.isArray(localProds) || localProds.length === 0) {
+      localStorage.setItem("products", JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.products));
+      productsDb = INITIAL_BOOTSTRAP_SNAPSHOT.products;
+      window.productsDb = productsDb;
+    }
+  } catch (e) {
+    localStorage.setItem("products", JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.products));
+    productsDb = INITIAL_BOOTSTRAP_SNAPSHOT.products;
+    window.productsDb = productsDb;
+  }
+
+  // 3. Seed Parties if empty
+  try {
+    const localParties = JSON.parse(localStorage.getItem("parties") || "[]");
+    if (!Array.isArray(localParties) || localParties.length === 0) {
+      localStorage.setItem("parties", JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.parties));
+      partiesDb = INITIAL_BOOTSTRAP_SNAPSHOT.parties;
+      window.partiesDb = partiesDb;
+    }
+  } catch (e) {
+    localStorage.setItem("parties", JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.parties));
+    partiesDb = INITIAL_BOOTSTRAP_SNAPSHOT.parties;
+    window.partiesDb = partiesDb;
+  }
+
+  // 4. Seed Invoices if empty
+  try {
+    const localInvs = JSON.parse(localStorage.getItem("invoices") || "[]");
+    if (!Array.isArray(localInvs) || localInvs.length === 0) {
+      localStorage.setItem("invoices", JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.invoices));
+      invoicesDb = INITIAL_BOOTSTRAP_SNAPSHOT.invoices;
+      window.invoicesDb = invoicesDb;
+    }
+  } catch (e) {
+    localStorage.setItem("invoices", JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.invoices));
+    invoicesDb = INITIAL_BOOTSTRAP_SNAPSHOT.invoices;
+    window.invoicesDb = invoicesDb;
+  }
+
+  // 5. Clean up any stale tombstones for active invoices #0001 through #0011
+  try {
+    let tombstones = JSON.parse(localStorage.getItem("deleted_invoice_ids") || "[]");
+    if (Array.isArray(tombstones) && tombstones.length > 0) {
+      const activeNos = new Set(['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11']);
+      tombstones = tombstones.filter(t => {
+        const clean = String(t || '').replace(/^#/, '').replace(/^inv_/, '').trim();
+        return !activeNos.has(clean);
+      });
+      localStorage.setItem("deleted_invoice_ids", JSON.stringify(tombstones));
+    }
+  } catch (e) {}
 }
 
 function loadAllDatabases() {
@@ -9802,6 +10008,8 @@ function updateWhatsAppBotModalUI(data) {
     if (localContainer) localContainer.style.display = "block";
     if (qrPlaceholder) qrPlaceholder.style.display = "none";
     if (qrLoading) qrLoading.style.display = "none";
+    const qrBox = document.getElementById("wa-qr-box");
+    if (qrBox) qrBox.style.display = "inline-block";
     if (qrImage) {
       qrImage.src = data.qrCodeDataUrl;
       qrImage.style.display = "block";
@@ -9852,8 +10060,10 @@ function updateWhatsAppBotModalUI(data) {
     }
     if (connectedSection) connectedSection.style.display = "none";
     if (localContainer) localContainer.style.display = "block";
-    if (qrLoading) qrLoading.style.display = "block";
-    if (qrImage) qrImage.style.display = "block";
+    const qrBox = document.getElementById("wa-qr-box");
+    if (qrBox) qrBox.style.display = "none";
+    if (qrImage) qrImage.style.display = "none";
+    if (qrLoading) qrLoading.style.display = "flex";
     if (expiredOverlay) expiredOverlay.style.display = "none";
     if (timerLabel) timerLabel.textContent = "🔄 Initializing WhatsApp Engine...";
   } 
@@ -10101,6 +10311,21 @@ window.requestWhatsAppPairCode = async function() {
     });
     const data = await res.json();
     if (data && data.ok) {
+      if (data.alreadyConnected) {
+        clearInterval(pollInterval);
+        if (codeBox) codeBox.style.display = "none";
+        showFloatingToast("✅ This phone is already linked & active!", 4000);
+        fetchWhatsAppBotStatus();
+        return;
+      }
+      if (data.code) {
+        clearInterval(pollInterval);
+        codeFound = true;
+        const c = String(data.code).toUpperCase();
+        if (codeText) codeText.textContent = c.length === 8 ? `${c.slice(0, 4)} - ${c.slice(4)}` : c;
+        showFloatingToast("🔑 8-digit Pairing Code Ready!", 4000);
+        return;
+      }
       showFloatingToast("⏳ Contacting WhatsApp server... Generating code.", 4000);
     }
   } catch (err) {
@@ -10313,17 +10538,16 @@ function _openWhatsAppBotModalActual() {
   // Show live QR or loading spinner
   const qrLoading = document.getElementById("wa-qr-loading");
   const qrImage = document.getElementById("wa-qr-image");
+  const qrBox = document.getElementById("wa-qr-box");
   const expiredOverlay = document.getElementById("wa-qr-expired-overlay");
   
   if (expiredOverlay) expiredOverlay.style.display = "none";
-  if (qrLoading) qrLoading.style.display = "none";
   if (qrImage) {
-    qrImage.style.display = "block";
-    const curSrc = qrImage.getAttribute("src");
-    if (!curSrc || curSrc === "" || curSrc === "#") {
-      qrImage.src = 'whatsapp_qr.png?v=' + (window.__APP_BUILD_VERSION__ || Date.now());
-    }
+    qrImage.style.display = "none";
+    qrImage.src = "";
   }
+  if (qrBox) qrBox.style.display = "none";
+  if (qrLoading) qrLoading.style.display = "flex";
 
   // Immediately render current known status (CONNECTED, QR_READY, etc.)
   if (whatsappBotStatus && whatsappBotStatus.status) {

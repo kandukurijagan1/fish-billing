@@ -187,10 +187,64 @@ async function handleDisconnect() {
   setTimeout(() => initClient({ forceClean: true }), 1000);
 }
 
+async function handlePairCodeRequest(rawPhone) {
+  if (!rawPhone) throw new Error('Phone number is required');
+  let digits = rawPhone.toString().replace(/\D/g, '');
+  if (digits.length === 10) digits = '91' + digits;
+  else if (digits.length === 11 && digits.startsWith('0')) digits = '91' + digits.substring(1);
+
+  console.log(`🔑 Generating WhatsApp pairing code for +${digits}...`);
+
+  // Case 1: If client is already connected to this phone number
+  if (status === 'CONNECTED' && clientInfo && clientInfo.phone) {
+    const connectedDigits = String(clientInfo.phone).replace(/\D/g, '');
+    if (connectedDigits.endsWith(digits.slice(-10))) {
+      console.log(`ℹ️ Phone +${digits} is already connected to this bot!`);
+      broadcastStatus();
+      return 'ALREADY_CONNECTED';
+    }
+  }
+
+  // Case 2: Client is currently active on the pairing / QR screen
+  if (client && client.pupPage && !client.pupPage.isClosed() && (status === 'QR_READY' || status === 'CODE_READY')) {
+    try {
+      if (typeof client.requestPairingCode === 'function') {
+        const code = await client.requestPairingCode(digits, true);
+        if (code) {
+          pairingCode = code;
+          status = 'CODE_READY';
+          qrCodeDataUrl = null;
+          rawQr = null;
+          qrTimestamp = null;
+          isInitializing = false;
+          broadcastStatus();
+          console.log(`🔑 Instant pairing code generated: ${code}`);
+          return code;
+        }
+      }
+    } catch (e) {
+      console.warn('Direct client.requestPairingCode note:', e.message, '- starting fresh pairing client');
+    }
+  }
+
+  // Case 3: If connected to another phone, disconnect previous session first
+  if (status === 'CONNECTED') {
+    console.log(`🔄 Re-pairing requested for new number +${digits}, unlinking current session...`);
+    await handleDisconnect();
+    await new Promise(r => setTimeout(r, 1200));
+  }
+
+  // Case 4: Launch fresh client with pairPhone
+  initClient({ forceClean: true, pairPhone: digits });
+  return null;
+}
+
 function initMqttBridge() {
   const brokers = [
-    'wss://test.mosquitto.org:8081/mqtt',
-    'ws://test.mosquitto.org:8080/mqtt'
+    'mqtt://broker.emqx.io:1883',
+    'wss://broker.emqx.io:8084/mqtt',
+    'wss://broker.hivemq.com:8884/mqtt',
+    'wss://test.mosquitto.org:8081/mqtt'
   ];
   let brokerIdx = 0;
   let reconnectTimer = null;
@@ -262,7 +316,7 @@ function initMqttBridge() {
           } else if (cmd.command === 'pair_code' || cmd.action === 'pair_code') {
             if (cmd.phone) {
               console.log('🔑 Remote pairing code requested for:', cmd.phone);
-              initClient({ forceClean: true, pairPhone: cmd.phone });
+              handlePairCodeRequest(cmd.phone).catch(e => console.error('handlePairCodeRequest error:', e.message));
             }
           } else if (cmd.command === 'get_status' || cmd.action === 'get_status') {
             broadcastStatus();
@@ -759,7 +813,11 @@ async function initClient(options = {}) {
       '--no-zygote',
       '--disable-gpu',
       '--disable-blink-features=AutomationControlled',
-      '--disable-features=IsolateOrigins,site-per-process'
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--window-size=1280,800'
     ];
 
     const puppeteerConfig = {
@@ -782,7 +840,7 @@ async function initClient(options = {}) {
     if (pairPhone) {
       let digits = pairPhone.toString().replace(/\D/g, '');
       if (digits.length === 10) digits = '91' + digits;
-      clientConfig.pairWithPhoneNumber = { phoneNumber: digits, showNotification: false };
+      clientConfig.pairWithPhoneNumber = { phoneNumber: digits, showNotification: true };
     }
 
     client = new Client(clientConfig);
@@ -800,10 +858,6 @@ async function initClient(options = {}) {
           margin: 2,
           color: { dark: '#0a4b5c', light: '#ffffff' }
         });
-        try {
-          const b64 = qrCodeDataUrl.replace(/^data:image\/png;base64,/, '');
-          fs.writeFileSync(path.join(__dirname, 'whatsapp_qr.png'), b64, 'base64');
-        } catch (we) {}
       } catch (err) {
         console.error('QR generate error:', err);
       }
@@ -954,8 +1008,15 @@ app.post('/api/whatsapp/refresh-qr', async (req, res) => {
 app.post('/api/whatsapp/pair-code', async (req, res) => {
   const { phone } = req.body;
   if (!phone) return res.status(400).json({ ok: false, error: 'Phone number required' });
-  initClient({ forceClean: true, pairPhone: phone });
-  res.json({ ok: true, message: 'Pairing requested' });
+  try {
+    const code = await handlePairCodeRequest(phone);
+    if (code === 'ALREADY_CONNECTED') {
+      return res.json({ ok: true, alreadyConnected: true, message: 'This phone is already linked and active!', ...getStatus() });
+    }
+    res.json({ ok: true, code, message: code ? 'Pairing code generated' : 'Pairing requested', ...getStatus() });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 app.post('/api/whatsapp/disconnect', async (req, res) => {
