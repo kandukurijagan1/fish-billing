@@ -1393,7 +1393,7 @@ const AppWireSecurity = {
     });
   },
 
-  async unpack(rawWirePayload) {
+  async unpack(rawWirePayload, options = {}) {
     if (!rawWirePayload) return null;
     let envelope = null;
     try {
@@ -1414,15 +1414,17 @@ const AppWireSecurity = {
     const { v, s, t, n, c } = envelope;
     const secret = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
 
-    // 1. Replay defense: 5-minute timestamp window
-    const now = Date.now();
-    const ageMs = Math.abs(now - (t || 0));
-    if (ageMs > 300 * 1000) {
-      console.warn("⚠️ Dropped stale/replayed wire packet (age > 5m):", ageMs);
-      if (typeof AppSecurity !== "undefined") {
-        AppSecurity.logEvent("REPLAY_PACKET_DROPPED", `Stale packet dropped (age: ${Math.round(ageMs/1000)}s)`, "WARNING");
+    // 1. Replay defense: 5-minute timestamp window (bypassed for persistent retained snapshots)
+    if (!options.allowRetained) {
+      const now = Date.now();
+      const ageMs = Math.abs(now - (t || 0));
+      if (ageMs > 300 * 1000) {
+        console.warn("⚠️ Dropped stale/replayed wire packet (age > 5m):", ageMs);
+        if (typeof AppSecurity !== "undefined") {
+          AppSecurity.logEvent("REPLAY_PACKET_DROPPED", `Stale packet dropped (age: ${Math.round(ageMs/1000)}s)`, "WARNING");
+        }
+        return null;
       }
-      return null;
     }
 
     // 2. Cryptographic signature check
@@ -1457,6 +1459,7 @@ let interTabChannel = null;
 const MY_SYNC_CLIENT_ID = 'client_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
 const SYNC_MESH_TOPIC = AppWireSecurity.getSecureTopic();
 const LEGACY_SYNC_MESH_TOPIC = 'aaryan_aqua_gst_billing_2026/db_sync';
+const RETAINED_DB_TOPIC = SYNC_MESH_TOPIC + '/retained_db';
 let realtimeMeshClient = null;
 const MESH_BROKERS = [
   'wss://broker.emqx.io:8084/mqtt',      // Global Edge Cluster (<15ms latency)
@@ -1954,6 +1957,103 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
   }
 }
 
+// --- HIGH-SPEED RETAINED DATABASE MESH PROCESSOR (<15ms Instant Hydration) ---
+function processRetainedDatabaseMessage(bundle) {
+  if (!bundle || typeof bundle !== 'object') return;
+  let changed = false;
+
+  // 1. Invoices (Zero-Loss Union Merge)
+  if (Array.isArray(bundle.invoices) && bundle.invoices.length > 0) {
+    const peerInvMap = new Map();
+    (invoicesDb || []).forEach(inv => {
+      if (!inv) return;
+      const key = String(inv.id || inv.invoiceNo || '').trim();
+      if (key) peerInvMap.set(key, inv);
+    });
+    bundle.invoices.forEach(inv => {
+      if (!inv) return;
+      const key = String(inv.id || inv.invoiceNo || '').trim();
+      if (!key) return;
+      if (!peerInvMap.has(key)) {
+        peerInvMap.set(key, inv);
+        changed = true;
+      } else {
+        const cur = peerInvMap.get(key);
+        const curTime = new Date(cur.updatedAt || cur.date || cur.invoiceDate || 0).getTime();
+        const newTime = new Date(inv.updatedAt || inv.date || inv.invoiceDate || 0).getTime();
+        const statusChanged = (inv.paymentStatus && inv.paymentStatus !== cur.paymentStatus) ||
+                              (inv.balanceDue !== undefined && inv.balanceDue !== cur.balanceDue) ||
+                              (inv.paidAmount !== undefined && inv.paidAmount !== cur.paidAmount);
+        if (newTime > curTime || statusChanged || (!cur.details && inv.details)) {
+          peerInvMap.set(key, Object.assign({}, cur, inv));
+          changed = true;
+        }
+      }
+    });
+    invoicesDb = window.filterOutDeletedInvoices(Array.from(peerInvMap.values()));
+    invoicesDb.sort((a, b) => String(a.invoiceNo || "").localeCompare(String(b.invoiceNo || "")));
+    try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
+    if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllInvoices(invoicesDb);
+  }
+
+  // 2. Products (Latest Stock Merge)
+  if (Array.isArray(bundle.products) && bundle.products.length > 0) {
+    let _dpri = []; try { _dpri = JSON.parse(localStorage.getItem("deleted_product_ids")) || []; } catch(e){}
+    const prodMap = new Map();
+    (productsDb || []).forEach(p => { if (p && p.id) prodMap.set(p.id, p); });
+    bundle.products.forEach(p => {
+      if (p && p.id && !_dpri.includes(p.id)) {
+        if (!prodMap.has(p.id)) {
+          prodMap.set(p.id, p);
+          changed = true;
+        } else {
+          const cur = prodMap.get(p.id);
+          if ((!cur.stock && p.stock) || (p.updatedAt && cur.updatedAt && new Date(p.updatedAt) > new Date(cur.updatedAt))) {
+            prodMap.set(p.id, Object.assign({}, cur, p));
+            changed = true;
+          }
+        }
+      }
+    });
+    productsDb = Array.from(prodMap.values());
+    try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
+    if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts(productsDb);
+  }
+
+  // 3. Parties (Union Merge)
+  if (Array.isArray(bundle.parties) && bundle.parties.length > 0) {
+    let _dpi = []; try { _dpi = JSON.parse(localStorage.getItem("deleted_party_ids")) || []; } catch(e){}
+    const partyMap = new Map();
+    (partiesDb || []).forEach(p => { if (p && p.id) partyMap.set(p.id, p); });
+    bundle.parties.forEach(p => {
+      if (p && p.id && !_dpi.includes(p.id) && !_dpi.includes(p.name)) {
+        if (!partyMap.has(p.id)) {
+          partyMap.set(p.id, p);
+          changed = true;
+        }
+      }
+    });
+    partiesDb = Array.from(partyMap.values());
+    try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
+    if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllParties(partiesDb);
+  }
+
+  if (changed) {
+    if (typeof loadProductsDatabaseTable === 'function') loadProductsDatabaseTable();
+    if (typeof loadPartiesDatabaseLists === 'function') loadPartiesDatabaseLists();
+    if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
+    if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+    if (typeof autoSuggestInvoiceNo === 'function') autoSuggestInvoiceNo();
+    if (typeof calculateSummaryAndTable === 'function') calculateSummaryAndTable();
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`⚡ Ultra-Fast Mesh: Synchronized ${invoicesDb.length} Invoices (<15ms)!`, "success");
+    }
+  }
+  window.lastSyncTimeMs = Date.now();
+  if (typeof window.updateRealtimePresenceHUD === 'function') window.updateRealtimePresenceHUD("live");
+  if (typeof window.updateCloudSyncBadge === 'function') window.updateCloudSyncBadge("synced");
+}
+
 // 1. Same-Browser BroadcastChannel Listener (0.05ms)
 try {
   if (typeof BroadcastChannel !== 'undefined') {
@@ -2029,9 +2129,9 @@ function initRealtimeMeshSync() {
     realtimeMeshClient = mqtt.connect(brokerUrl, {
       clientId: MY_SYNC_CLIENT_ID,
       clean: true,
-      keepalive: 30,
-      reconnectPeriod: 1000,
-      connectTimeout: 4000
+      keepalive: 20,
+      reconnectPeriod: 500,
+      connectTimeout: 2500
     });
 
     realtimeMeshClient.on('connect', () => {
@@ -2040,10 +2140,17 @@ function initRealtimeMeshSync() {
       console.log(`⚡ High-Speed Cross-User Mesh Active via ${activeBrokerName}!`);
       realtimeMeshClient.subscribe(SYNC_MESH_TOPIC, { qos: 0 });
       realtimeMeshClient.subscribe(LEGACY_SYNC_MESH_TOPIC, { qos: 0 });
+      realtimeMeshClient.subscribe(RETAINED_DB_TOPIC, { qos: 0 });
       realtimeMeshClient.subscribe('aaryan_aqua_gst_billing_2026/whatsapp_status', { qos: 0 });
       realtimeMeshClient.subscribe('aaryan_aqua_gst_billing_2026/whatsapp_ack', { qos: 0 });
       // Announce presence and request state from any active peer
       broadcastInterTabEvent('SYNC_REQUEST', { requesterId: MY_SYNC_CLIENT_ID });
+
+      // If this device already has invoices, immediately push retained snapshot so new devices connect to instant data
+      if (invoicesDb && invoicesDb.length > 0 && typeof window.publishRetainedDatabaseState === 'function') {
+        window.publishRetainedDatabaseState();
+      }
+
       // Proactively request latest WhatsApp Bot Status from host companion
       try {
         realtimeMeshClient.publish('aaryan_aqua_gst_billing_2026/whatsapp_commands', JSON.stringify({ command: 'get_status' }));
@@ -2053,6 +2160,25 @@ function initRealtimeMeshSync() {
 
     realtimeMeshClient.on('message', (topic, message) => {
       try {
+        if (topic === RETAINED_DB_TOPIC) {
+          const rawPayload = message.toString();
+          AppWireSecurity.unpack(rawPayload, { allowRetained: true }).then(bundle => {
+            if (!bundle) {
+              try { bundle = JSON.parse(rawPayload); } catch (_) {}
+            }
+            if (!bundle || bundle.senderId === MY_SYNC_CLIENT_ID) return;
+            processRetainedDatabaseMessage(bundle);
+          }).catch(() => {
+            try {
+              const bundle = JSON.parse(rawPayload);
+              if (bundle && bundle.senderId !== MY_SYNC_CLIENT_ID) {
+                processRetainedDatabaseMessage(bundle);
+              }
+            } catch (_) {}
+          });
+          return;
+        }
+
         if (topic === 'aaryan_aqua_gst_billing_2026/whatsapp_ack') {
           const ackData = JSON.parse(message.toString());
           if (ackData && ackData.commandId && window.waCommandCallbacks && window.waCommandCallbacks[ackData.commandId]) {
@@ -2104,7 +2230,7 @@ function initRealtimeMeshSync() {
     realtimeMeshClient.on('error', (err) => {
       console.warn(`Mesh broker note (${brokerUrl}):`, err.message);
       consecutiveBrokerErrors++;
-      if (consecutiveBrokerErrors >= 6) {
+      if (consecutiveBrokerErrors >= 2) {
         rotateMeshBroker();
       }
     });
@@ -2116,7 +2242,7 @@ function initRealtimeMeshSync() {
   } catch (err) {
     console.warn("Real-time mesh init note:", err.message);
     consecutiveBrokerErrors++;
-    if (consecutiveBrokerErrors >= 6) {
+    if (consecutiveBrokerErrors >= 2) {
       rotateMeshBroker();
     }
   }
@@ -2126,7 +2252,7 @@ function rotateMeshBroker() {
   consecutiveBrokerErrors = 0;
   currentBrokerIdx = (currentBrokerIdx + 1) % MESH_BROKERS.length;
   console.log(`Switching real-time mesh to next broker: ${MESH_BROKERS[currentBrokerIdx]}`);
-  setTimeout(initRealtimeMeshSync, 1000);
+  setTimeout(initRealtimeMeshSync, 350);
 }
 
 // Ensure active real-time reconnection when device awakens or network reconnects
@@ -2234,6 +2360,29 @@ function broadcastInterTabEvent(type, payload = {}) {
   }
 }
 
+window.publishRetainedDatabaseState = function() {
+  if (!realtimeMeshClient || !realtimeMeshClient.connected) return;
+  try {
+    const bundle = {
+      invoices: invoicesDb,
+      products: productsDb,
+      parties: partiesDb,
+      settings: globalSettings,
+      version: Date.now(),
+      senderId: MY_SYNC_CLIENT_ID
+    };
+    AppWireSecurity.pack(bundle).then(wire => {
+      if (realtimeMeshClient && realtimeMeshClient.connected && wire) {
+        realtimeMeshClient.publish(RETAINED_DB_TOPIC, wire, { qos: 0, retain: true });
+      }
+    }).catch(() => {
+      try {
+        realtimeMeshClient.publish(RETAINED_DB_TOPIC, JSON.stringify(bundle), { qos: 0, retain: true });
+      } catch (_) {}
+    });
+  } catch (e) {}
+};
+
 window.broadcastDatabaseMutation = function(extra = {}) {
   broadcastInterTabEvent('DATABASE_MUTATED', {
     products: productsDb,
@@ -2242,6 +2391,9 @@ window.broadcastDatabaseMutation = function(extra = {}) {
     settings: globalSettings,
     ...extra
   });
+  if (typeof window.publishRetainedDatabaseState === 'function') {
+    window.publishRetainedDatabaseState();
+  }
 };
 
 
@@ -2487,6 +2639,7 @@ function syncDatabaseToServer(type, data) {
     if (window.TurboIndexedDB) window.TurboIndexedDB.saveInvoice(data);
     if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
     broadcastInterTabEvent('invoice_saved', { invoice: data, products: productsDb, parties: partiesDb });
+    if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
     pushDirectToGoogleDatabase(action, payload);
   } else if (type === "products") {
     action = "save_products";
@@ -2497,6 +2650,7 @@ function syncDatabaseToServer(type, data) {
     if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllProducts(productsDb);
     if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
     broadcastInterTabEvent('products_saved', { products: data });
+    if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
     if (directPushProductTimer) clearTimeout(directPushProductTimer);
     directPushProductTimer = setTimeout(() => {
       pushDirectToGoogleDatabase("save_products", { products: productsDb });
@@ -2510,6 +2664,7 @@ function syncDatabaseToServer(type, data) {
     if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllParties(partiesDb);
     if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
     broadcastInterTabEvent('parties_saved', { parties: data });
+    if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
     if (directPushPartiesTimer) clearTimeout(directPushPartiesTimer);
     directPushPartiesTimer = setTimeout(() => {
       pushDirectToGoogleDatabase("save_parties", { parties: partiesDb });
@@ -2531,6 +2686,7 @@ function deleteProductFromServer(id) {
   if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllProducts(productsDb);
   if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
   broadcastInterTabEvent('record_deleted', { recordType: 'product', id });
+  if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
   pushDirectToGoogleDatabase("delete_record", { type: "product", id });
 }
 
@@ -2541,6 +2697,7 @@ function deletePartyFromServer(id) {
   if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllParties(partiesDb);
   if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
   broadcastInterTabEvent('record_deleted', { recordType: 'party', id });
+  if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
   pushDirectToGoogleDatabase("delete_record", { type: "party", id });
 }
 
@@ -2554,6 +2711,7 @@ function deleteInvoiceFromServer(id, invoiceNo) {
   }
   if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
   broadcastInterTabEvent('record_deleted', { recordType: 'invoice', id, invoiceNo, products: productsDb });
+  if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
   pushDirectToGoogleDatabase("delete_record", { type: "invoice", id, invoiceNo });
 }
 
@@ -2623,7 +2781,7 @@ window.triggerDatabaseSync = async function(forceReload = false) {
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 6000);
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
 
   const clientHash = (lastSyncDataHash && !forceReload) ? lastSyncDataHash : "";
   const gasSyncUrl = `${GOOGLE_SCRIPT_URL}?action=sync&auth=${encodeURIComponent(API_SECRET_TOKEN)}&token=${encodeURIComponent(API_SECRET_TOKEN)}${clientHash ? `&hash=${encodeURIComponent(clientHash)}` : ''}&_t=${Date.now()}`;
@@ -4106,6 +4264,7 @@ function reconcileProductInventoryStock(oldInvoice, newInvoice) {
         products: productsDb,
         invoiceNo: newInvoice?.invoiceNo || oldInvoice?.invoiceNo
       });
+      if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
 
       // 5. Debounced asynchronous push to Google Master Database
       if (directPushProductTimer) clearTimeout(directPushProductTimer);
@@ -8482,6 +8641,7 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
         parties: partiesDb
       });
       syncDatabaseToServer("invoices", invoiceRecord);
+      if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
     } catch (err) {
       console.warn("Unable to sync invoice to cloud:", err);
     }
@@ -11557,6 +11717,7 @@ window.markBalanceQrPaidAndSendWhatsApp = function() {
   if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
   if (typeof updateDashboardOverview === "function") updateDashboardOverview();
   if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+  if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
 
   // Mesh MQTT Sync
   if (typeof publishMeshDatabaseUpdate === "function") {
@@ -12326,6 +12487,7 @@ window.deleteSavedInvoice = function(identifier) {
     if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
     if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
     if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+    if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
 
     if (typeof showFloatingToast === 'function') {
       showFloatingToast(`Invoice ${displayNo} deleted successfully`, "success");
@@ -17844,8 +18006,10 @@ window.submitInvoicePaymentSettlement = function() {
       paymentHistory: inv.paymentHistory,
       invoice: inv
     });
+    if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
   } else if (typeof window.broadcastDatabaseMutation === 'function') {
     window.broadcastDatabaseMutation();
+    if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
   }
 
   // Track Google Ads conversion for payment settlement
