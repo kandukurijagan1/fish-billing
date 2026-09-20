@@ -4009,7 +4009,7 @@ function updateLiveDateTime() {
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
-  el.textContent = `${dateStr} • ${timeStr}`;
+  el.innerHTML = `<span class="header-date-chunk">${dateStr} • </span><span class="header-time-chunk">${timeStr}</span>`;
 }
 
 // --- DASHBOARD LOADER & ANALYTICS CHARTS ---
@@ -14062,7 +14062,7 @@ function updateSessionTimerUI() {
   pill.style.display = "inline-flex";
 
   if (!lockTimerSeconds || lockTimerSeconds <= 0) {
-    textEl.textContent = "Session: Active ∞";
+    textEl.innerHTML = `<span class="session-label">Session: </span><span class="session-val">Active ∞</span>`;
     pill.className = "session-timer-pill";
     if (iconEl) iconEl.className = "fa-solid fa-infinity text-teal";
     return;
@@ -14074,7 +14074,7 @@ function updateSessionTimerUI() {
   const remainingSec = Math.max(0, lockTimerSeconds - elapsedSec);
 
   const timeStr = formatSessionDuration(remainingSec);
-  textEl.textContent = `Session: ${timeStr}`;
+  textEl.innerHTML = `<span class="session-label">Session: </span><span class="session-val">${timeStr}</span>`;
 
   if (remainingSec <= 30) {
     pill.className = "session-timer-pill critical";

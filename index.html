@@ -411,35 +411,35 @@
             </button>
             <div id="live-turbo-hub-pill" class="turbo-hub-pill cursor-pointer" onclick="openCommandPalette()" title="Turbo Intelligence & Fast Search Hub (Ctrl+K / Alt+K)">
               <i class="fa-solid fa-bolt-lightning text-cyan" id="turbo-hub-icon"></i>
-              <span id="turbo-hub-pill-text">Turbo Hub <kbd>Ctrl+K</kbd></span>
+              <span id="turbo-hub-pill-text">Turbo Hub <kbd class="header-kbd">Ctrl+K</kbd></span>
             </div>
-            <div id="live-data-share-pill" class="data-share-pill cursor-pointer" onclick="openDataSharingModal()" title="Advanced Data Sharing & P2P Quick Sync">
+            <div id="live-data-share-pill" class="data-share-pill icon-btn-tool cursor-pointer" onclick="openDataSharingModal()" title="Advanced Data Sharing & P2P Quick Sync">
               <i class="fa-solid fa-share-nodes" style="color: #0284c7;"></i>
-              <span id="data-share-pill-text">Share</span>
+              <span id="data-share-pill-text" class="header-pill-label">Share</span>
             </div>
-            <div id="live-calculator-pill" class="calc-pill cursor-pointer" onclick="toggleQuickCalculator()" title="Quick Calculator & Fast Bill Injection (Alt+C)">
+            <div id="live-calculator-pill" class="calc-pill icon-btn-tool cursor-pointer" onclick="toggleQuickCalculator()" title="Quick Calculator & Fast Bill Injection (Alt+C)">
               <i class="fa-solid fa-calculator" style="color: #38bdf8;"></i>
-              <span>Calc <kbd>Alt+C</kbd></span>
+              <span class="header-pill-label">Calc</span>
             </div>
-            <div id="live-audio-fx-pill" class="audio-fx-pill active cursor-pointer" onclick="toggleAudioFeedback()" title="Billing Audio FX (Click to Mute / Unmute)">
+            <div id="live-audio-fx-pill" class="audio-fx-pill icon-btn-tool active cursor-pointer" onclick="toggleAudioFeedback()" title="Billing Audio FX (Click to Mute / Unmute)">
               <i class="fa-solid fa-volume-high" id="audio-fx-icon"></i>
-              <span id="audio-fx-text">Audio</span>
+              <span id="audio-fx-text" class="header-pill-label">Audio</span>
             </div>
-            <div id="live-privacy-shield-pill" class="privacy-shield-pill cursor-pointer" onclick="toggleCounterPrivacyShield()" title="Counter Privacy Shield (Mask Financial Figures from Onlookers) [Alt+P]" style="background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.25); color: #6366f1; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;">
-              <i class="fa-solid fa-eye" id="privacy-shield-icon" style="color: #6366f1; font-size: 11px;"></i>
+            <div id="live-privacy-shield-pill" class="privacy-shield-pill cursor-pointer" onclick="toggleCounterPrivacyShield()" title="Counter Privacy Shield (Mask Financial Figures from Onlookers) [Alt+P]">
+              <i class="fa-solid fa-eye" id="privacy-shield-icon"></i>
               <span id="privacy-shield-text">Privacy Off</span>
             </div>
-            <div id="live-session-timer-pill" class="session-timer-pill cursor-pointer" onclick="renewUserSession()" title="Active Session Timing (Click to Reset/Extend Auto-Lock)" style="background: rgba(13, 148, 136, 0.1); border: 1px solid rgba(13, 148, 136, 0.25); color: #0d9488; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;">
-              <i class="fa-solid fa-hourglass-start" id="session-timer-icon" style="color: #0d9488; font-size: 11px;"></i>
+            <div id="live-session-timer-pill" class="session-timer-pill cursor-pointer" onclick="renewUserSession()" title="Active Session Timing (Click to Reset/Extend Auto-Lock)">
+              <i class="fa-solid fa-hourglass-start" id="session-timer-icon"></i>
               <span id="session-timer-text">Session: 30:00</span>
-              <span class="session-extend-chip" style="background: rgba(13, 148, 136, 0.2); padding: 1px 5px; border-radius: 4px; font-size: 9px; margin-left: 2px;">+Extend</span>
+              <span class="session-extend-chip">+Extend</span>
             </div>
-            <div id="live-header-lock-pill" class="lock-pill cursor-pointer" onclick="triggerManualLock()" title="Lock Screen (Admin Security) [Alt+L / Ctrl+Shift+L]" style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.25); color: #f87171; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;">
-              <i class="fa-solid fa-lock" style="color: #ef4444; font-size: 11px;"></i>
-              <span>Lock <kbd style="font-size:9px; background: rgba(239,68,68,0.2); padding:1px 4px; border-radius:3px; font-family: inherit;">Alt+L</kbd></span>
+            <div id="live-header-lock-pill" class="lock-pill cursor-pointer" onclick="triggerManualLock()" title="Lock Screen (Admin Security) [Alt+L / Ctrl+Shift+L]">
+              <i class="fa-solid fa-lock"></i>
+              <span>Lock</span>
             </div>
           </div>
-          <div class="header-clock-pill">
+          <div class="header-clock-pill" title="Current Date & Time">
             <i class="fa-regular fa-clock text-cyan" style="font-size: 11px;"></i>
             <span id="current-datetime"></span>
           </div>
