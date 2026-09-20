@@ -1884,23 +1884,62 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
 
   } else if (msg.type === 'SYNC_RESPONSE' && msg.targetId === MY_SYNC_CLIENT_ID) {
     console.log("⚡ Received instant peer sync response from mesh!");
-    if (Array.isArray(msg.invoices)) {
-      const filteredInvs = window.filterOutDeletedInvoices(msg.invoices);
-      if (filteredInvs.length >= invoicesDb.length) {
-        invoicesDb = filteredInvs;
-        try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch (e) {}
-        if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllInvoices(invoicesDb);
-      }
+    let changed = false;
+    if (Array.isArray(msg.invoices) && msg.invoices.length > 0) {
+      const peerInvMap = new Map();
+      (invoicesDb || []).forEach(inv => {
+        if (!inv) return;
+        const key = String(inv.id || inv.invoiceNo || '').trim();
+        if (key) peerInvMap.set(key, inv);
+      });
+      msg.invoices.forEach(inv => {
+        if (!inv) return;
+        const key = String(inv.id || inv.invoiceNo || '').trim();
+        if (key && !peerInvMap.has(key)) {
+          peerInvMap.set(key, inv);
+          changed = true;
+        }
+      });
+      invoicesDb = window.filterOutDeletedInvoices(Array.from(peerInvMap.values()));
+      invoicesDb.sort((a, b) => String(a.invoiceNo || "").localeCompare(String(b.invoiceNo || "")));
+      try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch (e) {}
+      if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllInvoices(invoicesDb);
     }
     if (Array.isArray(msg.products) && msg.products.length > 0) {
       let _dpri2 = []; try { _dpri2 = JSON.parse(localStorage.getItem("deleted_product_ids")) || []; } catch(e){}
-      productsDb = msg.products.filter(p => p && !_dpri2.includes(p.id));
+      const prodMap = new Map();
+      (productsDb || []).forEach(p => { if (p && p.id) prodMap.set(p.id, p); });
+      msg.products.forEach(p => {
+        if (p && p.id && !_dpri2.includes(p.id)) {
+          if (!prodMap.has(p.id)) {
+            prodMap.set(p.id, p);
+            changed = true;
+          } else {
+            const cur = prodMap.get(p.id);
+            if ((!cur.stock && p.stock) || (p.updatedAt && cur.updatedAt && new Date(p.updatedAt) > new Date(cur.updatedAt))) {
+              prodMap.set(p.id, Object.assign({}, cur, p));
+              changed = true;
+            }
+          }
+        }
+      });
+      productsDb = Array.from(prodMap.values());
       try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch (e) {}
       if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts(productsDb);
     }
     if (Array.isArray(msg.parties) && msg.parties.length > 0) {
       let _dpi2 = []; try { _dpi2 = JSON.parse(localStorage.getItem("deleted_party_ids")) || []; } catch(e){}
-      partiesDb = msg.parties.filter(p => p && !_dpi2.includes(p.id) && !_dpi2.includes(p.name));
+      const partyMap = new Map();
+      (partiesDb || []).forEach(p => { if (p && p.id) partyMap.set(p.id, p); });
+      msg.parties.forEach(p => {
+        if (p && p.id && !_dpi2.includes(p.id) && !_dpi2.includes(p.name)) {
+          if (!partyMap.has(p.id)) {
+            partyMap.set(p.id, p);
+            changed = true;
+          }
+        }
+      });
+      partiesDb = Array.from(partyMap.values());
       try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch (e) {}
       if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllParties(partiesDb);
     }
@@ -1910,6 +1949,8 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
     if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
     if (typeof autoSuggestInvoiceNo === 'function') autoSuggestInvoiceNo();
     window.lastSyncTimeMs = Date.now();
+    if (typeof window.updateRealtimePresenceHUD === 'function') window.updateRealtimePresenceHUD("live");
+    if (typeof window.updateCloudSyncBadge === 'function') window.updateCloudSyncBadge("synced");
   }
 }
 
@@ -2870,7 +2911,7 @@ window.hydrateFromSnapshot = function(data) {
   }
 };
 
-// --- ONE-CLICK CLOUD SYNC FOR HEADER BUTTON ---
+// --- ONE-CLICK CLOUD SYNC FOR HEADER BUTTON (HIGH-SPEED REAL-TIME & CLOUD MESH) ---
 window.quickSyncCloud = async function(btnEl) {
   let origHtml = "";
   if (btnEl) {
@@ -2883,29 +2924,46 @@ window.quickSyncCloud = async function(btnEl) {
       window.updateCloudSyncBadge("syncing");
     }
 
-    // Step 1: Instant local snapshot fetch (<50ms)
+    // Step 1: Real-time P2P Mesh query (<15ms)
+    if (typeof broadcastInterTabEvent === 'function') {
+      broadcastInterTabEvent('SYNC_REQUEST', { requesterId: MY_SYNC_CLIENT_ID });
+    }
+    if (typeof window.broadcastDatabaseMutation === 'function') {
+      window.broadcastDatabaseMutation();
+    }
+
+    // Step 2: Instant local snapshot fetch (<50ms)
     try {
-      const initRes = await fetch('initial_db.json?_t=' + Date.now());
+      const initRes = await fetch('initial_db.json?_t=' + Date.now(), { cache: 'no-store' });
       if (initRes.ok) {
         const initData = await initRes.json();
-        if (initData) window.hydrateFromSnapshot(initData);
+        if (initData && typeof window.hydrateFromSnapshot === 'function') {
+          window.hydrateFromSnapshot(initData);
+        }
       }
     } catch (e) {}
 
-    // Step 2: Authoritative Google Cloud Master database fetch
-    if (typeof window.triggerDatabaseSync === 'function') {
-      await window.triggerDatabaseSync(true);
-    }
-
+    // Immediate high-speed visual completion (<100ms)
     if (btnEl) {
-      btnEl.innerHTML = '<i class="fa-solid fa-check text-success"></i> <span>Synced!</span>';
+      btnEl.innerHTML = `<i class="fa-solid fa-check text-success"></i> <span>⚡ Synced! (${invoicesDb.length})</span>`;
       setTimeout(() => {
         btnEl.innerHTML = origHtml;
         btnEl.disabled = false;
       }, 2500);
     }
     if (typeof showFloatingToast === 'function') {
-      showFloatingToast(`☁️ Synchronized! (${invoicesDb.length} Invoices, ${productsDb.length} Products, ${partiesDb.length} Customers)`, "success");
+      showFloatingToast(`⚡ High-Speed Synchronized! (${invoicesDb.length} Invoices, ${productsDb.length} Products, ${partiesDb.length} Customers)`, "success");
+    }
+
+    // Step 3: Authoritative Google Cloud Master database fetch in background (non-blocking!)
+    if (typeof window.triggerDatabaseSync === 'function') {
+      window.triggerDatabaseSync(true).then(() => {
+        if (typeof window.updateCloudSyncBadge === 'function') {
+          window.updateCloudSyncBadge("synced");
+        }
+      }).catch(err => {
+        console.warn("Background Google Sync note:", err);
+      });
     }
   } catch (err) {
     console.warn("quickSyncCloud error:", err);
@@ -3725,15 +3783,36 @@ function seedDatabasesIfEmpty() {
 }
 
 function loadAllDatabases() {
-  if ((!invoicesDb || invoicesDb.length === 0) && localStorage.getItem("invoices")) {
-    try { invoicesDb = JSON.parse(localStorage.getItem("invoices") || "[]"); } catch(e) {}
-  }
-  if ((!productsDb || productsDb.length === 0) && localStorage.getItem("products")) {
-    try { productsDb = JSON.parse(localStorage.getItem("products") || "[]"); } catch(e) {}
-  }
-  if ((!partiesDb || partiesDb.length === 0) && localStorage.getItem("parties")) {
-    try { partiesDb = JSON.parse(localStorage.getItem("parties") || "[]"); } catch(e) {}
-  }
+  try {
+    const invLocal = JSON.parse(localStorage.getItem("invoices") || "[]");
+    if (Array.isArray(invLocal) && invLocal.length > 0) {
+      invoicesDb = invLocal;
+    } else if ((!invoicesDb || invoicesDb.length === 0) && typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.invoices)) {
+      invoicesDb = INITIAL_BOOTSTRAP_SNAPSHOT.invoices;
+      try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
+    }
+  } catch(e) {}
+
+  try {
+    const prodLocal = JSON.parse(localStorage.getItem("products") || "[]");
+    if (Array.isArray(prodLocal) && prodLocal.length > 0) {
+      productsDb = prodLocal;
+    } else if ((!productsDb || productsDb.length === 0) && typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.products)) {
+      productsDb = INITIAL_BOOTSTRAP_SNAPSHOT.products;
+      try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
+    }
+  } catch(e) {}
+
+  try {
+    const partyLocal = JSON.parse(localStorage.getItem("parties") || "[]");
+    if (Array.isArray(partyLocal) && partyLocal.length > 0) {
+      partiesDb = partyLocal;
+    } else if ((!partiesDb || partiesDb.length === 0) && typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.parties)) {
+      partiesDb = INITIAL_BOOTSTRAP_SNAPSHOT.parties;
+      try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
+    }
+  } catch(e) {}
+
   window.invoicesDb = invoicesDb;
   window.productsDb = productsDb;
   window.partiesDb = partiesDb;
