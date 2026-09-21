@@ -5072,10 +5072,12 @@ function updateDashboardOverview() {
           <td class="text-center" style="white-space: nowrap;">${itemsCount}</td>
           <td style="text-align: right; font-weight: 700; white-space: nowrap;">₹ ${formatCurrency(invTotal)}</td>
           <td class="text-center" style="white-space: nowrap;">
-            <span class="badge-status ${badgeClass}">${status}</span>
-            ${(!isPaid && balance > 0) ? `<div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>` : ''}
+            ${(!isPaid && balance > 0)
+              ? `<span class="badge-status ${badgeClass}" onclick="openBalanceQrModal('${inv.id}')" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode" style="font-size: 11px;"></i>${status}</span><div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>`
+              : `<span class="badge-status ${badgeClass}">${status}</span>`}
           </td>
           <td class="actions-cell">
+            ${(!isEstimate && !isPaid && balance > 0) ? `<button class="action-btn share action-btn-qr" onclick="openBalanceQrModal('${inv.id}')" title="Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode"></i></button>` : ''}
             <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${inv.id}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
             <button class="action-btn print action-btn-thermal" onclick="openInvoicePrintPreview('${inv.id}', 'thermal')" title="Preview &amp; Print POS Thermal"><i class="fa-solid fa-receipt"></i></button>
             <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Share PDF via WhatsApp (1-Click)"><i class="fa-brands fa-whatsapp"></i></button>
@@ -11662,13 +11664,15 @@ let currentBalanceQrInv = null;
 
 window.openBalanceQrModal = function(id) {
   const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => i.id === id || i.invoiceNo === id);
-  if (inv && typeof openInvoiceVerificationModal === "function") {
-    openInvoiceVerificationModal(inv.id || inv.invoiceNo);
+  if (!inv) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Invoice record not found.", "warning");
+    }
     return;
   }
-  if (!inv) return;
+
   const details = inv.details || {};
-  const payInfo = getInvoicePaidAndBalance(inv);
+  const payInfo = typeof getInvoicePaidAndBalance === 'function' ? getInvoicePaidAndBalance(inv) : { total: inv.total || 0, paid: inv.paidAmount || 0, balance: inv.balanceDue || 0 };
   const total = payInfo.total;
   const paid = payInfo.paid;
   const balance = payInfo.balance;
@@ -11678,13 +11682,20 @@ window.openBalanceQrModal = function(id) {
   const invNoEl = document.getElementById("bal-qr-inv-no");
   if (invNoEl) invNoEl.textContent = `#${inv.invoiceNo || ''}`;
   const custEl = document.getElementById("bal-qr-customer");
-  if (custEl) custEl.textContent = inv.customerName || 'Customer';
+  if (custEl) custEl.textContent = inv.customerName || (details.consignee?.name || details.buyer?.name) || 'Customer';
   const totEl = document.getElementById("bal-qr-total");
   if (totEl) totEl.textContent = formatCurrency(total);
   const paidEl = document.getElementById("bal-qr-paid");
   if (paidEl) paidEl.textContent = formatCurrency(paid);
   const balEl = document.getElementById("bal-qr-balance");
   if (balEl) balEl.textContent = formatCurrency(balance);
+  const btnAmtEl = document.getElementById("bal-qr-btn-amt");
+  if (btnAmtEl) btnAmtEl.textContent = formatCurrency(balance);
+
+  const customInput = document.getElementById("bal-custom-paid-input");
+  if (customInput) customInput.value = balance.toFixed(2);
+  const customControls = document.getElementById("bal-partial-payment-controls");
+  if (customControls) customControls.style.display = "none";
 
   const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
   const upiIdEl = document.getElementById("bal-qr-upi-id");
@@ -11738,6 +11749,155 @@ window.closeBalanceQrModal = function() {
   }
 };
 
+window.copyBalanceUpiId = function() {
+  const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(realUpiId).then(() => {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("📋 UPI ID copied: " + realUpiId, "info", 2500);
+      }
+    }).catch(() => {});
+  }
+};
+
+window.togglePartialPaymentSection = function() {
+  const controls = document.getElementById("bal-partial-payment-controls");
+  if (!controls) return;
+  const isHidden = controls.style.display === "none" || !controls.style.display;
+  controls.style.display = isHidden ? "block" : "none";
+  if (isHidden) {
+    const input = document.getElementById("bal-custom-paid-input");
+    if (input) {
+      if (currentBalanceQrInv && currentBalanceQrInv.balance) {
+        input.value = (currentBalanceQrInv.balance / 2).toFixed(2);
+      }
+      setTimeout(() => input.focus(), 100);
+    }
+  }
+};
+
+window.submitCustomPartialPayment = function() {
+  if (!currentBalanceQrInv || !currentBalanceQrInv.inv) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("⚠️ No active invoice selected.", "warning");
+    return;
+  }
+
+  const inv = currentBalanceQrInv.inv;
+  const payInfo = typeof getInvoicePaidAndBalance === 'function' ? getInvoicePaidAndBalance(inv) : { total: inv.total || 0, paid: inv.paidAmount || 0, balance: inv.balanceDue || 0 };
+  const curBal = payInfo.balance;
+  const curPaid = payInfo.paid;
+  const totalAmt = payInfo.total;
+
+  const amtInput = document.getElementById("bal-custom-paid-input");
+  const partialAmt = parseFloat(amtInput?.value) || 0;
+  if (partialAmt <= 0) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("⚠️ Please enter a valid payment amount.", "warning");
+    return;
+  }
+
+  const mode = document.getElementById("bal-custom-mode-select")?.value || "UPI / Online";
+  const ref = document.getElementById("bal-custom-ref-input")?.value?.trim() || "";
+
+  const settledAmt = Math.min(partialAmt, curBal);
+  const newPaid = curPaid + settledAmt;
+  const newBal = Math.max(0, curBal - settledAmt);
+  const finalStatus = newBal <= 0.01 ? "Paid" : "Partial";
+
+  // Update Invoice Record
+  inv.paidAmount = newPaid;
+  inv.balanceDue = newBal;
+  inv.balancePaid = (inv.balancePaid || 0) + settledAmt;
+  inv.paymentStatus = finalStatus;
+  inv.paymentMode = mode;
+  if (ref) inv.paymentReference = ref;
+
+  if (inv.details) {
+    inv.details.paidAmount = newPaid;
+    inv.details.balanceDue = newBal;
+    inv.details.balancePaid = (inv.details.balancePaid || 0) + settledAmt;
+    inv.details.paymentStatus = finalStatus;
+    inv.details.paymentMode = mode;
+    if (ref) inv.details.paymentReference = ref;
+  }
+
+  if (!inv.paymentHistory) inv.paymentHistory = [];
+  inv.paymentHistory.push({
+    date: new Date().toISOString(),
+    amount: settledAmt,
+    mode: mode,
+    reference: ref,
+    status: finalStatus,
+    source: "Balance QR Modal Partial Payment"
+  });
+
+  // Persist to localStorage & IndexedDB
+  try {
+    localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+    window.invoicesDb = invoicesDb;
+  } catch (e) {
+    console.warn("Error persisting invoices:", e);
+  }
+  if (window.AaryanDB && typeof window.AaryanDB.saveInvoice === 'function') {
+    try { window.AaryanDB.saveInvoice(inv); } catch (e) {}
+  }
+  if (typeof syncDatabaseToServer === 'function') {
+    try { syncDatabaseToServer("invoices", inv); } catch (e) {}
+  }
+
+  // Refresh UI
+  if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
+  if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+  if (typeof syncPreviewIfOpen === 'function') syncPreviewIfOpen(inv);
+  if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+  if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
+
+  closeBalanceQrModal();
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast(`✅ Recorded ₹ ${formatCurrency(settledAmt)} payment for #${inv.invoiceNo}! New balance: ₹ ${formatCurrency(newBal)} (${finalStatus}).`, "success", 4000);
+  }
+};
+
+function syncPreviewIfOpen(inv) {
+  if (!inv || !window.currentPreviewInvoiceRecord) return;
+  const currId = window.currentPreviewInvoiceRecord.id || window.currentPreviewInvoiceRecord.invoiceNo;
+  if (currId !== inv.id && currId !== inv.invoiceNo) return;
+
+  window.currentPreviewInvoiceRecord = inv;
+  const payInfo = typeof getInvoicePaidAndBalance === 'function' ? getInvoicePaidAndBalance(inv) : { status: 'Paid', isPaid: true, balance: 0 };
+  const badgeEl = document.getElementById("preview-header-status-badge");
+  if (badgeEl) {
+    badgeEl.textContent = payInfo.status || 'Paid';
+    badgeEl.className = 'badge-status ' + (payInfo.status === 'Partial' ? 'badge-partial' : (payInfo.status === 'Unpaid' ? 'badge-unpaid' : 'badge-paid'));
+  }
+  const payBtn = document.getElementById("preview-collect-pay-btn");
+  const payBtnText = document.getElementById("preview-balance-btn-text");
+  if (payBtn) {
+    if (!payInfo.isPaid && payInfo.balance > 0) {
+      if (payBtnText) payBtnText.textContent = formatCurrency(payInfo.balance);
+      payBtn.style.display = "inline-flex";
+    } else {
+      payBtn.style.display = "none";
+    }
+  }
+
+  // Re-generate preview overlays
+  try {
+    if (typeof populateA4PrintOverlay === 'function') {
+      populateA4PrintOverlay(inv.details || inv);
+      const a4Source = document.getElementById("print-invoice-wrapper");
+      const a4Target = document.getElementById("preview-a4-sheet-container");
+      if (a4Source && a4Target) a4Target.innerHTML = a4Source.innerHTML;
+    }
+    if (typeof populateThermalPrintOverlay === 'function') {
+      populateThermalPrintOverlay(inv.details || inv);
+      const thSource = document.getElementById("print-thermal-wrapper");
+      const thTarget = document.getElementById("preview-thermal-sheet-container");
+      if (thSource && thTarget) thTarget.innerHTML = thSource.innerHTML;
+    }
+  } catch (err) {}
+}
+
 window.shareBalanceQrWhatsApp = function() {
   if (!currentBalanceQrInv) return;
   const { inv } = currentBalanceQrInv;
@@ -11747,24 +11907,28 @@ window.shareBalanceQrWhatsApp = function() {
 
 window.markBalanceQrPaidAndSendWhatsApp = function() {
   if (!currentBalanceQrInv || !currentBalanceQrInv.inv) {
-    if (typeof showNotification === "function") showNotification("No active invoice selected.", "warning");
+    if (typeof showFloatingToast === "function") showFloatingToast("No active invoice selected.", "warning");
     return;
   }
 
   const inv = currentBalanceQrInv.inv;
-  const settledAmount = Number(inv.balanceDue || (inv.total - (inv.paidAmount || 0)));
+  const payInfo = typeof getInvoicePaidAndBalance === 'function' ? getInvoicePaidAndBalance(inv) : { total: inv.total || 0, balance: inv.balanceDue || 0 };
+  const settledAmount = Number(payInfo.balance || inv.balanceDue || (inv.total - (inv.paidAmount || 0)));
+  const totalAmt = Number(payInfo.total || inv.total || 0);
 
-  // Update Invoice Record to Paid
-  inv.paidAmount = Number(inv.total || 0);
+  // Update Invoice Record to 100% Paid
+  inv.paidAmount = totalAmt;
   inv.balanceDue = 0;
   inv.paymentStatus = "Paid";
   inv.paymentMode = inv.paymentMode || "UPI / Online";
+  inv.balancePaid = (inv.balancePaid || 0) + settledAmount;
 
   if (inv.details) {
-    inv.details.paidAmount = inv.paidAmount;
+    inv.details.paidAmount = totalAmt;
     inv.details.balanceDue = 0;
     inv.details.paymentStatus = "Paid";
     inv.details.paymentMode = inv.paymentMode;
+    inv.details.balancePaid = (inv.details.balancePaid || 0) + settledAmount;
   }
 
   if (!inv.paymentHistory) inv.paymentHistory = [];
@@ -11791,8 +11955,15 @@ window.markBalanceQrPaidAndSendWhatsApp = function() {
   if (typeof renderInvoicesTable === "function") renderInvoicesTable();
   if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
   if (typeof updateDashboardOverview === "function") updateDashboardOverview();
+  if (typeof syncPreviewIfOpen === 'function') syncPreviewIfOpen(inv);
   if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
   if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
+
+  closeBalanceQrModal();
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast(`✅ Invoice #${inv.invoiceNo} marked PAID! Balance settled to ₹0.00.`, "success", 4000);
+  }
 
   // Mesh MQTT Sync
   if (typeof publishMeshDatabaseUpdate === "function") {
@@ -11818,16 +11989,10 @@ window.markBalanceQrPaidAndSendWhatsApp = function() {
       if (typeof autoDispatchInvoiceToWhatsApp === "function") {
         autoDispatchInvoiceToWhatsApp(inv.details || inv);
       } else if (typeof shareInvoicePdfNative === "function") {
-        shareInvoicePdfNative(inv.details || inv, null, false, null);
+        shareInvoicePdfNative(inv.details || inv, null, false);
       }
-    }, 800);
+    }, 500);
   }
-
-  if (typeof showFloatingToast === "function") {
-    showFloatingToast(`✅ Invoice #${inv.invoiceNo} marked PAID! Balance settled to ₹0.00 & WhatsApp receipt sent!`, "success");
-  }
-
-  closeBalanceQrModal();
 };
 
 window.sendWhatsAppPaymentReminder = async function(id, btnEl = null) {
@@ -12210,15 +12375,14 @@ function renderHistoryTableRows(records) {
     let balanceQrBtn = "";
     if (!isEstimate && !isPaid && balance > 0) {
       balanceQrBtn = `
-        <button class="action-btn share" onclick="openBalanceQrModal('${inv.id}')" title="View Balance UPI QR Code (₹ ${formatCurrency(balance)})" style="background: rgba(6, 182, 212, 0.15); color: #06b6d4;"><i class="fa-solid fa-qrcode"></i></button>
-        <button class="action-btn share" onclick="sendWhatsAppPaymentReminder('${inv.id}', this)" title="Send 1-Click WhatsApp Payment Reminder (₹ ${formatCurrency(balance)})" style="background: rgba(245, 158, 11, 0.15); color: #d97706;"><i class="fa-solid fa-bell"></i></button>
+        <button class="action-btn share action-btn-qr" onclick="openBalanceQrModal('${inv.id}')" title="Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode"></i></button>
       `;
     }
 
     let balanceQrDropdownItem = "";
     if (!isEstimate && !isPaid && balance > 0) {
       balanceQrDropdownItem = `
-        <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openBalanceQrModal('${inv.id}')"><i class="fa-solid fa-qrcode" style="color: #06b6d4;"></i> View Balance UPI QR (₹ ${formatCurrency(balance)})</a>
+        <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openBalanceQrModal('${inv.id}')"><i class="fa-solid fa-qrcode" style="color: #06b6d4;"></i> Scan UPI QR &amp; Settle (₹ ${formatCurrency(balance)})</a>
         <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); sendWhatsAppPaymentReminder('${inv.id}', this)"><i class="fa-solid fa-bell" style="color: #d97706;"></i> WhatsApp Payment Reminder</a>
       `;
     }
@@ -12252,9 +12416,12 @@ function renderHistoryTableRows(records) {
         <td class="text-center">
           ${isEstimate 
             ? `<span class="badge-status" style="background: rgba(245, 158, 11, 0.15); color: #d97706; font-weight: 700; border: 1px solid rgba(245, 158, 11, 0.3);">Quotation</span>` 
-            : `<span class="badge-status ${badgeClass}">${status}</span>`}
+            : (!isPaid && balance > 0
+                ? `<span class="badge-status ${badgeClass}" onclick="openBalanceQrModal('${inv.id}')" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode" style="font-size: 11px;"></i>${status}</span><div style="font-size: 10.5px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>`
+                : `<span class="badge-status ${badgeClass}">${status}</span>`)}
         </td>
         <td class="actions-cell">
+          ${balanceQrBtn}
           <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${inv.id}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
           <button class="action-btn print action-btn-thermal" onclick="openInvoicePrintPreview('${inv.id}', 'thermal')" title="Preview &amp; Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
           <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Send Invoice &amp; PDF via WhatsApp (1-Click)" style="background: #16a34a !important; color: #ffffff !important; font-weight: 700; width: 30px; height: 30px; border-radius: 6px; box-shadow: 0 1px 3px rgba(22, 163, 74, 0.35);"><i class="fa-brands fa-whatsapp" style="font-size: 15px; color: #ffffff !important;"></i></button>
@@ -12487,11 +12654,31 @@ window.openInvoicePrintPreview = function(identifier, mode = 'a4') {
   const totEl = document.getElementById("preview-header-total");
   if (totEl) totEl.textContent = `₹ ${formatCurrency(totalAmt)}`;
 
-  const payInfo = typeof getInvoicePaidAndBalance === 'function' ? getInvoicePaidAndBalance(inv) : { status: 'Paid', isPaid: true };
+  const payInfo = typeof getInvoicePaidAndBalance === 'function' ? getInvoicePaidAndBalance(inv) : { status: 'Paid', isPaid: true, balance: 0 };
   const badgeEl = document.getElementById("preview-header-status-badge");
   if (badgeEl) {
     badgeEl.textContent = payInfo.status || 'Paid';
     badgeEl.className = 'badge-status ' + (payInfo.status === 'Partial' ? 'badge-partial' : (payInfo.status === 'Unpaid' ? 'badge-unpaid' : 'badge-paid'));
+    if (!payInfo.isPaid && payInfo.balance > 0) {
+      badgeEl.style.cursor = "pointer";
+      badgeEl.onclick = () => window.collectPaymentFromPreview();
+      badgeEl.title = `Click to Scan UPI QR & Settle Payment (Balance: ₹ ${formatCurrency(payInfo.balance)})`;
+    } else {
+      badgeEl.style.cursor = "default";
+      badgeEl.onclick = null;
+      badgeEl.title = "";
+    }
+  }
+
+  const payBtn = document.getElementById("preview-collect-pay-btn");
+  const payBtnText = document.getElementById("preview-balance-btn-text");
+  if (payBtn) {
+    if (!payInfo.isPaid && payInfo.balance > 0) {
+      if (payBtnText) payBtnText.textContent = formatCurrency(payInfo.balance);
+      payBtn.style.display = "inline-flex";
+    } else {
+      payBtn.style.display = "none";
+    }
   }
 
   // 2. Populate A4 print overlay DOM & Clone into preview container
@@ -12536,6 +12723,12 @@ window.closeInvoicePrintPreview = function() {
     modal.classList.add("hidden");
     modal.style.display = "none";
   }
+};
+
+window.collectPaymentFromPreview = function() {
+  if (!window.currentPreviewInvoiceRecord) return;
+  const id = window.currentPreviewInvoiceRecord.id || window.currentPreviewInvoiceRecord.invoiceNo;
+  window.openBalanceQrModal(id);
 };
 
 window.switchPrintPreviewMode = function(mode) {

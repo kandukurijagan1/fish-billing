@@ -3090,55 +3090,112 @@
     </div>
   </div>
 
-  <!-- BALANCE UPI QR MODAL -->
-  <div id="balance-qr-modal" class="modal-overlay hidden" onclick="if(event.target === this) closeBalanceQrModal();">
-    <div class="modal-box text-center" style="max-width: 380px; background: #ffffff;">
-      <div class="modal-header" style="justify-content: center; position: relative;">
-        <h3 style="margin: 0; color: #0a4b5c; font-size: 16px;"><i class="fa-solid fa-qrcode text-teal"></i> Balance Payment QR</h3>
-        <button type="button" class="modal-close-btn" onclick="closeBalanceQrModal()" aria-label="Close" style="position: absolute; right: 12px; top: 12px; min-width: 36px; min-height: 36px; display: flex; align-items: center; justify-content: center; border: none; background: #f1f5f9; border-radius: 50%; cursor: pointer;"><i class="fa-solid fa-xmark"></i></button>
+  <!-- ========================================================= -->
+  <!-- EXECUTIVE UPI PAYMENT & BALANCE SETTLEMENT MODAL          -->
+  <!-- ========================================================= -->
+  <div id="balance-qr-modal" class="modal-overlay hidden no-print" onclick="if(event.target === this) closeBalanceQrModal();" style="z-index: 2147483645; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(12px); display: none; align-items: center; justify-content: center; padding: 16px; overflow-y: auto;">
+    <div class="modal-box text-center" style="max-width: 440px; width: 100%; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.5); border: 1.5px solid rgba(6, 182, 212, 0.3); animation: scaleModalIn 0.2s cubic-bezier(0.16, 1, 0.3, 1); margin: auto;">
+      
+      <!-- Modal Header -->
+      <div style="background: linear-gradient(135deg, #090d16 0%, #083344 100%); color: #ffffff; padding: 18px 20px; position: relative; border-bottom: 2px solid #06b6d4;">
+        <button type="button" onclick="closeBalanceQrModal()" style="position: absolute; right: 14px; top: 14px; background: rgba(255,255,255,0.15); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.5)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'" title="Close"><i class="fa-solid fa-xmark"></i></button>
+        <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+          <div style="width: 40px; height: 40px; border-radius: 12px; background: rgba(6, 182, 212, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); display: flex; align-items: center; justify-content: center; font-size: 20px;">
+            <i class="fa-solid fa-qrcode"></i>
+          </div>
+          <div style="text-align: left;">
+            <h3 style="margin: 0; font-size: 17px; font-weight: 800; color: #ffffff;">UPI Payment &amp; Settle</h3>
+            <span style="font-size: 11.5px; color: #94a3b8;">Scan to Pay or Mark Invoice as Paid</span>
+          </div>
+        </div>
       </div>
-      <div class="modal-body padding-20">
-        <div style="background: #f8fafc; border-radius: 8px; padding: 12px; margin-bottom: 14px; font-size: 12.5px; text-align: left; border: 1px solid #e2e8f0;">
-          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-            <span style="color: #64748b;">Invoice #:</span>
-            <span style="font-weight: 700; color: #0a4b5c;" id="bal-qr-inv-no">#0001</span>
+
+      <div style="padding: 20px;">
+
+        <!-- Invoice Breakdown Card -->
+        <div style="background: #f8fafc; border-radius: 12px; padding: 14px; margin-bottom: 16px; font-size: 12.5px; text-align: left; border: 1px solid #e2e8f0;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+            <span style="color: #64748b; font-weight: 600;">INVOICE NUMBER:</span>
+            <strong style="font-size: 14px; color: #0891b2;" id="bal-qr-inv-no">#0001</strong>
           </div>
-          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-            <span style="color: #64748b;">Customer:</span>
-            <span style="font-weight: 600;" id="bal-qr-customer">Customer Name</span>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+            <span style="color: #64748b; font-weight: 600;">CUSTOMER:</span>
+            <strong style="color: #1e293b;" id="bal-qr-customer">Customer Name</strong>
           </div>
-          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-            <span style="color: #64748b;">Total Bill:</span>
-            <span style="font-weight: 600;">₹ <span id="bal-qr-total">0.00</span></span>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+            <span style="color: #64748b; font-weight: 600;">TOTAL BILL:</span>
+            <strong style="color: #0f172a;">₹ <span id="bal-qr-total">0.00</span></strong>
           </div>
-          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-            <span style="color: #64748b;">Already Paid:</span>
-            <span style="font-weight: 600; color: #10b981;">₹ <span id="bal-qr-paid">0.00</span></span>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+            <span style="color: #64748b; font-weight: 600;">ALREADY PAID:</span>
+            <strong style="color: #16a34a;">₹ <span id="bal-qr-paid">0.00</span></strong>
           </div>
-          <hr style="margin: 8px 0; border: none; border-top: 1px dashed #cbd5e1;">
-          <div style="display: flex; justify-content: space-between; font-size: 13.5px; font-weight: 700;">
-            <span style="color: #ef4444;">Pending Balance:</span>
-            <span style="color: #ef4444;">₹ <span id="bal-qr-balance">0.00</span></span>
+          <hr style="margin: 8px 0; border: none; border-top: 1.5px dashed #cbd5e1;">
+          <div style="display: flex; justify-content: space-between; font-size: 15px; font-weight: 800;">
+            <span style="color: #dc2626;">PENDING BALANCE:</span>
+            <span style="color: #dc2626;">₹ <span id="bal-qr-balance">0.00</span></span>
           </div>
         </div>
 
-        <div style="display: inline-block; padding: 12px; background: #ffffff; border: 2px solid #0a4b5c; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
-          <canvas id="balance-qr-canvas" width="240" height="240" style="width: 200px; height: 200px; display: block; margin: 0 auto;"></canvas>
-          <img id="balance-qr-img" style="width: 200px; height: 200px; display: none; margin: 0 auto;" alt="UPI QR Code">
+        <!-- High-Res UPI QR Code Container -->
+        <div style="display: inline-block; padding: 14px; background: #ffffff; border: 2px solid #0891b2; border-radius: 16px; box-shadow: 0 4px 16px rgba(8, 145, 178, 0.15); margin-bottom: 12px;">
+          <canvas id="balance-qr-canvas" width="220" height="220" style="width: 190px; height: 190px; display: block; margin: 0 auto;"></canvas>
+          <img id="balance-qr-img" style="width: 190px; height: 190px; display: none; margin: 0 auto;" alt="UPI QR Code">
         </div>
-        <div style="font-size: 11.5px; font-weight: 700; color: #0a4b5c; margin-top: 8px;">
-          UPI ID: <span id="bal-qr-upi-id" style="color: #0284c7; background: #e0f2fe; padding: 2px 8px; border-radius: 4px;">7386262139@upi</span>
+
+        <div style="font-size: 12px; font-weight: 700; color: #0a4b5c; margin-bottom: 14px; display: flex; align-items: center; justify-content: center; gap: 6px;">
+          <span>UPI ID:</span>
+          <span id="bal-qr-upi-id" style="color: #0284c7; background: #e0f2fe; padding: 3px 8px; border-radius: 6px; font-family: monospace; font-size: 12.5px;">7386262139@upi</span>
+          <button type="button" class="btn btn-xs" onclick="copyBalanceUpiId()" style="background: #e2e8f0; border: none; padding: 3px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; color: #334155; font-weight: 600;" title="Copy UPI ID"><i class="fa-solid fa-copy"></i></button>
         </div>
-        <p style="font-size: 11px; color: #64748b; margin-top: 4px; margin-bottom: 0;">
-          <i class="fa-solid fa-mobile-screen-button"></i> Scan with GPay, PhonePe, Paytm or BHIM
-        </p>
-      </div>
-      <div class="modal-footer" style="justify-content: center; gap: 8px; padding-top: 0; flex-wrap: wrap;">
-        <button type="button" class="btn btn-secondary" onclick="closeBalanceQrModal()">Close</button>
-        <button type="button" class="btn btn-primary" onclick="shareBalanceQrWhatsApp()"><i class="fa-brands fa-whatsapp"></i> Share Reminder</button>
-        <button type="button" class="btn btn-success" onclick="markBalanceQrPaidAndSendWhatsApp()" style="background: linear-gradient(135deg, #16a34a, #15803d); border: none; color: #ffffff; font-weight: 700;">
-          <i class="fa-solid fa-circle-check"></i> Mark Paid &amp; Send WhatsApp
+
+        <!-- Primary 1-Click Action: Mark as Fully Paid -->
+        <button type="button" id="bal-mark-paid-btn" class="btn btn-success" onclick="markBalanceQrPaidAndSendWhatsApp()" style="width: 100%; justify-content: center; font-size: 14px; font-weight: 800; padding: 12px; background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); border: none; color: #ffffff; box-shadow: 0 4px 14px rgba(22, 163, 74, 0.4); cursor: pointer; border-radius: 10px; display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-circle-check"></i> Mark Fully Paid (₹ <span id="bal-qr-btn-amt">0.00</span>) &amp; Update Status
         </button>
+
+        <!-- Toggle for Custom Partial Payment -->
+        <button type="button" id="bal-partial-toggle-btn" class="btn btn-sm" onclick="togglePartialPaymentSection()" style="width: 100%; justify-content: center; margin-top: 10px; background: #f8fafc; border: 1.5px solid #cbd5e1; font-size: 12px; font-weight: 700; color: #334155; padding: 8px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-hand-holding-dollar" style="color: #0891b2;"></i> Record Custom / Partial Amount Received
+        </button>
+
+        <!-- Collapsible Custom Partial Payment Form -->
+        <div id="bal-partial-payment-controls" style="display: none; background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 14px; margin-top: 10px; text-align: left;">
+          <div style="font-size: 12px; font-weight: 800; color: #166534; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-pen-to-square text-green"></i> Enter Received Payment Details
+          </div>
+          <div style="margin-bottom: 8px;">
+            <label style="font-size: 11px; color: #374151; font-weight: 700; display: block; margin-bottom: 2px;">Amount Received (₹)</label>
+            <input type="number" id="bal-custom-paid-input" class="form-control" placeholder="Enter amount received (e.g. 5000)" min="1" step="any" style="width: 100%; padding: 8px 10px; font-size: 13px; font-weight: 700; border: 1.5px solid #86efac; border-radius: 6px; box-sizing: border-box;">
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+            <div>
+              <label style="font-size: 11px; color: #374151; font-weight: 700; display: block; margin-bottom: 2px;">Mode</label>
+              <select id="bal-custom-mode-select" class="form-control" style="width: 100%; padding: 7px; font-size: 12px; font-weight: 600; border-radius: 6px; border: 1.5px solid #86efac;">
+                <option value="UPI / Online">UPI / Online</option>
+                <option value="Cash">Cash</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size: 11px; color: #374151; font-weight: 700; display: block; margin-bottom: 2px;">Ref / UTR Note</label>
+              <input type="text" id="bal-custom-ref-input" class="form-control" placeholder="Optional" style="width: 100%; padding: 7px; font-size: 12px; border-radius: 6px; border: 1.5px solid #86efac; box-sizing: border-box;">
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary" onclick="submitCustomPartialPayment()" style="width: 100%; justify-content: center; padding: 9px; font-size: 12.5px; font-weight: 700; background: #059669; border: none; color: white; border-radius: 6px; cursor: pointer;">
+            <i class="fa-solid fa-floppy-disk"></i> Save Payment &amp; Update Balance
+          </button>
+        </div>
+
+        <div style="display: flex; gap: 8px; justify-content: space-between; margin-top: 14px;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="closeBalanceQrModal()" style="flex: 1; justify-content: center; font-weight: 600; padding: 9px;">
+            <i class="fa-solid fa-xmark"></i> Close
+          </button>
+          <button type="button" class="btn btn-whatsapp btn-sm" onclick="shareBalanceQrWhatsApp()" style="flex: 1.3; justify-content: center; font-weight: 700; padding: 9px;">
+            <i class="fa-brands fa-whatsapp"></i> Send WhatsApp Reminder
+          </button>
+        </div>
+
       </div>
     </div>
   </div>
@@ -3534,6 +3591,11 @@
           <button type="button" class="btn btn-xs" onclick="adjustPrintPreviewZoom(0.1)" title="Zoom In" style="background: transparent; border: none; color: #94a3b8; padding: 4px 7px; cursor: pointer; border-radius: 4px;"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
           <button type="button" class="btn btn-xs" onclick="resetPrintPreviewZoom()" title="Fit Viewport" style="background: rgba(255,255,255,0.1); border: none; color: #38bdf8; padding: 4px 8px; cursor: pointer; border-radius: 4px; font-size: 11px; font-weight: 600;">Fit</button>
         </div>
+
+        <!-- Collect Payment / Settle Button (visible when invoice has pending balance) -->
+        <button type="button" id="preview-collect-pay-btn" class="btn btn-sm" onclick="collectPaymentFromPreview()" style="display: none; background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1.5px solid rgba(16, 185, 129, 0.5); font-weight: 800; height: 36px; padding: 0 14px; border-radius: 8px; cursor: pointer; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-qrcode"></i> Pay / Settle (₹ <span id="preview-balance-btn-text">0.00</span>)
+        </button>
 
         <!-- High-Priority Print Button -->
         <button type="button" id="preview-print-now-btn" class="btn btn-primary" onclick="executePrintFromPreview()" style="display: inline-flex; align-items: center; gap: 7px; background: linear-gradient(135deg, #059669 0%, #0d9488 100%); color: white; font-weight: 800; font-size: 13.5px; padding: 8px 18px; border: none; border-radius: 8px; box-shadow: 0 4px 14px rgba(13, 148, 136, 0.4); cursor: pointer; letter-spacing: 0.01em;">
