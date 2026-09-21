@@ -73,6 +73,31 @@ const TurboIndexedDB = {
         };
         req.onsuccess = (e) => {
           this.db = e.target.result;
+          if (window.electronAPI && typeof window.electronAPI.readFastCache === "function") {
+            Promise.all([
+              window.electronAPI.readFastCache("invoices"),
+              window.electronAPI.readFastCache("products"),
+              window.electronAPI.readFastCache("parties")
+            ]).then(([invRes, prodRes, partRes]) => {
+              if (invRes && invRes.ok && Array.isArray(invRes.data) && invRes.data.length > 0 && (!invoicesDb || invoicesDb.length === 0)) {
+                invoicesDb = invRes.data;
+                try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
+                if (typeof renderHistoryTableRows === "function") renderHistoryTableRows(invoicesDb);
+                if (typeof updateDashboardOverview === "function") updateDashboardOverview();
+              }
+              if (prodRes && prodRes.ok && Array.isArray(prodRes.data) && prodRes.data.length > 0 && (!productsDb || productsDb.length === 0)) {
+                productsDb = prodRes.data;
+                try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
+                if (typeof renderProductsTable === "function") renderProductsTable(productsDb);
+                if (typeof populateBillingSelectors === "function") populateBillingSelectors();
+              }
+              if (partRes && partRes.ok && Array.isArray(partRes.data) && partRes.data.length > 0 && (!partiesDb || partiesDb.length === 0)) {
+                partiesDb = partRes.data;
+                try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
+                if (typeof loadPartiesDatabaseLists === "function") loadPartiesDatabaseLists();
+              }
+            }).catch(() => {});
+          }
           resolve(this.db);
         };
         req.onerror = () => resolve(null);

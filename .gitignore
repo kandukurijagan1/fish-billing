@@ -5,5 +5,9 @@ dist/
 build/icon.ico
 
 # Local Netlify folder
-.netlify
+.netlify/
 scratch/
+Ready_To_Share_Apps/*.dmg
+Ready_To_Share_Apps/*.zip
+*.dmg
+macbook-desktop-app.zip
