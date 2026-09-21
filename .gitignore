@@ -9,5 +9,8 @@ build/icon.ico
 scratch/
 Ready_To_Share_Apps/*.dmg
 Ready_To_Share_Apps/*.zip
+Ready_To_Share_Apps/*.exe
 *.dmg
+*.exe
 macbook-desktop-app.zip
+windows-desktop-app.zip
