@@ -91,19 +91,24 @@
         }
       ],
       "icon": "build/icon.png",
+      "identity": "-",
       "hardenedRuntime": false,
       "gatekeeperAssess": false
     },
     "dmg": {
       "title": "${productName} Installer",
+      "window": {
+        "width": 540,
+        "height": 380
+      },
       "contents": [
         {
-          "x": 130,
-          "y": 220
+          "x": 140,
+          "y": 180
         },
         {
-          "x": 410,
-          "y": 220,
+          "x": 400,
+          "y": 180,
           "type": "link",
           "path": "/Applications"
         }
