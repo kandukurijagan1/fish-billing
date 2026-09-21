@@ -7804,9 +7804,9 @@ window.testSampleInvoiceQrUpload = function() {
     ? invoicesDb[0]
     : { invoiceNo: "INV-2026-0001", total: 3599, paidAmount: 1599, balanceDue: 2000, buyerName: "Devi Fisheries" };
 
-  const testUrl = (typeof window.generateInvoiceVerificationUrl === "function")
-    ? window.generateInvoiceVerificationUrl(testInv.invoiceNo, testInv)
-    : `https://nenduku644-hash.github.io/fish/?verify_invoice=${testInv.invoiceNo}`;
+  const testUrl = (typeof window.getInvoiceVerificationUrl === "function")
+    ? window.getInvoiceVerificationUrl(testInv.invoiceNo, testInv)
+    : `https://kandukurijagan1.github.io/fish-billing/?verify_invoice=${testInv.invoiceNo}`;
 
   const canvas = document.createElement("canvas");
   if (typeof QRious !== "undefined") {
@@ -9259,7 +9259,7 @@ function populateA4PrintOverlay(invoice) {
   if (verifyQrImg) {
     const verifyUrl = typeof window.getInvoiceVerificationUrl === "function"
       ? window.getInvoiceVerificationUrl(invoice.invoiceNo, invoice)
-      : `https://nenduku644-hash.github.io/fish/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
+      : `https://kandukurijagan1.github.io/fish-billing/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
     verifyQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(verifyUrl)}`;
   }
 }
@@ -9341,7 +9341,7 @@ function populateThermalPrintOverlay(invoice) {
   if (qrImg) {
     const verifyUrl = typeof window.getInvoiceVerificationUrl === "function"
       ? window.getInvoiceVerificationUrl(invoice.invoiceNo, invoice)
-      : `https://nenduku644-hash.github.io/fish/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
+      : `https://kandukurijagan1.github.io/fish-billing/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
     qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(verifyUrl)}`;
   }
 }
@@ -17156,7 +17156,7 @@ window.executeUniversalShare = async function(channel) {
 // ==========================================================================
 // OFFICIAL WEBSITE & APP QR CODE HUB
 // ==========================================================================
-let currentWebsiteQrUrl = "https://naqua.netlify.app";
+let currentWebsiteQrUrl = "https://kandukurijagan1.github.io/fish-billing/";
 let currentShopUpiString = "upi://pay?pa=7386262139@upi&pn=Aaryan%20Aqua%20Needs&cu=INR";
 
 // WhatsApp Direct Chat QR Constants & Presets
@@ -17174,7 +17174,7 @@ let currentWaPreset = 'general';
 
 function getLiveWebsiteUrl() {
   if (window.location.protocol === 'file:' || !window.location.origin || window.location.origin === 'null') {
-    return "https://naqua.netlify.app";
+    return "https://kandukurijagan1.github.io/fish-billing/";
   }
   return window.location.origin + window.location.pathname;
 }
@@ -17851,7 +17851,7 @@ window.printShopUpiStand = function() {
 window.currentVerifiedInvoiceNo = null;
 
 window.getInvoiceVerificationUrl = function(invoiceNo, invoiceObj = null) {
-  let baseUrl = "https://nenduku644-hash.github.io/fish";
+  let baseUrl = "https://kandukurijagan1.github.io/fish-billing";
   if (typeof window !== "undefined" && window.location && window.location.origin && !window.location.origin.includes("file://")) {
     const cleanPath = (window.location.pathname || "").replace(/\/index\.html.*$/i, "").replace(/\/+$/, "");
     baseUrl = window.location.origin + cleanPath;

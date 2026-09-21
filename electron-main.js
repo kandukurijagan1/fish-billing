@@ -227,7 +227,7 @@ function createMenu() {
         {
           label: 'Aaryan Aqua Online Cloud Portal',
           click: async () => {
-            await shell.openExternal('https://kandukurijagan7-star.github.io/bill/');
+            await shell.openExternal('https://kandukurijagan1.github.io/fish-billing/');
           }
         },
         {
