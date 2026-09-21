@@ -849,11 +849,19 @@ TurboDataStore.rebuildIndexes();
   window.filterOutDeletedInvoices = function(invoices) {
     if (!Array.isArray(invoices)) return [];
     const tombstones = window.getDeletedInvoiceTombstones();
+    const historyClearedAt = parseInt(localStorage.getItem("database_history_cleared_at") || "0", 10);
+    const effectiveClearedAt = Math.max(historyClearedAt, 1789963800000);
 
     return invoices.filter(inv => {
       if (!inv) return false;
       const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim();
       const invId = String(inv.id || "").trim();
+
+      // Drop demo / sample invoices created prior to sequence reset (#0001)
+      const invTs = inv._ts || (invId && invId.startsWith('inv_') ? parseInt(invId.replace('inv_', ''), 10) : 0) || (inv.invoiceDate ? new Date(inv.invoiceDate).getTime() : 0);
+      if (invTs > 0 && invTs < effectiveClearedAt) {
+        return false;
+      }
 
       // Permanently block test invoice #0099
       if (invNo === '0099' || invNo === '#0099' || invNo === '99' || invId === 'inv_0099') {
@@ -2938,11 +2946,17 @@ window.triggerDatabaseSync = async function(forceReload = false) {
       });
 
       // Step B: Union with all local invoices so newly generated invoices NEVER disappear!
+      const effectiveClearedAt = Math.max(historyClearedAt, 1789963800000);
       (invoicesDb || []).forEach(inv => {
         if (!inv) return;
         const id = String(inv.id || (inv.details && inv.details.id) || '').trim();
         const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '').trim().toLowerCase();
         if (id && deletedSet.has(id.toLowerCase())) return;
+
+        // Discard legacy local invoices created before the sequence reset
+        const invTs = inv._ts || (id && id.startsWith('inv_') ? parseInt(id.replace('inv_', ''), 10) : 0) || (inv.invoiceDate ? new Date(inv.invoiceDate).getTime() : 0);
+        if (invTs > 0 && invTs < effectiveClearedAt) return;
+
         const hasContentB = (Array.isArray(inv.items) && inv.items.length > 0) || (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0) || (parseFloat(inv.total) > 0);
         if (!hasContentB && invNo && deletedSet.has(invNo)) return;
         const key = id || invNo;
@@ -4002,6 +4016,10 @@ function seedDatabasesIfEmpty() {
     invoicesDb = [];
     localStorage.setItem("invoices", JSON.stringify([]));
   }
+  if (typeof window.filterOutDeletedInvoices === 'function') {
+    invoicesDb = window.filterOutDeletedInvoices(invoicesDb);
+    try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch (e) {}
+  }
   window.invoicesDb = invoicesDb;
 }
 
@@ -4015,6 +4033,10 @@ function loadAllDatabases() {
     }
   } catch(e) {
     invoicesDb = [];
+  }
+  if (typeof window.filterOutDeletedInvoices === 'function') {
+    invoicesDb = window.filterOutDeletedInvoices(invoicesDb);
+    try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
   }
   window.invoicesDb = invoicesDb;
 
