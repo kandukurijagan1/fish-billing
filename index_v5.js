@@ -805,6 +805,7 @@ TurboDataStore.rebuildIndexes();
     const invId = String(inv.id || (inv.details && inv.details.id) || "").trim().toLowerCase();
     const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim().toLowerCase();
     const cleanNo = invNo.replace(/^#/, '');
+    const numNo = parseInt(cleanNo, 10);
     const qrToken = String(inv.qrToken || (inv.details && inv.details.qrToken) || "").trim().toLowerCase();
 
     // 1. Check persistent cancelled registry
@@ -816,8 +817,9 @@ TurboDataStore.rebuildIndexes();
           const cId = String(c.id || "").trim().toLowerCase();
           const cNo = String(c.invoiceNo || "").trim().toLowerCase().replace(/^#/, '');
           const cTok = String(c.token || "").trim().toLowerCase();
+          const cNum = parseInt(cNo, 10);
           if (invId && (cId === invId || cId.replace(/^inv_/, '') === invId.replace(/^inv_/, ''))) return true;
-          if (cleanNo && cNo === cleanNo) return true;
+          if (cleanNo && (cNo === cleanNo || (!isNaN(cNum) && !isNaN(numNo) && cNum === numNo))) return true;
           if (qrToken && cTok && cTok === qrToken) return true;
           return false;
         });
@@ -832,14 +834,14 @@ TurboDataStore.rebuildIndexes();
       const t = String(tombstones[i] || "").trim().toLowerCase();
       if (!t) continue;
       const cleanT = t.replace(/^#/, '').replace(/^inv_/, '');
+      const numT = parseInt(cleanT, 10);
 
+      // Match by exact ID or prefixed ID
       if (invId && (invId === t || invId === `inv_${cleanT}` || invId.replace(/^inv_/, '') === cleanT)) return true;
-      // Real active invoices with positive total, items, or customer details are NEVER deleted by plain invoice number
-      const hasItems = (Array.isArray(inv.items) && inv.items.length > 0) || (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0);
-      const hasTotal = parseFloat(inv.total) > 0 || (inv.details && parseFloat(inv.details.total) > 0);
-      const hasCustomer = !!(inv.customerName || (inv.buyer && inv.buyer.name) || (inv.details && (inv.details.customerName || (inv.details.buyer && inv.details.buyer.name))));
-      const isRealInvoice = hasItems || hasTotal || hasCustomer;
-      if (!isRealInvoice && cleanNo && (cleanNo === cleanT || invNo === t || invNo === `#${cleanT}` || `inv_${cleanNo}` === t)) return true;
+
+      // Match by invoice number if present in tombstones
+      if (cleanNo && (cleanNo === cleanT || invNo === t || invNo === `#${cleanT}` || `inv_${cleanNo}` === t)) return true;
+      if (!isNaN(numNo) && !isNaN(numT) && numNo === numT) return true;
     }
     return false;
   };
@@ -5062,7 +5064,9 @@ function updateDashboardOverview() {
 
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td style="font-weight: 700; color: var(--primary-teal); white-space: nowrap;">#${inv.invoiceNo}</td>
+          <td style="font-weight: 700; color: var(--primary-teal); white-space: nowrap; cursor: pointer;" onclick="openInvoiceVerificationModal('${inv.id || inv.invoiceNo}')" title="Click to view &amp; print invoice">
+            <i class="fa-solid fa-file-invoice" style="margin-right: 4px; opacity: 0.7;"></i>#${inv.invoiceNo}
+          </td>
           <td style="white-space: nowrap;">${formatInputDateString(inv.invoiceDate)}</td>
           <td style="font-weight: 600; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${custName}">${custName}</td>
           <td class="text-center" style="white-space: nowrap;">${itemsCount}</td>
@@ -5072,15 +5076,14 @@ function updateDashboardOverview() {
             ${(!isPaid && balance > 0) ? `<div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>` : ''}
           </td>
           <td class="actions-cell">
+            <button class="action-btn print action-btn-print" onclick="printSavedInvoice('${inv.id}')" title="Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
+            <button class="action-btn print action-btn-thermal" onclick="printSavedInvoiceThermal('${inv.id}')" title="Print Thermal POS Receipt"><i class="fa-solid fa-receipt"></i></button>
+            <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Share PDF via WhatsApp (1-Click)"><i class="fa-brands fa-whatsapp"></i></button>
+            <button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Invoice"><i class="fa-solid fa-pen-to-square"></i></button>
             ${balanceQrBtn}
             <button class="action-btn repeat" onclick="repeatInvoice('${inv.id}')" title="Repeat Bill (Clone to New Invoice)"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i></button>
-            <button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Invoice"><i class="fa-solid fa-pen-to-square"></i></button>
-            <button class="action-btn print" onclick="printSavedInvoice('${inv.id}')" title="Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
-            <button class="action-btn print" onclick="printSavedInvoiceThermal('${inv.id}')" title="Print Thermal POS Receipt"><i class="fa-solid fa-receipt"></i></button>
-            <button class="action-btn share btn-whatsapp" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Share PDF via WhatsApp (1-Click)"><i class="fa-brands fa-whatsapp" style="color: #16a34a;"></i></button>
-            <button class="action-btn share btn-telegram" onclick="shareInvoiceToTelegram('${inv.id}', this)" title="Share PDF to Telegram (@fishbilling_bot_bot)"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i></button>
-            <button class="action-btn share" onclick="openUniversalInvoiceShareModal('${inv.id}')" title="Universal Share (Nearby / Email / Copy / Native)"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i></button>
-            <button class="action-btn delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Invoice"><i class="fa-solid fa-trash"></i></button>
+            <button class="action-btn share" onclick="openUniversalInvoiceShareModal('${inv.id}')" title="Universal Share"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i></button>
+            <button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Invoice"><i class="fa-solid fa-trash"></i></button>
           </td>
         `;
         elements.dashboardRecentInvoicesBody.appendChild(tr);
@@ -9349,14 +9352,28 @@ function populateThermalPrintOverlay(invoice) {
 }
 
 window.printSavedInvoiceThermal = function(id) {
-  const inv = invoicesDb.find(i => i.id === id);
+  const inv = (typeof window.findInvoiceRecordByIdentifier === 'function')
+    ? window.findInvoiceRecordByIdentifier(id)
+    : (typeof invoicesDb !== 'undefined' ? invoicesDb : []).find(i => i.id === id || i.invoiceNo === id);
   if (inv) {
-    populateThermalPrintOverlay(inv.details);
+    populateThermalPrintOverlay(inv.details || inv);
     document.body.classList.add("printing-thermal");
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`🧾 Opening POS Thermal Print for Invoice #${inv.invoiceNo}...`, "info", 2000);
+    }
     setTimeout(() => {
       window.print();
-      document.body.classList.remove("printing-thermal");
-    }, 150);
+      if (window.electronAPI && typeof window.electronAPI.printInvoice === 'function') {
+        window.electronAPI.printInvoice();
+      }
+      setTimeout(() => {
+        document.body.classList.remove("printing-thermal");
+      }, 500);
+    }, 120);
+  } else {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Invoice record not found to print.", "warning");
+    }
   }
 };
 
@@ -9451,9 +9468,15 @@ window.downloadInvoicePdf = function(invoiceData, btnEl = null) {
 };
 
 window.downloadSavedInvoicePdf = function(id, btnEl = null) {
-  const inv = invoicesDb.find(i => i.id === id);
+  const inv = (typeof window.findInvoiceRecordByIdentifier === 'function')
+    ? window.findInvoiceRecordByIdentifier(id)
+    : (typeof invoicesDb !== 'undefined' ? invoicesDb : []).find(i => i.id === id || i.invoiceNo === id);
   if (inv) {
-    downloadInvoicePdf(inv.details, btnEl);
+    downloadInvoicePdf(inv.details || inv, btnEl);
+  } else {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Invoice record not found for PDF export.", "warning");
+    }
   }
 };
 
@@ -12226,7 +12249,9 @@ function renderHistoryTableRows(records) {
 
     htmlBuffer.push(`
       <tr>
-        <td style="font-weight: 700; color: var(--primary-teal);">#${inv.invoiceNo}</td>
+        <td style="font-weight: 700; color: var(--primary-teal); cursor: pointer;" onclick="openInvoiceVerificationModal('${inv.id || inv.invoiceNo}')" title="Click to view &amp; print bill">
+          <i class="fa-solid fa-file-invoice" style="margin-right: 4px; opacity: 0.7;"></i>#${inv.invoiceNo}
+        </td>
         <td>${formatInputDateString(invDate)}</td>
         <td style="font-weight: 600;">${consigneeDisplay}${subBuyerText}</td>
         <td class="text-center">${itemsCount}</td>
@@ -12237,17 +12262,17 @@ function renderHistoryTableRows(records) {
             : `<span class="badge-status ${badgeClass}">${status}</span>`}
         </td>
         <td class="actions-cell">
+          <button class="action-btn print action-btn-print" onclick="printSavedInvoice('${inv.id}')" title="Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
+          <button class="action-btn print action-btn-thermal" onclick="printSavedInvoiceThermal('${inv.id}')" title="Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
           <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Send Invoice & PDF via WhatsApp (1-Click)" style="background: #16a34a !important; color: #ffffff !important; font-weight: 700; width: 30px; height: 30px; border-radius: 6px; box-shadow: 0 1px 3px rgba(22, 163, 74, 0.35);"><i class="fa-brands fa-whatsapp" style="font-size: 15px; color: #ffffff !important;"></i></button>
-          <button class="action-btn print" onclick="printSavedInvoice('${inv.id}')" title="Print A4 Bill"><i class="fa-solid fa-print"></i></button>
           <button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Bill"><i class="fa-solid fa-pen-to-square"></i></button>
           <button class="action-btn print" onclick="downloadSavedInvoicePdf('${inv.id}', this)" title="Download PDF"><i class="fa-solid fa-file-pdf text-rose"></i></button>
           ${balanceQrBtn}
           ${convertEstimateBtn}
-          <button class="action-btn print" onclick="printSavedInvoiceThermal('${inv.id}')" title="Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
           <button class="action-btn repeat" onclick="repeatInvoice('${inv.id}')" title="Repeat Bill (Clone to New Invoice)"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i></button>
           <button class="action-btn share btn-telegram" onclick="shareInvoiceToTelegram('${inv.id}', this)" title="Share PDF to Telegram"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i></button>
           <button class="action-btn share" onclick="openUniversalInvoiceShareModal('${inv.id}')" title="Universal Share"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i></button>
-          <button class="action-btn delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Bill"><i class="fa-solid fa-trash"></i></button>
+          <button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Bill"><i class="fa-solid fa-trash"></i></button>
         </td>
       </tr>
     `);
@@ -12398,18 +12423,68 @@ window.repeatInvoice = function(id) {
   }
 };
 
+window.findInvoiceRecordByIdentifier = function(identifier) {
+  if (!identifier) return null;
+  const idStr = String(identifier).trim();
+  const cleanId = idStr.replace(/^#/, '');
+  const idNum = parseInt(cleanId, 10);
+  const idStrLower = idStr.toLowerCase();
+
+  return (typeof invoicesDb !== 'undefined' ? invoicesDb : []).find(i => {
+    if (!i) return false;
+    const iId = String(i.id || (i.details && i.details.id) || '').trim().toLowerCase();
+    const iNo = String(i.invoiceNo || (i.details && i.details.invoiceNo) || '').trim().toLowerCase();
+    const iClean = iNo.replace(/^#/, '');
+    const iNum = parseInt(iClean, 10);
+
+    if (iId === idStrLower || iId.replace(/^inv_/, '') === idStrLower.replace(/^inv_/, '')) return true;
+    if (iNo === idStrLower || iNo === cleanId.toLowerCase() || iClean === cleanId.toLowerCase()) return true;
+    if (!isNaN(idNum) && !isNaN(iNum) && idNum === iNum) return true;
+    return false;
+  });
+};
+
 window.printSavedInvoice = function(id) {
-  const inv = invoicesDb.find(i => i.id === id);
+  const inv = window.findInvoiceRecordByIdentifier(id);
   if (inv) {
-    populateA4PrintOverlay(inv.details);
+    populateA4PrintOverlay(inv.details || inv);
     document.body.classList.remove("printing-thermal");
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`🖨️ Opening A4 Print for Invoice #${inv.invoiceNo}...`, "info", 2000);
+    }
     setTimeout(() => {
       window.print();
-    }, 100);
+      if (window.electronAPI && typeof window.electronAPI.printInvoice === 'function') {
+        window.electronAPI.printInvoice();
+      }
+    }, 120);
+  } else {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Invoice record not found to print.", "warning");
+    }
   }
 };
 
-window.deleteSavedInvoice = function(identifier) {
+let pendingDeleteIdentifier = null;
+
+window.closeDeleteConfirmModal = function() {
+  pendingDeleteIdentifier = null;
+  const modal = document.getElementById("custom-delete-confirm-modal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+  }
+};
+
+window.executeConfirmedDelete = function() {
+  const target = pendingDeleteIdentifier;
+  window.closeDeleteConfirmModal();
+  if (target) {
+    window.deleteSavedInvoice(target, true);
+  }
+};
+
+window.deleteSavedInvoice = function(identifier, skipConfirm = false) {
   if (!identifier) return;
 
   const idStr = String(identifier).trim();
@@ -12419,7 +12494,7 @@ window.deleteSavedInvoice = function(identifier) {
   // Multi-tier resolution: by exact ID, by invoiceNo, by numeric equality, or details.invoiceNo
   const inv = (invoicesDb || []).find(i => {
     if (!i) return false;
-    const iId = String(i.id || "").trim();
+    const iId = String(i.id || (i.details && i.details.id) || "").trim();
     const iNo = String(i.invoiceNo || (i.details && i.details.invoiceNo) || "").trim();
     const iClean = iNo.replace(/^#/, '');
     const iNum = parseInt(iClean, 10);
@@ -12430,135 +12505,163 @@ window.deleteSavedInvoice = function(identifier) {
   const invNo = inv ? (inv.invoiceNo || (inv.details && inv.details.invoiceNo) || cleanId) : cleanId;
   const invId = inv ? (inv.id || `inv_${invNo}`) : idStr;
   const displayNo = invNo ? `#${invNo}` : (cleanId ? `#${cleanId}` : "this");
+  const custName = inv ? (inv.customerName || (inv.details && (inv.details.consignee?.name || inv.details.buyer?.name)) || 'Customer') : 'Customer';
+  const totalAmt = inv ? (inv.total || (inv.details && inv.details.total) || 0) : 0;
 
-  if (confirm(`Delete ${displayNo} invoice record from history?\n\nSequence will automatically roll back directly to this invoice number.`)) {
-    // 0. Safely archive to persistent cancelled/voided registry so old QR code is recognized as VOID
-    if (inv && typeof window.archiveCancelledInvoice === 'function') {
-      window.archiveCancelledInvoice(inv, "Deleted by user from Invoice History");
-    }
+  // If confirmation is needed, trigger our executive custom modal (never blocked by browser/Electron)
+  if (!skipConfirm) {
+    const confirmModal = document.getElementById("custom-delete-confirm-modal");
+    if (confirmModal) {
+      pendingDeleteIdentifier = identifier;
+      const noEl = document.getElementById("delete-confirm-inv-no");
+      if (noEl) noEl.textContent = displayNo;
+      const custEl = document.getElementById("delete-confirm-customer");
+      if (custEl) custEl.textContent = custName;
+      const totEl = document.getElementById("delete-confirm-total");
+      if (totEl) totEl.textContent = `₹ ${formatCurrency(totalAmt)}`;
 
-    // 1. Stock restoration if details exist
-    if (inv && (inv.details || inv.items)) {
-      try {
-        reconcileProductInventoryStock(inv.details || inv, null);
-      } catch (e) {
-        console.warn("Stock reconciliation during delete:", e);
+      confirmModal.classList.remove("hidden");
+      confirmModal.style.display = "flex";
+      return;
+    } else {
+      // Fallback if modal DOM is unavailable
+      if (!confirm(`Delete ${displayNo} invoice record from history?\n\nSequence will automatically roll back directly to this invoice number.`)) {
+        return;
       }
     }
+  }
 
-    // 2. Track all candidate ID variations in persistent tombstones
-    let tombstones = window.getDeletedInvoiceTombstones();
-    const numNo = !isNaN(parseInt(invNo, 10)) ? String(parseInt(invNo, 10)) : null;
-    const numClean = !isNaN(parseInt(cleanId, 10)) ? String(parseInt(cleanId, 10)) : null;
+  // 0. Safely archive to persistent cancelled/voided registry so old QR code is recognized as VOID
+  if (inv && typeof window.archiveCancelledInvoice === 'function') {
+    window.archiveCancelledInvoice(inv, "Deleted by user from Invoice History");
+  }
 
-    const aliases = [
-      invId,
-      idStr,
-      invNo,
-      cleanId,
-      `#${invNo}`,
-      `#${cleanId}`,
-      `inv_${invNo}`,
-      `inv_${cleanId}`,
-      numNo,
-      numClean,
-      numNo ? `inv_${numNo}` : null,
-      numClean ? `inv_${numClean}` : null
-    ].filter(Boolean).map(a => String(a).trim().toLowerCase());
-
-    aliases.forEach(alias => {
-      if (!tombstones.includes(alias)) {
-        tombstones.push(alias);
-      }
-    });
-
+  // 1. Stock restoration if details exist
+  if (inv && (inv.details || inv.items)) {
     try {
-      localStorage.setItem("deleted_invoice_ids", JSON.stringify(tombstones));
-    } catch (e) {}
+      reconcileProductInventoryStock(inv.details || inv, null);
+    } catch (e) {
+      console.warn("Stock reconciliation during delete:", e);
+    }
+  }
 
-    // 3. Purge immediately from invoicesDb using the central filter
-    invoicesDb = window.filterOutDeletedInvoices(invoicesDb);
-    invoicesDb = invoicesDb.filter(i => {
-      if (!i) return false;
-      const iId = String(i.id || (i.details && i.details.id) || "").trim().toLowerCase();
-      const iNo = String(i.invoiceNo || (i.details && i.details.invoiceNo) || "").trim().toLowerCase();
-      if (invId && (iId === invId.toLowerCase() || iId.replace(/^inv_/, '') === invId.toLowerCase().replace(/^inv_/, ''))) return false;
-      if (invNo && (iNo === invNo.toLowerCase() || iNo.replace(/^#/, '') === invNo.toLowerCase().replace(/^#/, ''))) return false;
-      return true;
-    });
-    window.invoicesDb = invoicesDb;
+  // 2. Track all candidate ID variations in persistent tombstones
+  let tombstones = window.getDeletedInvoiceTombstones();
+  const numNo = !isNaN(parseInt(invNo, 10)) ? String(parseInt(invNo, 10)) : null;
+  const numClean = !isNaN(parseInt(cleanId, 10)) ? String(parseInt(cleanId, 10)) : null;
+
+  const aliases = [
+    invId,
+    idStr,
+    invNo,
+    cleanId,
+    `#${invNo}`,
+    `#${cleanId}`,
+    `inv_${invNo}`,
+    `inv_${cleanId}`,
+    numNo,
+    numClean,
+    numNo ? `inv_${numNo}` : null,
+    numClean ? `inv_${numClean}` : null
+  ].filter(Boolean).map(a => String(a).trim().toLowerCase());
+
+  aliases.forEach(alias => {
+    if (!tombstones.includes(alias)) {
+      tombstones.push(alias);
+    }
+  });
+
+  try {
+    localStorage.setItem("deleted_invoice_ids", JSON.stringify(tombstones));
+  } catch (e) {}
+
+  // 3. Purge immediately from invoicesDb using the central filter
+  invoicesDb = window.filterOutDeletedInvoices(invoicesDb);
+  invoicesDb = invoicesDb.filter(i => {
+    if (!i) return false;
+    const iId = String(i.id || (i.details && i.details.id) || "").trim().toLowerCase();
+    const iNo = String(i.invoiceNo || (i.details && i.details.invoiceNo) || "").trim().toLowerCase();
+    if (invId && (iId === invId.toLowerCase() || iId.replace(/^inv_/, '') === invId.toLowerCase().replace(/^inv_/, ''))) return false;
+    if (invNo && (iNo === invNo.toLowerCase() || iNo.replace(/^#/, '') === invNo.toLowerCase().replace(/^#/, ''))) return false;
+    return true;
+  });
+  window.invoicesDb = invoicesDb;
+  try {
+    localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+  } catch (e) {}
+
+  // 4. Purge from IndexedDB
+  if (window.AaryanDB && typeof window.AaryanDB.deleteInvoice === 'function') {
+    window.AaryanDB.deleteInvoice(invId);
+    if (invNo && invNo !== invId) window.AaryanDB.deleteInvoice(invNo);
+    if (cleanId && cleanId !== invNo) window.AaryanDB.deleteInvoice(cleanId);
+  }
+
+  // 5. Direct cross-browser & inter-tab broadcast (<30ms)
+  window.lastSyncETag = null;
+  const cancEntry = {
+    id: invId,
+    token: inv ? (inv.qrToken || (inv.details && inv.details.qrToken) || '') : '',
+    invoiceNo: invNo,
+    customerName: custName,
+    total: totalAmt,
+    cancelledAt: new Date().toISOString(),
+    reason: 'Deleted by user from Invoice History',
+    status: 'CANCELLED'
+  };
+
+  broadcastInterTabEvent('record_deleted', {
+    recordType: 'invoice',
+    id: invId,
+    invoiceNo: invNo,
+    aliases: aliases,
+    products: productsDb,
+    cancelledRecord: cancEntry
+  });
+
+  if (typeof realtimeMeshClient !== 'undefined' && realtimeMeshClient && realtimeMeshClient.connected) {
     try {
-      localStorage.setItem("invoices", JSON.stringify(invoicesDb));
-    } catch (e) {}
+      realtimeMeshClient.publish(SYNC_MESH_TOPIC, JSON.stringify({
+        type: 'record_deleted',
+        recordType: 'invoice',
+        id: invId,
+        invoiceNo: invNo,
+        aliases: aliases,
+        cancelledRecord: cancEntry,
+        senderId: typeof MY_SYNC_CLIENT_ID !== 'undefined' ? MY_SYNC_CLIENT_ID : 'peer'
+      }), { qos: 0 });
+    } catch (me) {}
+  }
 
-    // 4. Purge from IndexedDB
-    if (window.AaryanDB && typeof window.AaryanDB.deleteInvoice === 'function') {
-      window.AaryanDB.deleteInvoice(invId);
-      if (invNo && invNo !== invId) window.AaryanDB.deleteInvoice(invNo);
-      if (cleanId && cleanId !== invNo) window.AaryanDB.deleteInvoice(cleanId);
-    }
+  // 6. Push deletion to Google Cloud with candidate IDs so it matches Column 1 or JSON
+  aliases.slice(0, 4).forEach(alias => {
+    pushDirectToGoogleDatabase("delete_record", { type: "invoice", id: alias, invoiceNo: invNo });
+  });
 
-    // 5. Direct cross-browser & inter-tab broadcast (<30ms)
-    window.lastSyncETag = null;
-    const cancEntry = {
-      id: invId,
-      token: inv ? (inv.qrToken || (inv.details && inv.details.qrToken) || '') : '',
-      invoiceNo: invNo,
-      customerName: inv ? (inv.customerName || (inv.details && (inv.details.consignee?.name || inv.details.buyer?.name)) || 'Customer') : 'Customer',
-      total: inv ? (inv.total || (inv.details && inv.details.total) || 0) : 0,
-      cancelledAt: new Date().toISOString(),
-      reason: 'Deleted by user from Invoice History',
-      status: 'CANCELLED'
-    };
+  // Offline outbox queue fallback
+  if (window.AaryanDB && typeof window.AaryanDB.enqueueOutbox === 'function') {
+    AaryanDB.enqueueOutbox("invoice", "delete_record", { type: "invoice", id: invId, invoiceNo: invNo });
+    AaryanDB.drainOutbox();
+  }
 
-    broadcastInterTabEvent('record_deleted', {
-      recordType: 'invoice',
-      id: invId,
-      invoiceNo: invNo,
-      aliases: aliases,
-      products: productsDb,
-      cancelledRecord: cancEntry
-    });
+  // 7. Update suggested invoice sequence
+  if (typeof autoSuggestInvoiceNo === 'function') {
+    autoSuggestInvoiceNo(false);
+  }
 
-    if (typeof realtimeMeshClient !== 'undefined' && realtimeMeshClient && realtimeMeshClient.connected) {
-      try {
-        realtimeMeshClient.publish(SYNC_MESH_TOPIC, JSON.stringify({
-          type: 'record_deleted',
-          recordType: 'invoice',
-          id: invId,
-          invoiceNo: invNo,
-          aliases: aliases,
-          cancelledRecord: cancEntry,
-          senderId: typeof MY_SYNC_CLIENT_ID !== 'undefined' ? MY_SYNC_CLIENT_ID : 'peer'
-        }), { qos: 0 });
-      } catch (me) {}
-    }
+  // 8. Re-render UI immediately
+  if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+  if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
+  if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+  if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
 
-    // 6. Push deletion to Google Cloud with candidate IDs so it matches Column 1 or JSON
-    aliases.slice(0, 4).forEach(alias => {
-      pushDirectToGoogleDatabase("delete_record", { type: "invoice", id: alias, invoiceNo: invNo });
-    });
+  // If verification modal was open for this invoice, close it
+  if (typeof closeInvoiceVerificationModal === 'function') {
+    closeInvoiceVerificationModal();
+  }
 
-    // Offline outbox queue fallback
-    if (window.AaryanDB && typeof window.AaryanDB.enqueueOutbox === 'function') {
-      AaryanDB.enqueueOutbox("invoice", "delete_record", { type: "invoice", id: invId, invoiceNo: invNo });
-      AaryanDB.drainOutbox();
-    }
-
-    // 7. Update suggested invoice sequence
-    if (typeof autoSuggestInvoiceNo === 'function') {
-      autoSuggestInvoiceNo(false);
-    }
-
-    // 8. Re-render UI immediately
-    if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
-    if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
-    if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
-    if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
-
-    if (typeof showFloatingToast === 'function') {
-      showFloatingToast(`Invoice ${displayNo} deleted successfully`, "success");
-    }
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast(`🗑️ Invoice ${displayNo} deleted successfully`, "success", 3500);
   }
 };
 
@@ -17389,6 +17492,8 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
   const subtitleEl = document.getElementById("verify-modal-subtitle");
   const badgeIcon = document.getElementById("verify-modal-badge-icon");
   const printBtn = document.getElementById("verify-print-btn");
+  const thermalBtn = document.getElementById("verify-thermal-btn");
+  const adminBar = document.getElementById("verify-admin-actions-bar");
 
   const renderCancelledState = (canc) => {
     if (stateInvalid) stateInvalid.style.display = "none";
@@ -17403,6 +17508,8 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
       badgeIcon.style.background = "rgba(239, 68, 68, 0.35)";
     }
     if (printBtn) printBtn.style.display = "none";
+    if (thermalBtn) thermalBtn.style.display = "none";
+    if (adminBar) adminBar.style.display = "none";
 
     const noEl = document.getElementById("verify-cancel-inv-no");
     if (noEl) noEl.textContent = canc.invoiceNo ? `#${canc.invoiceNo}` : (cleanNo ? `#${cleanNo}` : 'N/A');
@@ -17442,6 +17549,8 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
     const invCodeEl = document.getElementById("verify-invalid-code");
     if (invCodeEl) invCodeEl.textContent = cleanNo ? `#${cleanNo}` : (qId || "N/A");
     if (printBtn) printBtn.style.display = "none";
+    if (thermalBtn) thermalBtn.style.display = "none";
+    if (adminBar) adminBar.style.display = "none";
 
     if (typeof playAudioFeedback === 'function') playAudioFeedback('warn');
     else if (typeof playScannerBeep === 'function') playScannerBeep();
@@ -17872,6 +17981,10 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
     if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-circle-check text-green"></i> Verified &amp; Settled`;
   }
 
+  if (printBtn) printBtn.style.display = "inline-flex";
+  if (thermalBtn) thermalBtn.style.display = "inline-flex";
+  if (adminBar) adminBar.style.display = isAdminLoggedIn ? "flex" : "none";
+
   modal.classList.remove("hidden");
   modal.style.display = "flex";
 };
@@ -18160,12 +18273,30 @@ window.sharePaymentProofWhatsApp = function() {
   window.open(`https://wa.me/${shopPhone}?text=${encodeURIComponent(msg)}`, '_blank');
 };
 
+window.findVerifiedInvoiceRecord = function() {
+  const targetNo = String(window.currentVerifiedInvoiceNo || "").trim();
+  const targetId = String(window.currentVerifiedInvoiceId || "").trim();
+  const cleanNo = targetNo.replace(/^#/, '').toLowerCase();
+  const targetNum = parseInt(cleanNo, 10);
+  const targetIdLower = targetId.toLowerCase();
+
+  return (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => {
+    if (!i) return false;
+    const iId = String(i.id || (i.details && i.details.id) || "").trim().toLowerCase();
+    const iNo = String(i.invoiceNo || (i.details && i.details.invoiceNo) || "").trim().toLowerCase();
+    const iClean = iNo.replace(/^#/, '');
+    const iNum = parseInt(iClean, 10);
+
+    if (targetIdLower && (iId === targetIdLower || iId.replace(/^inv_/, '') === targetIdLower.replace(/^inv_/, ''))) return true;
+    if (cleanNo && (iNo === cleanNo || iNo === `#${cleanNo}` || iClean === cleanNo)) return true;
+    if (!isNaN(targetNum) && !isNaN(iNum) && targetNum === iNum) return true;
+    if (targetNo && (iNo === targetNo.toLowerCase() || iId === targetNo.toLowerCase())) return true;
+    return false;
+  });
+};
+
 window.downloadVerifiedInvoicePdf = function(btnEl = null) {
-  if (!window.currentVerifiedInvoiceNo) return;
-  const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i =>
-    String(i.invoiceNo || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase() ||
-    String(i.id || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase()
-  );
+  const inv = window.findVerifiedInvoiceRecord();
   if (inv && typeof downloadInvoicePdf === "function") {
     downloadInvoicePdf(inv.details || inv, btnEl);
   } else {
@@ -18173,9 +18304,6 @@ window.downloadVerifiedInvoicePdf = function(btnEl = null) {
     window.printVerifiedInvoice();
   }
 };
-
-
-
 
 window.closeInvoiceVerificationModal = function() {
   const modal = document.getElementById("invoice-verification-modal");
@@ -18193,15 +18321,67 @@ window.lookupManualInvoiceVerification = function() {
 };
 
 window.printVerifiedInvoice = function() {
-  if (window.currentVerifiedInvoiceNo) {
-    const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => 
-      String(i.invoiceNo || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase() ||
-      String(i.id || "").trim().toLowerCase() === String(window.currentVerifiedInvoiceNo).trim().toLowerCase()
-    );
-    if (inv) {
-      populateA4PrintOverlay(inv.details || inv);
-      window.print();
+  const inv = window.findVerifiedInvoiceRecord();
+  if (inv) {
+    populateA4PrintOverlay(inv.details || inv);
+    document.body.classList.remove("printing-thermal");
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`🖨️ Opening A4 Print for Invoice #${inv.invoiceNo}...`, "info", 2000);
     }
+    setTimeout(() => {
+      window.print();
+      if (window.electronAPI && typeof window.electronAPI.printInvoice === 'function') {
+        window.electronAPI.printInvoice();
+      }
+    }, 120);
+  } else {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Invoice record not found to print.", "warning");
+    }
+  }
+};
+
+window.printVerifiedInvoiceThermal = function() {
+  const inv = window.findVerifiedInvoiceRecord();
+  if (inv) {
+    populateThermalPrintOverlay(inv.details || inv);
+    document.body.classList.add("printing-thermal");
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`🧾 Opening POS Thermal Print for Invoice #${inv.invoiceNo}...`, "info", 2000);
+    }
+    setTimeout(() => {
+      window.print();
+      if (window.electronAPI && typeof window.electronAPI.printInvoice === 'function') {
+        window.electronAPI.printInvoice();
+      }
+      setTimeout(() => {
+        document.body.classList.remove("printing-thermal");
+      }, 500);
+    }, 120);
+  } else {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Invoice record not found to print.", "warning");
+    }
+  }
+};
+
+window.deleteVerifiedInvoice = function() {
+  const target = window.currentVerifiedInvoiceId || window.currentVerifiedInvoiceNo;
+  if (!target) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("⚠️ No invoice selected to delete.", "warning");
+    return;
+  }
+  window.deleteSavedInvoice(target, false);
+};
+
+window.shareVerifiedInvoiceWhatsApp = function(btnEl) {
+  const inv = window.findVerifiedInvoiceRecord();
+  if (inv && typeof shareInvoiceToWhatsApp === 'function') {
+    shareInvoiceToWhatsApp(inv.id || inv.invoiceNo, btnEl);
+  } else if (inv && typeof shareInvoicePdfNative === 'function') {
+    shareInvoicePdfNative(inv.details || inv, btnEl, false);
+  } else {
+    if (typeof showFloatingToast === 'function') showFloatingToast("⚠️ Invoice record not found.", "warning");
   }
 };
 

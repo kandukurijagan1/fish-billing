@@ -307,7 +307,7 @@ ipcMain.handle('load-initial-db', async () => {
 
 ipcMain.on('print-invoice', (event) => {
   if (mainWindow) {
-    mainWindow.webContents.print();
+    mainWindow.webContents.print({ silent: false, printBackground: true });
   }
 });
 

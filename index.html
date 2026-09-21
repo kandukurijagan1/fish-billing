@@ -1260,20 +1260,20 @@
                 </div>
 
                 <div class="summary-actions-grid margin-top-15">
-                  <!-- Button 1: Save & Generate Invoice (Saves to history, syncs Google Sheets & auto-dispatches in background) -->
-                  <button type="button" class="btn btn-primary btn-generate-a4" id="btn-save-generate-invoice" onclick="saveAndGenerateInvoiceOnly(this)" style="background: linear-gradient(135deg, #059669 0%, #0f172a 100%);">
-                    <i class="fa-solid fa-file-invoice"></i> Generate &amp; Save Invoice (Auto-Send)
-                  </button>
-
-                  <!-- Print Options Row: Print A4 vs Print POS Thermal (Both save to history and open print layout) -->
+                  <!-- Row 1: Save & Print Options (Most Requested Primary Actions) -->
                   <div class="summary-btn-row">
-                    <button type="button" class="btn btn-primary" onclick="generateAndPrintInvoice(this)" style="background: linear-gradient(135deg, #06b6d4 0%, #2563eb 100%); border: none;">
-                      <i class="fa-solid fa-print"></i> Print A4 Invoice
+                    <button type="button" class="btn btn-primary" id="btn-save-print-a4" onclick="generateAndPrintInvoice(this)" style="background: linear-gradient(135deg, #06b6d4 0%, #2563eb 100%); border: none; font-weight: 800; padding: 12px; box-shadow: 0 4px 12px rgba(6, 182, 212, 0.35); flex: 1.2;">
+                      <i class="fa-solid fa-print"></i> Save &amp; Print A4 Bill
                     </button>
-                    <button type="button" class="btn btn-cyan" onclick="generateAndPrintThermal(this)" title="POS Thermal">
+                    <button type="button" class="btn btn-cyan" id="btn-save-print-thermal" onclick="generateAndPrintThermal(this)" title="POS Thermal Receipt" style="font-weight: 800; padding: 12px; box-shadow: 0 4px 12px rgba(13, 148, 136, 0.25); flex: 1;">
                       <i class="fa-solid fa-receipt"></i> Print POS Thermal
                     </button>
                   </div>
+
+                  <!-- Row 2: Save & Generate Invoice (Auto-Send background sync) -->
+                  <button type="button" class="btn btn-primary btn-generate-a4" id="btn-save-generate-invoice" onclick="saveAndGenerateInvoiceOnly(this)" style="background: linear-gradient(135deg, #059669 0%, #0f172a 100%); font-weight: 700;">
+                    <i class="fa-solid fa-file-invoice"></i> Save Invoice Only (Auto-Send WhatsApp)
+                  </button>
 
                   <!-- PDF Actions Row: Download PDF vs Share WhatsApp -->
                   <div class="summary-btn-row">
@@ -1338,51 +1338,48 @@
               </thead>
               <tbody id="history-invoices-body">
                 <tr>
-                  <td style="font-weight: 700; color: var(--primary-teal);">#0003</td>
+                  <td style="font-weight: 700; color: var(--primary-teal); cursor: pointer;" onclick="openInvoiceVerificationModal('0003')" title="Click to view &amp; print invoice"><i class="fa-solid fa-file-invoice" style="margin-right: 4px; opacity: 0.7;"></i>#0003</td>
                   <td>11-Sept-2026</td>
                   <td style="font-weight: 600;">DEVI FISHERIES LIMITED</td>
                   <td class="text-center">2</td>
                   <td style="text-align: right; font-weight: 700;">₹ 62,730.00</td>
                   <td class="text-center"><span class="badge-status badge-unpaid">Unpaid</span></td>
                   <td class="actions-cell">
-                    <button class="action-btn edit" onclick="editSavedInvoice('inv_1789124481510_975')" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
-                    <button class="action-btn print" onclick="printSavedInvoice('inv_1789124481510_975')" title="Print A4"><i class="fa-solid fa-print"></i></button>
-                    <button class="action-btn print" onclick="printSavedInvoiceThermal('inv_1789124481510_975')" title="Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
-                    <button class="action-btn share btn-whatsapp" onclick="shareInvoiceToWhatsApp('inv_1789124481510_975', this)" title="Share PDF via WhatsApp"><i class="fa-brands fa-whatsapp" style="color: #16a34a;"></i></button>
-                    <button class="action-btn share btn-telegram" onclick="shareInvoiceToTelegram('inv_1789124481510_975', this)" title="Share PDF to Telegram"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i></button>
-                    <button class="action-btn delete" onclick="deleteSavedInvoice('inv_1789124481510_975')" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                    <button class="action-btn print action-btn-print" onclick="printSavedInvoice('0003')" title="Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
+                    <button class="action-btn print action-btn-thermal" onclick="printSavedInvoiceThermal('0003')" title="Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
+                    <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('0003', this)" title="Share PDF via WhatsApp"><i class="fa-brands fa-whatsapp"></i></button>
+                    <button class="action-btn edit" onclick="editSavedInvoice('0003')" title="Edit Bill"><i class="fa-solid fa-pen-to-square"></i></button>
+                    <button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('0003')" title="Delete Invoice"><i class="fa-solid fa-trash"></i></button>
                   </td>
                 </tr>
                 <tr>
-                  <td style="font-weight: 700; color: var(--primary-teal);">#0002</td>
+                  <td style="font-weight: 700; color: var(--primary-teal); cursor: pointer;" onclick="openInvoiceVerificationModal('0002')" title="Click to view &amp; print invoice"><i class="fa-solid fa-file-invoice" style="margin-right: 4px; opacity: 0.7;"></i>#0002</td>
                   <td>11-Sept-2026</td>
                   <td style="font-weight: 600;">DEVI FISHERIES LIMITED</td>
                   <td class="text-center">2</td>
                   <td style="text-align: right; font-weight: 700;">₹ 10,395.00</td>
                   <td class="text-center"><span class="badge-status badge-unpaid">Unpaid</span></td>
                   <td class="actions-cell">
-                    <button class="action-btn edit" onclick="editSavedInvoice('inv_1789115952504_350')" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
-                    <button class="action-btn print" onclick="printSavedInvoice('inv_1789115952504_350')" title="Print A4"><i class="fa-solid fa-print"></i></button>
-                    <button class="action-btn print" onclick="printSavedInvoiceThermal('inv_1789115952504_350')" title="Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
-                    <button class="action-btn share btn-whatsapp" onclick="shareInvoiceToWhatsApp('inv_1789115952504_350', this)" title="Share PDF via WhatsApp"><i class="fa-brands fa-whatsapp" style="color: #16a34a;"></i></button>
-                    <button class="action-btn share btn-telegram" onclick="shareInvoiceToTelegram('inv_1789115952504_350', this)" title="Share PDF to Telegram"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i></button>
-                    <button class="action-btn delete" onclick="deleteSavedInvoice('inv_1789115952504_350')" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                    <button class="action-btn print action-btn-print" onclick="printSavedInvoice('0002')" title="Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
+                    <button class="action-btn print action-btn-thermal" onclick="printSavedInvoiceThermal('0002')" title="Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
+                    <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('0002', this)" title="Share PDF via WhatsApp"><i class="fa-brands fa-whatsapp"></i></button>
+                    <button class="action-btn edit" onclick="editSavedInvoice('0002')" title="Edit Bill"><i class="fa-solid fa-pen-to-square"></i></button>
+                    <button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('0002')" title="Delete Invoice"><i class="fa-solid fa-trash"></i></button>
                   </td>
                 </tr>
                 <tr>
-                  <td style="font-weight: 700; color: var(--primary-teal);">#0001</td>
+                  <td style="font-weight: 700; color: var(--primary-teal); cursor: pointer;" onclick="openInvoiceVerificationModal('0001')" title="Click to view &amp; print invoice"><i class="fa-solid fa-file-invoice" style="margin-right: 4px; opacity: 0.7;"></i>#0001</td>
                   <td>11-Sept-2026</td>
                   <td style="font-weight: 600;">DEVI FISHERIES LIMITED</td>
                   <td class="text-center">1</td>
                   <td style="text-align: right; font-weight: 700;">₹ 12,600.00</td>
                   <td class="text-center"><span class="badge-status badge-partial">Partial</span></td>
                   <td class="actions-cell">
-                    <button class="action-btn edit" onclick="editSavedInvoice('inv_1789114669169_340')" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
-                    <button class="action-btn print" onclick="printSavedInvoice('inv_1789114669169_340')" title="Print A4"><i class="fa-solid fa-print"></i></button>
-                    <button class="action-btn print" onclick="printSavedInvoiceThermal('inv_1789114669169_340')" title="Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
-                    <button class="action-btn share btn-whatsapp" onclick="shareInvoiceToWhatsApp('inv_1789114669169_340', this)" title="Share PDF via WhatsApp"><i class="fa-brands fa-whatsapp" style="color: #16a34a;"></i></button>
-                    <button class="action-btn share btn-telegram" onclick="shareInvoiceToTelegram('inv_1789114669169_340', this)" title="Share PDF to Telegram"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i></button>
-                    <button class="action-btn delete" onclick="deleteSavedInvoice('inv_1789114669169_340')" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                    <button class="action-btn print action-btn-print" onclick="printSavedInvoice('0001')" title="Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
+                    <button class="action-btn print action-btn-thermal" onclick="printSavedInvoiceThermal('0001')" title="Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
+                    <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('0001', this)" title="Share PDF via WhatsApp"><i class="fa-brands fa-whatsapp"></i></button>
+                    <button class="action-btn edit" onclick="editSavedInvoice('0001')" title="Edit Bill"><i class="fa-solid fa-pen-to-square"></i></button>
+                    <button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('0001')" title="Delete Invoice"><i class="fa-solid fa-trash"></i></button>
                   </td>
                 </tr>
               </tbody>
@@ -3373,13 +3370,30 @@
             <p style="margin: 0; font-size: 12px; color: #166534;">Thank you! No further payments are required for this invoice.</p>
           </div>
 
-          <!-- Customer Action Buttons Bar -->
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px;">
-            <button type="button" class="btn btn-secondary" onclick="downloadVerifiedInvoicePdf(this)" style="justify-content: center; font-size: 12px; font-weight: 700; padding: 9px;">
+          <!-- Action Buttons Bar: Print A4, Print POS Thermal, Download PDF, WhatsApp -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+            <button type="button" id="verify-print-btn" class="btn btn-primary" onclick="printVerifiedInvoice()" style="justify-content: center; font-size: 13px; font-weight: 800; padding: 10px; background: linear-gradient(135deg, #06b6d4 0%, #2563eb 100%); border: none; box-shadow: 0 2px 6px rgba(6, 182, 212, 0.35); color: white;">
+              <i class="fa-solid fa-print"></i> Print A4 Invoice
+            </button>
+            <button type="button" id="verify-thermal-btn" class="btn btn-cyan" onclick="printVerifiedInvoiceThermal()" style="justify-content: center; font-size: 13px; font-weight: 800; padding: 10px; box-shadow: 0 2px 6px rgba(13, 148, 136, 0.25); color: white;">
+              <i class="fa-solid fa-receipt"></i> Print POS Thermal
+            </button>
+            <button type="button" id="verify-pdf-btn" class="btn btn-secondary" onclick="downloadVerifiedInvoicePdf(this)" style="justify-content: center; font-size: 12px; font-weight: 700; padding: 9px; border: 1px solid #e2e8f0;">
               <i class="fa-solid fa-file-pdf text-rose"></i> Download PDF
             </button>
-            <button type="button" class="btn btn-secondary" onclick="printVerifiedInvoice()" style="justify-content: center; font-size: 12px; font-weight: 700; padding: 9px;">
-              <i class="fa-solid fa-print text-cyan"></i> Print Bill
+            <button type="button" id="verify-whatsapp-btn" class="btn btn-whatsapp" onclick="shareVerifiedInvoiceWhatsApp(this)" style="justify-content: center; font-size: 12px; font-weight: 700; padding: 9px;">
+              <i class="fa-brands fa-whatsapp"></i> Share WhatsApp
+            </button>
+          </div>
+
+          <!-- Admin Invoice Management Bar (Delete Invoice Option) -->
+          <div id="verify-admin-actions-bar" style="margin-bottom: 16px; padding: 9px 12px; background: #fff1f2; border: 1.5px solid #fecdd3; border-radius: 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <div style="font-size: 11.5px; color: #9f1239; display: flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-shield-halved" style="color: #e11d48;"></i>
+              <span><strong>Admin Tools:</strong> Remove or cancel bill?</span>
+            </div>
+            <button type="button" id="verify-delete-btn" class="btn btn-xs" onclick="deleteVerifiedInvoice()" style="background: #dc2626; color: white; border: none; padding: 6px 12px; font-size: 11.5px; font-weight: 700; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; box-shadow: 0 2px 5px rgba(220, 38, 38, 0.3);">
+              <i class="fa-solid fa-trash"></i> Delete Invoice
             </button>
           </div>
 
@@ -3469,6 +3483,50 @@
         <button type="button" class="btn btn-secondary" onclick="closeInvoiceVerificationModal()">Close</button>
       </div>
 
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- EXECUTIVE-GRADE CUSTOM DELETE CONFIRMATION MODAL          -->
+  <!-- ========================================================= -->
+  <div id="custom-delete-confirm-modal" class="modal-overlay hidden no-print" onclick="if(event.target === this) closeDeleteConfirmModal();" style="z-index: 2147483646; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(12px); display: none; align-items: center; justify-content: center; padding: 16px;">
+    <div class="modal-box text-center" style="max-width: 460px; width: 100%; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.5); border: 1px solid rgba(239, 68, 68, 0.3); animation: scaleModalIn 0.25s cubic-bezier(0.16, 1, 0.3, 1); margin: auto;">
+      <div style="background: linear-gradient(135deg, #450a0a 0%, #7f1d1d 100%); color: #ffffff; padding: 22px 20px 18px 20px; position: relative;">
+        <button type="button" onclick="closeDeleteConfirmModal()" style="position: absolute; right: 14px; top: 14px; background: rgba(255,255,255,0.15); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.5)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'" title="Close"><i class="fa-solid fa-xmark"></i></button>
+        <div style="width: 58px; height: 58px; border-radius: 50%; background: rgba(239, 68, 68, 0.25); border: 2px solid rgba(248, 113, 113, 0.4); display: flex; align-items: center; justify-content: center; margin: 0 auto 12px auto; font-size: 26px; color: #fecaca; box-shadow: 0 4px 16px rgba(220, 38, 38, 0.35);">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+        </div>
+        <h3 style="margin: 0 0 4px 0; font-size: 18px; font-weight: 800; letter-spacing: -0.01em;">Confirm Permanent Deletion</h3>
+        <p style="margin: 0; font-size: 12px; color: #fca5a5;">This action will permanently purge this invoice from all registries</p>
+      </div>
+      <div style="padding: 20px; text-align: left;">
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="font-size: 12px; color: #64748b; font-weight: 600;">INVOICE NUMBER:</span>
+            <strong id="delete-confirm-inv-no" style="font-size: 14px; color: #dc2626; font-weight: 800;">#0000</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="font-size: 12px; color: #64748b; font-weight: 600;">CUSTOMER:</span>
+            <strong id="delete-confirm-customer" style="font-size: 13px; color: #1e293b; font-weight: 700;">Customer Name</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; padding-top: 8px; border-top: 1px dashed #cbd5e1;">
+            <span style="font-size: 12px; color: #64748b; font-weight: 600;">TOTAL AMOUNT:</span>
+            <strong id="delete-confirm-total" style="font-size: 15px; color: #0f172a; font-weight: 800;">₹ 0.00</strong>
+          </div>
+        </div>
+        <div style="background: #fff1f2; border: 1px solid #fecdd3; border-radius: 10px; padding: 12px; font-size: 12px; color: #9f1239; line-height: 1.5; margin-bottom: 18px;">
+          <i class="fa-solid fa-circle-info" style="margin-right: 5px; color: #e11d48;"></i>
+          <strong>Automatic Sync:</strong> Inventory stock will be automatically restored, the next billing sequence will roll back to this number, and the deletion will sync across Google Sheets and all connected devices.
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <button type="button" class="btn btn-secondary" onclick="closeDeleteConfirmModal()" style="padding: 12px; font-weight: 700; font-size: 13px; justify-content: center; border: 1.5px solid #cbd5e1; cursor: pointer;">
+            <i class="fa-solid fa-xmark"></i> Cancel &amp; Keep
+          </button>
+          <button type="button" id="delete-confirm-execute-btn" class="btn btn-danger" onclick="executeConfirmedDelete()" style="padding: 12px; font-weight: 800; font-size: 13px; justify-content: center; background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%); border: none; color: white; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.35); cursor: pointer; display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-trash"></i> Yes, Delete
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 
