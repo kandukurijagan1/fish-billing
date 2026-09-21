@@ -305,9 +305,29 @@ ipcMain.handle('load-initial-db', async () => {
   return { ok: false, error: 'initial_db.json not found' };
 });
 
-ipcMain.on('print-invoice', (event) => {
+ipcMain.on('print-invoice', (event, options) => {
   if (mainWindow) {
-    mainWindow.webContents.print({ silent: false, printBackground: true });
+    mainWindow.webContents.print({
+      silent: false,
+      printBackground: true,
+      color: true,
+      ...(options || {})
+    });
+  }
+});
+
+ipcMain.handle('print-to-pdf', async (event, options) => {
+  if (!mainWindow) return { ok: false, error: 'No active window' };
+  try {
+    const pdfData = await mainWindow.webContents.printToPDF({
+      pageSize: 'A4',
+      printBackground: true,
+      marginsType: 0,
+      ...(options || {})
+    });
+    return { ok: true, data: pdfData.toString('base64') };
+  } catch (err) {
+    return { ok: false, error: err.message };
   }
 });
 
