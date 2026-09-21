@@ -14744,6 +14744,43 @@ window.autofillRememberedCredentials = function() {
   }
 };
 
+window.handleLockPasswordInput = function(inputEl) {
+  if (!inputEl) return;
+  const val = inputEl.value.trim();
+  // Fast 4-digit PIN auto-submission
+  if (val.length === 4 && /^\d{4}$/.test(val)) {
+    const sec = (window.globalSettings?.security) || {};
+    const customPin = (sec.securityPin || sec.whatsappPin || sec.pin || "2024").toString().trim();
+    if (val === "2024" || val === customPin) {
+      if (typeof window.submitUnlockLogin === 'function') {
+        window.submitUnlockLogin();
+      }
+    }
+  }
+};
+
+document.addEventListener('keyup', function(e) {
+  const capsWarn = document.getElementById('login-caps-lock-warning');
+  if (capsWarn && e.getModifierState) {
+    if (e.getModifierState('CapsLock')) {
+      capsWarn.classList.remove('hidden');
+    } else {
+      capsWarn.classList.add('hidden');
+    }
+  }
+});
+
+document.addEventListener('keydown', function(e) {
+  const capsWarn = document.getElementById('login-caps-lock-warning');
+  if (capsWarn && e.getModifierState) {
+    if (e.getModifierState('CapsLock')) {
+      capsWarn.classList.remove('hidden');
+    } else {
+      capsWarn.classList.add('hidden');
+    }
+  }
+});
+
 window.triggerManualLock = function() {
   triggerLockOverlay();
   AppSecurity.logEvent("MANUAL_LOCK", "Screen locked manually by user", "INFO");

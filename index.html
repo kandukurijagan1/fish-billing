@@ -245,17 +245,19 @@
   <div id="lock-screen-overlay" class="lock-overlay no-print">
     <div class="login-card">
       <div class="login-header">
-        <div class="login-logo-wrapper" style="display: flex; align-items: center; justify-content: center; margin-bottom: 10px;">
-          <img src="rallis_logo.png" alt="Rallis India Limited Logo" style="height: 65px; width: auto; object-fit: contain; border-radius: 6px; background: #ffffff; padding: 4px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+        <div class="login-logo-wrapper">
+          <div class="login-brand-emblem">
+            <img src="rallis_logo.png" alt="Aaryan Aqua Needs" class="login-brand-img">
+          </div>
         </div>
         <h2>AARYAN AQUA NEEDS</h2>
-        <p>GST Billing & Management System</p>
+        <p>GST Billing &amp; Aquaculture Management System</p>
       </div>
       
       <!-- SESSION TIMING & LOCK STATUS BADGE -->
-      <div id="login-session-timing-banner" style="margin: -5px 0 14px 0; padding: 7px 12px; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 11.5px; color: #94a3b8;">
-        <i class="fa-solid fa-shield-halved text-cyan" id="login-session-status-icon"></i>
-        <span id="login-session-status-text">Zero-Trust Protected • Session Locked</span>
+      <div id="login-session-timing-banner">
+        <i class="fa-solid fa-shield-halved" id="login-session-status-icon"></i>
+        <span id="login-session-status-text">Session Locked • Enter Password or PIN</span>
       </div>
       
       <div id="login-error-message" class="login-error hidden">
@@ -275,17 +277,20 @@
           <label for="login-password" id="login-auth-label">Master Password or 4-Digit PIN</label>
           <div class="input-icon-wrapper">
             <i class="fa-solid fa-lock input-icon"></i>
-            <input type="password" id="login-password" name="password" autocomplete="current-password" required placeholder="Enter master password or PIN">
+            <input type="password" id="login-password" name="password" autocomplete="current-password" required placeholder="Enter master password or 4-digit PIN" oninput="if(typeof handleLockPasswordInput === 'function') handleLockPasswordInput(this)">
             <button type="button" class="btn-toggle-pwd" onclick="toggleLoginPasswordVisibility()" title="Toggle password visibility">
               <i id="toggle-pwd-icon" class="fa-solid fa-eye"></i>
             </button>
           </div>
-          <span style="font-size: 10.5px; color: #64748b; margin-top: 3px; display: block;">Authorized personnel only • Enter credentials to unlock</span>
+          <div id="login-caps-lock-warning" class="hidden" style="color: #f59e0b; font-size: 11px; margin-top: 4px; display: flex; align-items: center; gap: 5px;">
+            <i class="fa-solid fa-arrow-up-from-bracket"></i> <span>Caps Lock is ON</span>
+          </div>
+          <span style="font-size: 11px; color: #64748b; margin-top: 4px; display: block;">Authorized personnel only • Enter credentials to unlock</span>
         </div>
         
-        <div class="remember-me-group" style="display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: flex-start !important; gap: 8px !important; margin: 10px 0 14px 0 !important; width: 100% !important; text-align: left !important;">
-          <input type="checkbox" id="login-remember-me" style="width: 16px !important; height: 16px !important; margin: 0 !important; cursor: pointer !important; accent-color: #0d9488 !important; display: inline-block !important; flex-shrink: 0 !important;">
-          <label for="login-remember-me" style="cursor: pointer !important; font-size: 12.5px !important; color: #cbd5e1 !important; user-select: none !important; text-transform: none !important; letter-spacing: normal !important; font-weight: normal !important; margin: 0 !important;">Remember Username &amp; Fast PIN Entry</label>
+        <div class="remember-me-group">
+          <input type="checkbox" id="login-remember-me">
+          <label for="login-remember-me">Remember Username &amp; Fast PIN Entry</label>
         </div>
         
         <button type="submit" class="btn-login-submit">
@@ -295,9 +300,9 @@
       </form>
       
       <div class="login-footer">
-        <span>Protected by Anti-Brute-Force &amp; SHA-256 Auth Shield.</span>
-        <div id="login-session-lock-reason" style="margin-top: 6px; font-size: 11px; color: #64748b; display: flex; align-items: center; justify-content: center; gap: 5px;">
-          <i class="fa-solid fa-shield-halved" style="color: #0d9488;"></i>
+        <span><i class="fa-solid fa-lock" style="color: #0ea5e9; margin-right: 4px;"></i> Protected by Anti-Brute-Force &amp; SHA-256 Auth Shield</span>
+        <div id="login-session-lock-reason">
+          <i class="fa-solid fa-shield-halved" style="color: #0ea5e9;"></i>
           <span id="login-session-lock-subtext">Zero-Trust Enforced • Enter Password or PIN to Unlock</span>
         </div>
       </div>
