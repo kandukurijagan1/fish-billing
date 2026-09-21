@@ -1,10 +1,23 @@
 @echo off
-title Aaryan Aqua Needs - Building MacBook Desktop App
+title Aaryan Aqua Needs - MacBook (macOS) App Distribution
 color 0b
 echo ========================================================
-echo   Aaryan Aqua Needs - Building MacBook (macOS) App
+echo   Aaryan Aqua Needs - MacBook (macOS) App
 echo ========================================================
 echo.
+
+if exist "Ready_To_Share_Apps\*.dmg" (
+    echo [FOUND] Production macOS DMG package is ready in Ready_To_Share_Apps!
+    echo.
+    dir /b Ready_To_Share_Apps\*.dmg
+    dir /b Ready_To_Share_Apps\*.zip
+    echo.
+    echo ========================================================
+    echo   Opening Ready_To_Share_Apps folder for customer sharing...
+    echo ========================================================
+    explorer Ready_To_Share_Apps
+    goto end
+)
 
 echo [1/2] Packaging macOS application (.zip / .dmg)...
 call npm run build:mac
@@ -19,11 +32,12 @@ if %ERRORLEVEL% equ 0 (
     explorer dist
 ) else (
     echo.
-    echo [NOTE] Note on macOS building on Windows:
-    echo If macOS DMG creation encounters host platform restrictions,
-    echo the GitHub Actions cloud release pipeline automatically compiles
-    echo 100%% native DMGs on Apple macOS runners.
+    echo [NOTE] macOS DMG creation requires macOS host tools.
+    echo The GitHub Actions cloud pipeline (build-desktop-apps.yml)
+    echo automatically compiles 100%% native Universal DMGs on Apple runners.
     echo.
+    if exist "Ready_To_Share_Apps" explorer Ready_To_Share_Apps
 )
 
+:end
 pause
