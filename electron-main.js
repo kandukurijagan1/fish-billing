@@ -285,6 +285,26 @@ ipcMain.handle('fast-read-cache', async (event, { key }) => {
   return { ok: false };
 });
 
+ipcMain.handle('load-initial-db', async () => {
+  try {
+    const candidates = [
+      path.join(__dirname, 'initial_db.json'),
+      path.join(app.getAppPath ? app.getAppPath() : __dirname, 'initial_db.json'),
+      path.join(process.resourcesPath || '', 'app.asar', 'initial_db.json'),
+      path.join(process.resourcesPath || '', 'initial_db.json')
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        const content = await fs.promises.readFile(p, 'utf8');
+        return { ok: true, data: JSON.parse(content) };
+      }
+    }
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+  return { ok: false, error: 'initial_db.json not found' };
+});
+
 ipcMain.on('print-invoice', (event) => {
   if (mainWindow) {
     mainWindow.webContents.print();

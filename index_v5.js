@@ -78,7 +78,7 @@ const TurboIndexedDB = {
               window.electronAPI.readFastCache("invoices"),
               window.electronAPI.readFastCache("products"),
               window.electronAPI.readFastCache("parties")
-            ]).then(([invRes, prodRes, partRes]) => {
+            ]).then(async ([invRes, prodRes, partRes]) => {
               if (invRes && invRes.ok && Array.isArray(invRes.data) && invRes.data.length > 0 && (!invoicesDb || invoicesDb.length === 0)) {
                 invoicesDb = invRes.data;
                 try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
@@ -95,6 +95,17 @@ const TurboIndexedDB = {
                 partiesDb = partRes.data;
                 try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
                 if (typeof loadPartiesDatabaseLists === "function") loadPartiesDatabaseLists();
+              }
+              // First cold launch of desktop app (when fast_cache is empty): load bundled initial_db.json
+              if ((!invoicesDb || invoicesDb.length === 0) && (!productsDb || productsDb.length === 0)) {
+                if (typeof window.electronAPI.loadInitialDb === "function") {
+                  try {
+                    const initRes = await window.electronAPI.loadInitialDb();
+                    if (initRes && initRes.ok && initRes.data && typeof window.hydrateFromSnapshot === "function") {
+                      window.hydrateFromSnapshot(initRes.data);
+                    }
+                  } catch(e) {}
+                }
               }
             }).catch(() => {});
           }
@@ -2980,12 +2991,21 @@ window.triggerDatabaseSync = async function(forceReload = false) {
     // High-speed static snapshot fallback if database is currently empty (<50ms)
     if ((!invoicesDb || invoicesDb.length === 0) || (!productsDb || productsDb.length === 0)) {
       try {
-        const fallbackRes = await fetch('initial_db.json?_t=' + Date.now());
-        if (fallbackRes.ok) {
-          const fallbackData = await fallbackRes.json();
-          if (fallbackData && typeof window.hydrateFromSnapshot === 'function') {
-            window.hydrateFromSnapshot(fallbackData);
+        let fallbackData = null;
+        if (window.electronAPI && typeof window.electronAPI.loadInitialDb === 'function') {
+          try {
+            const lRes = await window.electronAPI.loadInitialDb();
+            if (lRes && lRes.ok && lRes.data) fallbackData = lRes.data;
+          } catch(e) {}
+        }
+        if (!fallbackData) {
+          const fallbackRes = await fetch('initial_db.json?_t=' + Date.now()).catch(() => fetch('initial_db.json'));
+          if (fallbackRes && fallbackRes.ok) {
+            fallbackData = await fallbackRes.json();
           }
+        }
+        if (fallbackData && typeof window.hydrateFromSnapshot === 'function') {
+          window.hydrateFromSnapshot(fallbackData);
         }
       } catch (fbErr) {}
     }
@@ -3117,12 +3137,21 @@ window.quickSyncCloud = async function(btnEl) {
 
     // Step 2: Instant local snapshot fetch (<50ms)
     try {
-      const initRes = await fetch('initial_db.json?_t=' + Date.now(), { cache: 'no-store' });
-      if (initRes.ok) {
-        const initData = await initRes.json();
-        if (initData && typeof window.hydrateFromSnapshot === 'function') {
-          window.hydrateFromSnapshot(initData);
+      let initData = null;
+      if (window.electronAPI && typeof window.electronAPI.loadInitialDb === 'function') {
+        try {
+          const lRes = await window.electronAPI.loadInitialDb();
+          if (lRes && lRes.ok && lRes.data) initData = lRes.data;
+        } catch(e) {}
+      }
+      if (!initData) {
+        const initRes = await fetch('initial_db.json?_t=' + Date.now(), { cache: 'no-store' }).catch(() => fetch('initial_db.json'));
+        if (initRes && initRes.ok) {
+          initData = await initRes.json();
         }
+      }
+      if (initData && typeof window.hydrateFromSnapshot === 'function') {
+        window.hydrateFromSnapshot(initData);
       }
     } catch (e) {}
 
@@ -3530,17 +3559,30 @@ function initializeApp() {
   fetchWhatsAppBotStatus();
   initWhatsAppEventSource();
 
-  // Fast non-blocking fetch of initial_db.json from static CDN (<50ms)
-  fetch('initial_db.json?_t=' + Date.now(), { cache: 'no-store' })
-    .then(r => r.ok ? r.json() : null)
-    .then(data => {
-      if (data && (data.invoices || data.products)) {
-        if (typeof window.hydrateFromSnapshot === 'function') {
-          window.hydrateFromSnapshot(data);
+  // Fast non-blocking fetch of initial_db.json from local disk / static CDN (<50ms)
+  const loadInitialSnapshot = () => {
+    fetch('initial_db.json?_t=' + Date.now(), { cache: 'no-store' })
+      .catch(() => fetch('initial_db.json'))
+      .then(r => r && r.ok ? r.json() : null)
+      .then(data => {
+        if (data && (data.invoices || data.products)) {
+          if (typeof window.hydrateFromSnapshot === 'function') {
+            window.hydrateFromSnapshot(data);
+          }
         }
-      }
-    })
-    .catch(() => {});
+      })
+      .catch(async () => {
+        if (window.electronAPI && typeof window.electronAPI.loadInitialDb === 'function') {
+          try {
+            const res = await window.electronAPI.loadInitialDb();
+            if (res && res.ok && res.data && typeof window.hydrateFromSnapshot === 'function') {
+              window.hydrateFromSnapshot(res.data);
+            }
+          } catch(e) {}
+        }
+      });
+  };
+  loadInitialSnapshot();
 
   // Trigger cloud sync to join any in-flight startup request or refresh data
   if (typeof window.triggerDatabaseSync === 'function') {

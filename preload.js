@@ -6,5 +6,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   printInvoice: () => ipcRenderer.send('print-invoice'),
   openExternal: (url) => ipcRenderer.send('open-external', url),
   saveFastCache: (key, data) => ipcRenderer.invoke('fast-save-cache', { key, data }),
-  readFastCache: (key) => ipcRenderer.invoke('fast-read-cache', { key })
+  readFastCache: (key) => ipcRenderer.invoke('fast-read-cache', { key }),
+  loadInitialDb: () => ipcRenderer.invoke('load-initial-db')
 });
