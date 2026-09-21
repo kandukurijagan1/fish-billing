@@ -5051,10 +5051,10 @@ function updateDashboardOverview() {
         if (status === 'Partial') badgeClass = 'badge-partial';
         if (status === 'Unpaid') badgeClass = 'badge-unpaid';
 
-        let balanceQrBtn = "";
+        let balanceQrDropdownItem = "";
         if (!isEstimate && !isPaid && balance > 0) {
-          balanceQrBtn = `
-            <button class="action-btn share" onclick="openBalanceQrModal('${inv.id}')" title="Scan & Settle Balance (₹ ${formatCurrency(balance)})" style="background: rgba(6, 182, 212, 0.15); color: #06b6d4;"><i class="fa-solid fa-qrcode"></i></button>
+          balanceQrDropdownItem = `
+            <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openBalanceQrModal('${inv.id}')"><i class="fa-solid fa-qrcode" style="color: #06b6d4;"></i> Scan &amp; Settle Balance (₹ ${formatCurrency(balance)})</a>
           `;
         }
 
@@ -5064,7 +5064,7 @@ function updateDashboardOverview() {
 
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td style="font-weight: 700; color: var(--primary-teal); white-space: nowrap; cursor: pointer;" onclick="openInvoiceVerificationModal('${inv.id || inv.invoiceNo}')" title="Click to view &amp; print invoice">
+          <td style="font-weight: 700; color: var(--primary-teal); white-space: nowrap; cursor: pointer;" onclick="openInvoicePrintPreview('${inv.id || inv.invoiceNo}', 'a4')" title="Click to preview &amp; print invoice">
             <i class="fa-solid fa-file-invoice" style="margin-right: 4px; opacity: 0.7;"></i>#${inv.invoiceNo}
           </td>
           <td style="white-space: nowrap;">${formatInputDateString(inv.invoiceDate)}</td>
@@ -5076,14 +5076,21 @@ function updateDashboardOverview() {
             ${(!isPaid && balance > 0) ? `<div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>` : ''}
           </td>
           <td class="actions-cell">
-            <button class="action-btn print action-btn-print" onclick="printSavedInvoice('${inv.id}')" title="Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
-            <button class="action-btn print action-btn-thermal" onclick="printSavedInvoiceThermal('${inv.id}')" title="Print Thermal POS Receipt"><i class="fa-solid fa-receipt"></i></button>
+            <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${inv.id}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
+            <button class="action-btn print action-btn-thermal" onclick="openInvoicePrintPreview('${inv.id}', 'thermal')" title="Preview &amp; Print POS Thermal"><i class="fa-solid fa-receipt"></i></button>
             <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Share PDF via WhatsApp (1-Click)"><i class="fa-brands fa-whatsapp"></i></button>
             <button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Invoice"><i class="fa-solid fa-pen-to-square"></i></button>
-            ${balanceQrBtn}
-            <button class="action-btn repeat" onclick="repeatInvoice('${inv.id}')" title="Repeat Bill (Clone to New Invoice)"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i></button>
-            <button class="action-btn share" onclick="openUniversalInvoiceShareModal('${inv.id}')" title="Universal Share"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i></button>
             <button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Invoice"><i class="fa-solid fa-trash"></i></button>
+            <div class="action-dropdown-wrapper">
+              <button class="action-btn more-btn" onclick="toggleActionDropdown('${inv.id}', event)" title="More Options"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+              <div id="action-dropdown-${inv.id}" class="action-dropdown-menu hidden" onclick="event.stopPropagation();">
+                <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); downloadSavedInvoicePdf('${inv.id}', this)"><i class="fa-solid fa-file-pdf text-rose"></i> Download PDF</a>
+                <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatInvoice('${inv.id}')"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i> Clone / Repeat Bill</a>
+                ${balanceQrDropdownItem}
+                <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openUniversalInvoiceShareModal('${inv.id}')"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i> Universal Share Link</a>
+                <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openInvoiceVerificationModal('${inv.id || inv.invoiceNo}')"><i class="fa-solid fa-shield-check" style="color: #10b981;"></i> Verify &amp; Digital Receipt</a>
+              </div>
+            </div>
           </td>
         `;
         elements.dashboardRecentInvoicesBody.appendChild(tr);
@@ -8757,26 +8764,21 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
 
     // Handle action-specific outcome
     if (actionType === 'print_a4') {
-      try { populateA4PrintOverlay(invoiceRecord.details); } catch (e) { console.warn(e); }
-      showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} saved! Opening Print...`);
+      showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} saved! Opening Print Preview...`);
+      resetBillingForm();
+      switchTab("history");
+      loadInvoicesHistoryTable();
       setTimeout(() => {
-        document.body.classList.remove("printing-thermal");
-        window.print();
-        resetBillingForm();
-        switchTab("history");
-        loadInvoicesHistoryTable();
-      }, 100);
+        window.openInvoicePrintPreview(invoiceRecord.id, 'a4');
+      }, 120);
     } else if (actionType === 'print_thermal') {
-      try { populateThermalPrintOverlay(invoiceRecord.details); } catch (e) { console.warn(e); }
-      showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} saved! Opening POS Thermal...`);
+      showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} saved! Opening POS Thermal Preview...`);
+      resetBillingForm();
+      switchTab("history");
+      loadInvoicesHistoryTable();
       setTimeout(() => {
-        document.body.classList.add("printing-thermal");
-        window.print();
-        document.body.classList.remove("printing-thermal");
-        resetBillingForm();
-        switchTab("history");
-        loadInvoicesHistoryTable();
-      }, 100);
+        window.openInvoicePrintPreview(invoiceRecord.id, 'thermal');
+      }, 120);
     } else if (actionType === 'download_pdf') {
       showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} saved! Downloading PDF...`);
       downloadInvoicePdf(invoiceRecord.details, btnEl);
@@ -8973,11 +8975,7 @@ window.triggerSuccessModalA4Print = function() {
   if (!lastSavedInvoiceRecord) return;
   const rec = lastSavedInvoiceRecord;
   window.closeInvoiceSuccessModal(false);
-  try { populateA4PrintOverlay(rec.details); } catch (e) { console.warn(e); }
-  setTimeout(() => {
-    document.body.classList.remove("printing-thermal");
-    window.print();
-  }, 100);
+  window.openInvoicePrintPreview(rec.id || rec.invoiceNo, 'a4');
 };
 
 window.triggerSuccessModalThermalPrint = function() {
@@ -8985,12 +8983,7 @@ window.triggerSuccessModalThermalPrint = function() {
   if (!lastSavedInvoiceRecord) return;
   const rec = lastSavedInvoiceRecord;
   window.closeInvoiceSuccessModal(false);
-  try { populateThermalPrintOverlay(rec.details); } catch (e) { console.warn(e); }
-  setTimeout(() => {
-    document.body.classList.add("printing-thermal");
-    window.print();
-    document.body.classList.remove("printing-thermal");
-  }, 100);
+  window.openInvoicePrintPreview(rec.id || rec.invoiceNo, 'thermal');
 };
 
 window.triggerSuccessModalDownloadPdf = function() {
@@ -9352,27 +9345,19 @@ function populateThermalPrintOverlay(invoice) {
 }
 
 window.printSavedInvoiceThermal = function(id) {
-  const inv = (typeof window.findInvoiceRecordByIdentifier === 'function')
-    ? window.findInvoiceRecordByIdentifier(id)
-    : (typeof invoicesDb !== 'undefined' ? invoicesDb : []).find(i => i.id === id || i.invoiceNo === id);
-  if (inv) {
-    populateThermalPrintOverlay(inv.details || inv);
-    document.body.classList.add("printing-thermal");
-    if (typeof showFloatingToast === 'function') {
-      showFloatingToast(`🧾 Opening POS Thermal Print for Invoice #${inv.invoiceNo}...`, "info", 2000);
-    }
-    setTimeout(() => {
-      window.print();
-      if (window.electronAPI && typeof window.electronAPI.printInvoice === 'function') {
-        window.electronAPI.printInvoice();
-      }
-      setTimeout(() => {
-        document.body.classList.remove("printing-thermal");
-      }, 500);
-    }, 120);
+  if (typeof window.openInvoicePrintPreview === 'function') {
+    window.openInvoicePrintPreview(id, 'thermal');
   } else {
-    if (typeof showFloatingToast === 'function') {
-      showFloatingToast("⚠️ Invoice record not found to print.", "warning");
+    const inv = (typeof window.findInvoiceRecordByIdentifier === 'function')
+      ? window.findInvoiceRecordByIdentifier(id)
+      : (typeof invoicesDb !== 'undefined' ? invoicesDb : []).find(i => i.id === id || i.invoiceNo === id);
+    if (inv) {
+      populateThermalPrintOverlay(inv.details || inv);
+      document.body.classList.add("printing-thermal");
+      setTimeout(() => {
+        window.print();
+        setTimeout(() => { document.body.classList.remove("printing-thermal"); }, 500);
+      }, 120);
     }
   }
 };
@@ -12230,10 +12215,18 @@ function renderHistoryTableRows(records) {
       `;
     }
 
-    let convertEstimateBtn = "";
+    let balanceQrDropdownItem = "";
+    if (!isEstimate && !isPaid && balance > 0) {
+      balanceQrDropdownItem = `
+        <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openBalanceQrModal('${inv.id}')"><i class="fa-solid fa-qrcode" style="color: #06b6d4;"></i> View Balance UPI QR (₹ ${formatCurrency(balance)})</a>
+        <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); sendWhatsAppPaymentReminder('${inv.id}', this)"><i class="fa-solid fa-bell" style="color: #d97706;"></i> WhatsApp Payment Reminder</a>
+      `;
+    }
+
+    let convertEstimateDropdownItem = "";
     if (isEstimate) {
-      convertEstimateBtn = `
-        <button class="action-btn share" onclick="convertEstimateToInvoice('${inv.id}')" title="Convert to Official GST Invoice" style="background: rgba(8, 145, 178, 0.15); color: #0891b2; font-weight: 700;"><i class="fa-solid fa-file-circle-check"></i></button>
+      convertEstimateDropdownItem = `
+        <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); convertEstimateToInvoice('${inv.id}')"><i class="fa-solid fa-file-circle-check" style="color: #0891b2;"></i> Convert to Official GST Invoice</a>
       `;
     }
 
@@ -12249,7 +12242,7 @@ function renderHistoryTableRows(records) {
 
     htmlBuffer.push(`
       <tr>
-        <td style="font-weight: 700; color: var(--primary-teal); cursor: pointer;" onclick="openInvoiceVerificationModal('${inv.id || inv.invoiceNo}')" title="Click to view &amp; print bill">
+        <td style="font-weight: 700; color: var(--primary-teal); cursor: pointer;" onclick="openInvoicePrintPreview('${inv.id || inv.invoiceNo}', 'a4')" title="Click to preview &amp; print bill">
           <i class="fa-solid fa-file-invoice" style="margin-right: 4px; opacity: 0.7;"></i>#${inv.invoiceNo}
         </td>
         <td>${formatInputDateString(invDate)}</td>
@@ -12262,17 +12255,23 @@ function renderHistoryTableRows(records) {
             : `<span class="badge-status ${badgeClass}">${status}</span>`}
         </td>
         <td class="actions-cell">
-          <button class="action-btn print action-btn-print" onclick="printSavedInvoice('${inv.id}')" title="Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
-          <button class="action-btn print action-btn-thermal" onclick="printSavedInvoiceThermal('${inv.id}')" title="Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
-          <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Send Invoice & PDF via WhatsApp (1-Click)" style="background: #16a34a !important; color: #ffffff !important; font-weight: 700; width: 30px; height: 30px; border-radius: 6px; box-shadow: 0 1px 3px rgba(22, 163, 74, 0.35);"><i class="fa-brands fa-whatsapp" style="font-size: 15px; color: #ffffff !important;"></i></button>
+          <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${inv.id}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
+          <button class="action-btn print action-btn-thermal" onclick="openInvoicePrintPreview('${inv.id}', 'thermal')" title="Preview &amp; Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
+          <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Send Invoice &amp; PDF via WhatsApp (1-Click)" style="background: #16a34a !important; color: #ffffff !important; font-weight: 700; width: 30px; height: 30px; border-radius: 6px; box-shadow: 0 1px 3px rgba(22, 163, 74, 0.35);"><i class="fa-brands fa-whatsapp" style="font-size: 15px; color: #ffffff !important;"></i></button>
           <button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Bill"><i class="fa-solid fa-pen-to-square"></i></button>
-          <button class="action-btn print" onclick="downloadSavedInvoicePdf('${inv.id}', this)" title="Download PDF"><i class="fa-solid fa-file-pdf text-rose"></i></button>
-          ${balanceQrBtn}
-          ${convertEstimateBtn}
-          <button class="action-btn repeat" onclick="repeatInvoice('${inv.id}')" title="Repeat Bill (Clone to New Invoice)"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i></button>
-          <button class="action-btn share btn-telegram" onclick="shareInvoiceToTelegram('${inv.id}', this)" title="Share PDF to Telegram"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i></button>
-          <button class="action-btn share" onclick="openUniversalInvoiceShareModal('${inv.id}')" title="Universal Share"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i></button>
           <button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Bill"><i class="fa-solid fa-trash"></i></button>
+          <div class="action-dropdown-wrapper">
+            <button class="action-btn more-btn" onclick="toggleActionDropdown('${inv.id}', event)" title="More Options"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+            <div id="action-dropdown-${inv.id}" class="action-dropdown-menu hidden" onclick="event.stopPropagation();">
+              <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); downloadSavedInvoicePdf('${inv.id}', this)"><i class="fa-solid fa-file-pdf text-rose"></i> Download PDF</a>
+              <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatInvoice('${inv.id}')"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i> Clone / Repeat Bill</a>
+              ${balanceQrDropdownItem}
+              ${convertEstimateDropdownItem}
+              <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); shareInvoiceToTelegram('${inv.id}', this)"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i> Share via Telegram</a>
+              <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openUniversalInvoiceShareModal('${inv.id}')"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i> Universal Share Link</a>
+              <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openInvoiceVerificationModal('${inv.id || inv.invoiceNo}')"><i class="fa-solid fa-shield-check" style="color: #10b981;"></i> Verify &amp; Digital Receipt</a>
+            </div>
+          </div>
         </td>
       </tr>
     `);
@@ -12444,26 +12443,239 @@ window.findInvoiceRecordByIdentifier = function(identifier) {
   });
 };
 
-window.printSavedInvoice = function(id) {
-  const inv = window.findInvoiceRecordByIdentifier(id);
-  if (inv) {
+// =========================================================================
+// EXECUTIVE IN-APP INTERACTIVE PRINT PREVIEW & WYSIWYG CONTROLLER
+// =========================================================================
+window.currentPreviewInvoiceRecord = null;
+window.currentPreviewMode = 'a4'; // 'a4' | 'thermal'
+window.currentPreviewZoom = 1.0;
+
+window.executeSystemPrint = function() {
+  if (window.electronAPI && typeof window.electronAPI.printInvoice === 'function') {
+    window.electronAPI.printInvoice();
+  } else {
+    window.print();
+  }
+};
+
+window.openInvoicePrintPreview = function(identifier, mode = 'a4') {
+  const inv = (typeof window.findInvoiceRecordByIdentifier === 'function')
+    ? window.findInvoiceRecordByIdentifier(identifier)
+    : (typeof invoicesDb !== 'undefined' ? invoicesDb : []).find(i => i.id === identifier || i.invoiceNo === identifier);
+
+  if (!inv) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Invoice record not found for print preview.", "warning");
+    }
+    return;
+  }
+
+  window.currentPreviewInvoiceRecord = inv;
+  window.currentPreviewMode = (mode === 'thermal') ? 'thermal' : 'a4';
+  window.currentPreviewZoom = 1.0;
+
+  // 1. Populate metadata in header
+  const invNo = inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '0000';
+  const noEl = document.getElementById("preview-header-inv-no");
+  if (noEl) noEl.textContent = `#${invNo}`;
+
+  const custName = (inv.customerName || (inv.details && (inv.details.consignee?.name || inv.details.buyer?.name)) || 'Cash Customer');
+  const custEl = document.getElementById("preview-header-customer");
+  if (custEl) custEl.textContent = custName;
+
+  const totalAmt = safeParseAmount(inv.total !== undefined ? inv.total : (inv.details && inv.details.total));
+  const totEl = document.getElementById("preview-header-total");
+  if (totEl) totEl.textContent = `₹ ${formatCurrency(totalAmt)}`;
+
+  const payInfo = typeof getInvoicePaidAndBalance === 'function' ? getInvoicePaidAndBalance(inv) : { status: 'Paid', isPaid: true };
+  const badgeEl = document.getElementById("preview-header-status-badge");
+  if (badgeEl) {
+    badgeEl.textContent = payInfo.status || 'Paid';
+    badgeEl.className = 'badge-status ' + (payInfo.status === 'Partial' ? 'badge-partial' : (payInfo.status === 'Unpaid' ? 'badge-unpaid' : 'badge-paid'));
+  }
+
+  // 2. Populate A4 print overlay DOM & Clone into preview container
+  try {
+    populateA4PrintOverlay(inv.details || inv);
+    const a4Source = document.getElementById("print-invoice-wrapper");
+    const a4Target = document.getElementById("preview-a4-sheet-container");
+    if (a4Source && a4Target) {
+      a4Target.innerHTML = a4Source.innerHTML;
+    }
+  } catch (e) {
+    console.error("Error generating A4 preview canvas:", e);
+  }
+
+  // 3. Populate Thermal print overlay DOM & Clone into thermal container
+  try {
+    populateThermalPrintOverlay(inv.details || inv);
+    const thSource = document.getElementById("print-thermal-wrapper");
+    const thTarget = document.getElementById("preview-thermal-sheet-container");
+    if (thSource && thTarget) {
+      thTarget.innerHTML = thSource.innerHTML;
+    }
+  } catch (e) {
+    console.error("Error generating Thermal preview canvas:", e);
+  }
+
+  // 4. Update mode view & zoom
+  window.switchPrintPreviewMode(window.currentPreviewMode);
+  window.resetPrintPreviewZoom();
+
+  // 5. Reveal modal
+  const modal = document.getElementById("invoice-print-preview-modal");
+  if (modal) {
+    modal.classList.remove("hidden");
+    modal.style.display = "flex";
+  }
+};
+
+window.closeInvoicePrintPreview = function() {
+  const modal = document.getElementById("invoice-print-preview-modal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+  }
+};
+
+window.switchPrintPreviewMode = function(mode) {
+  window.currentPreviewMode = mode;
+  const btnA4 = document.getElementById("preview-mode-a4-btn");
+  const btnTh = document.getElementById("preview-mode-thermal-btn");
+  const containerA4 = document.getElementById("preview-a4-sheet-container");
+  const containerTh = document.getElementById("preview-thermal-sheet-container");
+
+  if (mode === 'thermal') {
+    if (btnA4) { btnA4.style.background = 'transparent'; btnA4.style.color = '#94a3b8'; btnA4.style.fontWeight = '600'; }
+    if (btnTh) { btnTh.style.background = '#0891b2'; btnTh.style.color = '#ffffff'; btnTh.style.fontWeight = '700'; }
+    if (containerA4) containerA4.style.display = 'none';
+    if (containerTh) containerTh.style.display = 'block';
+  } else {
+    if (btnA4) { btnA4.style.background = '#0891b2'; btnA4.style.color = '#ffffff'; btnA4.style.fontWeight = '700'; }
+    if (btnTh) { btnTh.style.background = 'transparent'; btnTh.style.color = '#94a3b8'; btnTh.style.fontWeight = '600'; }
+    if (containerA4) containerA4.style.display = 'block';
+    if (containerTh) containerTh.style.display = 'none';
+  }
+};
+
+window.adjustPrintPreviewZoom = function(delta) {
+  window.currentPreviewZoom = Math.min(2.0, Math.max(0.4, (window.currentPreviewZoom || 1.0) + delta));
+  const scaler = document.getElementById("preview-sheet-scaler");
+  if (scaler) scaler.style.transform = `scale(${window.currentPreviewZoom})`;
+  const label = document.getElementById("preview-zoom-label");
+  if (label) label.textContent = `${Math.round(window.currentPreviewZoom * 100)}%`;
+};
+
+window.resetPrintPreviewZoom = function() {
+  const viewport = document.getElementById("preview-sheet-viewport");
+  const viewportWidth = viewport ? viewport.clientWidth : window.innerWidth;
+  
+  if (window.currentPreviewMode === 'a4' && viewportWidth > 0 && viewportWidth < 880) {
+    window.currentPreviewZoom = Math.min(1.0, Math.max(0.5, (viewportWidth - 48) / 820));
+  } else {
+    window.currentPreviewZoom = 1.0;
+  }
+  const scaler = document.getElementById("preview-sheet-scaler");
+  if (scaler) scaler.style.transform = `scale(${window.currentPreviewZoom})`;
+  const label = document.getElementById("preview-zoom-label");
+  if (label) label.textContent = `${Math.round(window.currentPreviewZoom * 100)}%`;
+};
+
+window.executePrintFromPreview = function() {
+  if (!window.currentPreviewInvoiceRecord) return;
+  const inv = window.currentPreviewInvoiceRecord;
+
+  if (window.currentPreviewMode === 'thermal') {
+    populateThermalPrintOverlay(inv.details || inv);
+    document.body.classList.add("printing-thermal");
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`🧾 Printing POS Thermal Receipt #${inv.invoiceNo}...`, "info", 2000);
+    }
+    setTimeout(() => {
+      window.executeSystemPrint();
+      setTimeout(() => {
+        document.body.classList.remove("printing-thermal");
+      }, 500);
+    }, 100);
+  } else {
     populateA4PrintOverlay(inv.details || inv);
     document.body.classList.remove("printing-thermal");
     if (typeof showFloatingToast === 'function') {
-      showFloatingToast(`🖨️ Opening A4 Print for Invoice #${inv.invoiceNo}...`, "info", 2000);
+      showFloatingToast(`🖨️ Printing A4 Tax Invoice #${inv.invoiceNo}...`, "info", 2000);
     }
     setTimeout(() => {
-      window.print();
-      if (window.electronAPI && typeof window.electronAPI.printInvoice === 'function') {
-        window.electronAPI.printInvoice();
-      }
-    }, 120);
-  } else {
-    if (typeof showFloatingToast === 'function') {
-      showFloatingToast("⚠️ Invoice record not found to print.", "warning");
-    }
+      window.executeSystemPrint();
+    }, 100);
   }
 };
+
+window.downloadPdfFromPreview = function(btnEl) {
+  if (!window.currentPreviewInvoiceRecord) return;
+  window.downloadSavedInvoicePdf(window.currentPreviewInvoiceRecord.id, btnEl);
+};
+
+window.whatsappFromPreview = function(btnEl) {
+  if (!window.currentPreviewInvoiceRecord) return;
+  window.shareInvoiceToWhatsApp(window.currentPreviewInvoiceRecord.id, btnEl);
+};
+
+window.deleteFromPreview = function() {
+  if (!window.currentPreviewInvoiceRecord) return;
+  const id = window.currentPreviewInvoiceRecord.id || window.currentPreviewInvoiceRecord.invoiceNo;
+  window.closeInvoicePrintPreview();
+  window.deleteSavedInvoice(id);
+};
+
+window.printSavedInvoice = function(id) {
+  window.openInvoicePrintPreview(id, 'a4');
+};
+
+window.quickPrintLatestInvoice = function() {
+  if (!invoicesDb || invoicesDb.length === 0) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ No invoices found in history.", "warning");
+    }
+    return;
+  }
+  const latest = invoicesDb[invoicesDb.length - 1];
+  window.openInvoicePrintPreview(latest.id || latest.invoiceNo, 'a4');
+};
+
+window.closeAllActionDropdowns = function() {
+  const menus = document.querySelectorAll(".action-dropdown-menu");
+  menus.forEach(m => m.classList.add("hidden"));
+};
+
+window.toggleActionDropdown = function(id, event) {
+  if (event) event.stopPropagation();
+  const targetMenu = document.getElementById(`action-dropdown-${id}`);
+  const isCurrentlyOpen = targetMenu && !targetMenu.classList.contains("hidden");
+  
+  window.closeAllActionDropdowns();
+  
+  if (targetMenu && !isCurrentlyOpen) {
+    targetMenu.classList.remove("hidden");
+  }
+};
+
+document.addEventListener("click", function(e) {
+  if (!e.target.closest(".action-dropdown-wrapper")) {
+    window.closeAllActionDropdowns();
+  }
+});
+
+document.addEventListener("keydown", function(e) {
+  const modal = document.getElementById("invoice-print-preview-modal");
+  if (modal && !modal.classList.contains("hidden") && modal.style.display !== "none") {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      window.closeInvoicePrintPreview();
+    } else if ((e.ctrlKey || e.metaKey) && (e.key === "p" || e.key === "P")) {
+      e.preventDefault();
+      window.executePrintFromPreview();
+    }
+  }
+});
 
 let pendingDeleteIdentifier = null;
 
@@ -18323,17 +18535,7 @@ window.lookupManualInvoiceVerification = function() {
 window.printVerifiedInvoice = function() {
   const inv = window.findVerifiedInvoiceRecord();
   if (inv) {
-    populateA4PrintOverlay(inv.details || inv);
-    document.body.classList.remove("printing-thermal");
-    if (typeof showFloatingToast === 'function') {
-      showFloatingToast(`🖨️ Opening A4 Print for Invoice #${inv.invoiceNo}...`, "info", 2000);
-    }
-    setTimeout(() => {
-      window.print();
-      if (window.electronAPI && typeof window.electronAPI.printInvoice === 'function') {
-        window.electronAPI.printInvoice();
-      }
-    }, 120);
+    window.openInvoicePrintPreview(inv.id || inv.invoiceNo, 'a4');
   } else {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("⚠️ Invoice record not found to print.", "warning");
@@ -18344,20 +18546,7 @@ window.printVerifiedInvoice = function() {
 window.printVerifiedInvoiceThermal = function() {
   const inv = window.findVerifiedInvoiceRecord();
   if (inv) {
-    populateThermalPrintOverlay(inv.details || inv);
-    document.body.classList.add("printing-thermal");
-    if (typeof showFloatingToast === 'function') {
-      showFloatingToast(`🧾 Opening POS Thermal Print for Invoice #${inv.invoiceNo}...`, "info", 2000);
-    }
-    setTimeout(() => {
-      window.print();
-      if (window.electronAPI && typeof window.electronAPI.printInvoice === 'function') {
-        window.electronAPI.printInvoice();
-      }
-      setTimeout(() => {
-        document.body.classList.remove("printing-thermal");
-      }, 500);
-    }, 120);
+    window.openInvoicePrintPreview(inv.id || inv.invoiceNo, 'thermal');
   } else {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("⚠️ Invoice record not found to print.", "warning");

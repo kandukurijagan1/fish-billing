@@ -1753,6 +1753,104 @@ body.counter-privacy-active .maskable-financial:hover {
   }
 }
 
+/* Pinned & Sticky Action Column for Desktop/Laptops */
+.dashboard-table th:last-child,
+.dashboard-table td:last-child {
+  position: sticky;
+  right: 0;
+  background: #ffffff;
+  z-index: 2;
+  box-shadow: -4px 0 8px -2px rgba(15, 23, 42, 0.08);
+}
+.dashboard-table thead th:last-child {
+  z-index: 4;
+  background: #f8fafc;
+}
+.dashboard-table tbody tr:hover td:last-child {
+  background: #f8fafc;
+}
+
+/* More Actions Dropdown Menu */
+.action-dropdown-wrapper {
+  position: relative;
+  display: inline-block;
+}
+.action-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 210px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.25), 0 8px 12px -6px rgba(15, 23, 42, 0.15);
+  padding: 6px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: scaleModalIn 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.action-dropdown-menu.hidden {
+  display: none !important;
+}
+.action-dropdown-menu a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 12px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.action-dropdown-menu a:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+.action-dropdown-menu a i {
+  width: 16px;
+  text-align: center;
+}
+
+/* In-App Interactive Print Preview Modal Styling */
+.preview-sheet-viewport {
+  user-select: text;
+  -webkit-user-select: text;
+}
+.preview-sheet-viewport::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.preview-sheet-viewport::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+}
+.preview-sheet-viewport::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.5);
+  border-radius: 5px;
+}
+.preview-sheet-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.8);
+}
+.preview-paper-sheet {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+}
+.preview-a4-sheet {
+  width: 210mm;
+  min-height: 288mm;
+  max-width: 100%;
+}
+.preview-thermal-sheet {
+  width: 80mm;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
 /* Search Box */
 .search-box {
   display: flex;
