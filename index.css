@@ -10026,3 +10026,51 @@ section.content-view.hidden {
   border: none !important;
   opacity: 0 !important;
 }
+
+/* ============================================================================
+   DYNAMIC BILLING UPI QR & PAYMENT COMPLETION STYLES
+   ============================================================================ */
+.btn-upi-qr-trigger {
+  width: 100%;
+  margin: 6px 0 10px 0;
+  padding: 11px 16px;
+  background: linear-gradient(135deg, #0891b2 0%, #0284c7 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 9px;
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 14px rgba(8, 145, 178, 0.3);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-upi-qr-trigger:hover {
+  transform: translateY(-1.5px);
+  box-shadow: 0 6px 18px rgba(8, 145, 178, 0.45);
+  background: linear-gradient(135deg, #0e7490 0%, #0369a1 100%);
+}
+
+.btn-upi-qr-trigger:active {
+  transform: translateY(0);
+}
+
+.pulse-highlight {
+  animation: pulseGreenHighlight 1.5s infinite alternate ease-in-out !important;
+}
+
+@keyframes pulseGreenHighlight {
+  0% {
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+    transform: scale(1);
+  }
+  100% {
+    box-shadow: 0 0 0 12px rgba(22, 163, 74, 0);
+    transform: scale(1.02);
+  }
+}
+
