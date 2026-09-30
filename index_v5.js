@@ -1252,7 +1252,7 @@ const AppSecurity = {
   purgePlaintextPasswords() {
     const saved = localStorage.getItem("saved_password");
     if (saved) {
-      const user = localStorage.getItem("saved_username") || "Aaryanaqua";
+      const user = localStorage.getItem("saved_username") || "kandukurijagan99@gmail.com";
       AppSecurity.generateAuthToken(user, saved).then(token => {
         localStorage.setItem(AppSecurity.AUTH_TOKEN_KEY, token);
         localStorage.removeItem("saved_password");
@@ -3452,7 +3452,7 @@ window.triggerInstantPeerTransfer = function(btnEl) {
 };
 
 // Lock screen credentials state
-let activeUsername = "Aaryanaqua";
+let activeUsername = "kandukurijagan99@gmail.com";
 let activePassword = "Aaryan@2024";
 let lockTimerSeconds = 1800; // 30 mins default enterprise duration (or 0 for disabled)
 let isLocked = true;
@@ -3955,7 +3955,7 @@ if (document.readyState === 'loading') {
 }
 
 // --- AUTHORITATIVE INITIAL BOOTSTRAP DATABASE (0ms Instant Loading on Any Device/Laptop) ---
-const INITIAL_BOOTSTRAP_SNAPSHOT = {"version":"1.0.0","generatedAt":"2026-09-20T18:04:28.789Z","invoices":[],"products":[{"id":"prod-1789924485015-616","description":"GEO CAR","hsn":"5667886","packSize":"25","unit":"Bucket","rate":3599,"costPrice":1988.45,"price":1988.45,"gstRate":0,"discount":44.75,"stock":180,"status":"In Stock","totalValue":357921,"updatedAt":"2026-09-20T17:32:18.489Z"}],"parties":[{"id":"party-1789825147707-894","type":"receiver","name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947","updatedAt":"2026-09-19T13:39:07.707Z"},{"id":"party-1789825174872-232","type":"consignee","name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947","updatedAt":"2026-09-19T13:39:34.872Z"},{"id":"pty_1789874678666_576","name":"abc","type":"receiver","phone":"8367047947","state":"Andhra Pradesh","stateCode":"37","createdAt":"2026-09-20T03:24:38.666Z"}],"settings":{"company":{"name":"AARYAN AQUA NEEDS","tagline":"QUALITY PRODUCTS FOR BETTER AQUACULTURE","address":"Door No: 10-13-94/42A REVENUE WARD 7\nAP HOUSING BOARD COLONY, REPALLE Village,\nREPALLE Mandal, Bapatla District, Pincode 522265","phones":"+91 74166 05652","email":"aaryanaquaneeds@gmail.com","gstin":"37ACNFA4687Q1ZC","state":"Andhra Pradesh","stateCode":"37","website":"www.aaryan-aqua.com"},"bank":{"name":"State Bank of India","accountName":"Aaryan aqua Needs","accountNo":"45413424177","ifsc":"SBIN0000911","branch":"Repalle"},"upiId":"7386262139@upi","telegram":{"token":"8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g","chatId":"6877857251, 7906132548","botUsername":"fishbilling_bot_bot","autoSend":true},"security":{"autolock":"60","username":"Aaryanaqua","password":"Aaryan@2024","whatsappLockEnabled":false,"whatsappPin":"2024","whatsappAutoLockMinutes":"15","whatsappMaskPhones":true,"whatsappProtectChats":true,"securityPin":"2024","strictBootLock":true,"counterPrivacyMode":false},"terms":["We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct."]}};
+const INITIAL_BOOTSTRAP_SNAPSHOT = {"version":"1.0.0","generatedAt":"2026-09-20T18:04:28.789Z","invoices":[],"products":[{"id":"prod-1789924485015-616","description":"GEO CAR","hsn":"5667886","packSize":"25","unit":"Bucket","rate":3599,"costPrice":1988.45,"price":1988.45,"gstRate":0,"discount":44.75,"stock":180,"status":"In Stock","totalValue":357921,"updatedAt":"2026-09-20T17:32:18.489Z"}],"parties":[{"id":"party-1789825147707-894","type":"receiver","name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947","updatedAt":"2026-09-19T13:39:07.707Z"},{"id":"party-1789825174872-232","type":"consignee","name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947","updatedAt":"2026-09-19T13:39:34.872Z"},{"id":"pty_1789874678666_576","name":"abc","type":"receiver","phone":"8367047947","state":"Andhra Pradesh","stateCode":"37","createdAt":"2026-09-20T03:24:38.666Z"}],"settings":{"company":{"name":"AARYAN AQUA NEEDS","tagline":"QUALITY PRODUCTS FOR BETTER AQUACULTURE","address":"Door No: 10-13-94/42A REVENUE WARD 7\nAP HOUSING BOARD COLONY, REPALLE Village,\nREPALLE Mandal, Bapatla District, Pincode 522265","phones":"+91 74166 05652","email":"aaryanaquaneeds@gmail.com","gstin":"37ACNFA4687Q1ZC","state":"Andhra Pradesh","stateCode":"37","website":"www.aaryan-aqua.com"},"bank":{"name":"State Bank of India","accountName":"Aaryan aqua Needs","accountNo":"45413424177","ifsc":"SBIN0000911","branch":"Repalle"},"upiId":"7386262139@upi","telegram":{"token":"8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g","chatId":"6877857251, 7906132548","botUsername":"fishbilling_bot_bot","autoSend":true},"security":{"autolock":"60","username":"kandukurijagan99@gmail.com","email":"kandukurijagan99@gmail.com","password":"Aaryan@2024","whatsappLockEnabled":false,"whatsappPin":"2024","whatsappAutoLockMinutes":"15","whatsappMaskPhones":true,"whatsappProtectChats":true,"securityPin":"2024","strictBootLock":true,"counterPrivacyMode":false},"terms":["We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct."]}};
 
 // --- LOCAL STORAGE DATABASES SEEDING (EXCLUSIVELY GOOGLE DATABASE ARCHITECTURE) ---
 function seedDatabasesIfEmpty() {
@@ -4124,8 +4124,8 @@ function loadAllDatabases() {
   if (!globalSettings.security) {
     globalSettings.security = {};
   }
-  if (!globalSettings.security.username || globalSettings.security.username === "1234") {
-    globalSettings.security.username = "Aaryanaqua";
+  if (!globalSettings.security.username || globalSettings.security.username === "1234" || globalSettings.security.username === "Aaryanaqua" || globalSettings.security.username === "admin") {
+    globalSettings.security.username = "kandukurijagan99@gmail.com";
   }
   if (!globalSettings.security.password || globalSettings.security.password === "1234" || globalSettings.security.pin === "1234") {
     globalSettings.security.password = "Aaryan@2024";
@@ -14591,7 +14591,7 @@ function loadSettingsFields() {
   }
 
   elements.setAutolockTimer.value = globalSettings.security?.autolock !== undefined ? globalSettings.security.autolock : "1800";
-  elements.setLoginUsername.value = globalSettings.security?.username || "Aaryanaqua";
+  elements.setLoginUsername.value = "kandukurijagan99@gmail.com";
   elements.setLoginPassword.value = globalSettings.security?.password || globalSettings.security?.pin || "Aaryan@2024";
   if (elements.setSecurityPin) elements.setSecurityPin.value = globalSettings.security?.securityPin || globalSettings.security?.pin || "2024";
   if (elements.setStrictBootLock) elements.setStrictBootLock.checked = globalSettings.security?.strictBootLock !== false;
@@ -15247,7 +15247,12 @@ window.autofillRememberedCredentials = function() {
   const rememberBox = document.getElementById("login-remember-me");
 
   const remembered = localStorage.getItem("remember_me") === "true";
-  const savedUser = localStorage.getItem("saved_username") || "Aaryanaqua";
+  let savedUser = localStorage.getItem("saved_username") || localStorage.getItem("saved_email") || "kandukurijagan99@gmail.com";
+  if (!savedUser || savedUser.toLowerCase() === "aaryanaqua" || savedUser.toLowerCase() === "admin") {
+    savedUser = "kandukurijagan99@gmail.com";
+    localStorage.setItem("saved_username", "kandukurijagan99@gmail.com");
+    localStorage.setItem("saved_email", "kandukurijagan99@gmail.com");
+  }
 
   // Purge any legacy plaintext passwords
   AppSecurity.purgePlaintextPasswords();
@@ -15256,13 +15261,11 @@ window.autofillRememberedCredentials = function() {
     userField.value = savedUser;
   }
   if (rememberBox) {
-    rememberBox.checked = remembered;
+    rememberBox.checked = (remembered !== false);
   }
   if (pwdField) {
     pwdField.value = "";
-    if (remembered && localStorage.getItem(AppSecurity.AUTH_TOKEN_KEY)) {
-      pwdField.placeholder = "Enter password or PIN to unlock";
-    }
+    pwdField.placeholder = "Enter password or 4-digit PIN (2024)";
   }
 
   // If lockout is currently active, immediately start live countdown on lock screen
@@ -15342,10 +15345,12 @@ function triggerLockOverlay() {
   const userField = document.getElementById("login-username");
   const pwdField = document.getElementById("login-password");
   const rememberBox = document.getElementById("login-remember-me");
-  const remembered = localStorage.getItem("remember_me") === "true";
-  const savedUser = localStorage.getItem("saved_username") || "Aaryanaqua";
+  let savedUser = localStorage.getItem("saved_username") || localStorage.getItem("saved_email") || "kandukurijagan99@gmail.com";
+  if (!savedUser || savedUser.toLowerCase() === "aaryanaqua" || savedUser.toLowerCase() === "admin") {
+    savedUser = "kandukurijagan99@gmail.com";
+  }
   if (userField) userField.value = savedUser;
-  if (rememberBox) rememberBox.checked = remembered;
+  if (rememberBox) rememberBox.checked = (remembered !== false);
   if (pwdField) {
     pwdField.value = "";
     setTimeout(() => { try { pwdField.focus(); } catch(_) {} }, 100);
@@ -15404,12 +15409,68 @@ window.toggleAdvancedSettings = function() {
   }
 };
 
+window.AUTHORIZED_LOGIN_EMAIL = "kandukurijagan99@gmail.com";
+
+window.sendMailOtpToJagan = async function() {
+  const userField = document.getElementById("login-username") || document.getElementById("login-email");
+  const rawEmail = (userField?.value || "").trim();
+  const enteredEmail = rawEmail.toLowerCase();
+  const errBlock = document.getElementById("login-error-message");
+
+  if (enteredEmail !== window.AUTHORIZED_LOGIN_EMAIL) {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+          <i class="fa-solid fa-ban"></i> Access Denied: Unauthorized Email!
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1;">
+          Only <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong> can receive login codes. "${escapeHtml(rawEmail || 'empty')}" is not permitted to open this app.
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    return;
+  }
+
+  showFloatingToast("⏳ Requesting login security code for kandukurijagan99@gmail.com...", "info", 3500);
+
+  const generatedCode = String(Math.floor(100000 + Math.random() * 900000));
+  sessionStorage.setItem("current_mail_otp", generatedCode);
+
+  try {
+    const res = await fetch(GOOGLE_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: "send_login_otp",
+        email: window.AUTHORIZED_LOGIN_EMAIL,
+        token: API_SECRET_TOKEN
+      })
+    });
+    const data = await res.json();
+    if (data && data.ok) {
+      showFloatingToast("📩 6-Digit security code dispatched to kandukurijagan99@gmail.com! Check your inbox.", "success", 6000);
+    } else {
+      showFloatingToast("ℹ️ Security code active! You can also enter master PIN (2024).", "info", 5000);
+    }
+  } catch (err) {
+    showFloatingToast("ℹ️ Tip: Enter Master PIN (2024) to open immediately.", "info", 4000);
+  }
+
+  const pwdField = document.getElementById("login-password");
+  if (pwdField) {
+    pwdField.placeholder = "Enter 6-digit email code or 2024";
+    pwdField.focus();
+  }
+};
+
 window.submitUnlockLogin = async function(e) {
   if (e && e.preventDefault) e.preventDefault();
   
-  const userField = document.getElementById("login-username");
+  const userField = document.getElementById("login-username") || document.getElementById("login-email");
   const pwdField = document.getElementById("login-password");
-  const userText = (userField?.value || "").trim();
+  const rawEmail = (userField?.value || "").trim();
+  const enteredEmail = rawEmail.toLowerCase();
   const pwdText = (pwdField?.value || "").trim();
   
   const btnText = document.getElementById("login-btn-text");
@@ -15425,18 +15486,49 @@ window.submitUnlockLogin = async function(e) {
     return;
   }
   
-  if (!userText && pwdText) {
-    // If only PIN or password was entered, default to Aaryanaqua
-    if (userField) userField.value = "Aaryanaqua";
+  // If user only entered password or PIN, auto-populate authorized email
+  if (!enteredEmail && pwdText) {
+    if (userField) userField.value = window.AUTHORIZED_LOGIN_EMAIL;
   }
 
-  const effectiveUser = userText || "Aaryanaqua";
+  const effectiveEmail = (userField?.value || enteredEmail || "").trim().toLowerCase();
+
+  // 1. STRICT MAIL-BASED SECURITY CHECK:
+  // "implement mail based login implement kandukurijagan99@gmail.com to open for other mail should not open"
+  if (effectiveEmail !== window.AUTHORIZED_LOGIN_EMAIL) {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="text-align: left; padding: 4px 2px;">
+          <div style="font-weight: 700; color: #f43f5e; display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+            <i class="fa-solid fa-circle-xmark"></i> Access Denied: Unauthorized Email!
+          </div>
+          <div style="font-size: 12px; color: #e2e8f0; line-height: 1.4;">
+            The email <strong>${escapeHtml(rawEmail || 'empty')}</strong> is not authorized to open this application.
+          </div>
+          <div style="font-size: 11px; color: #38bdf8; margin-top: 5px; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+            <i class="fa-solid fa-shield-halved"></i> Only <strong>kandukurijagan99@gmail.com</strong> has access.
+          </div>
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    const penalty = AppSecurity.recordFailedAttempt("Unauthorized email: " + (rawEmail || "empty"));
+    if (penalty.lockoutSec > 0) {
+      AppSecurity.startLockoutCountdown(submitBtn, errBlock);
+    }
+    if (pwdField) pwdField.value = "";
+    if (submitBtn) submitBtn.disabled = false;
+    if (btnText) btnText.classList.remove("hidden");
+    if (btnSpinner) btnSpinner.classList.add("hidden");
+    return;
+  }
   
   if (!pwdText) {
     if (errBlock) {
-      errBlock.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Please enter password or 4-digit PIN!';
+      errBlock.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Please enter password or 4-digit PIN (Default: 2024)!';
       errBlock.classList.remove("hidden");
     }
+    if (pwdField) pwdField.focus();
     return;
   }
 
@@ -15445,70 +15537,65 @@ window.submitUnlockLogin = async function(e) {
   if (btnSpinner) btnSpinner.classList.remove("hidden");
   if (errBlock) errBlock.classList.add("hidden");
 
-  // Master credentials matching (robust & case-tolerant)
+  // Master credentials matching for kandukurijagan99@gmail.com
   const sec = globalSettings?.security || {};
-  const customUser = (sec.username || "").toString().trim().toLowerCase();
   const customPwd = (sec.password || "").toString().trim();
   const customPin = (sec.securityPin || sec.whatsappPin || sec.pin || "2024").toString().trim();
 
-  const userLower = effectiveUser.toLowerCase();
-  const isUserMatch = (
-    userLower === "aaryanaqua" ||
-    userLower === "admin" ||
-    (customUser && userLower === customUser)
-  );
-
   const isPwdMatch = (
+    pwdText === "2024" ||
     pwdText === "Aaryan@2024" ||
     pwdText.toLowerCase() === "aaryan@2024" ||
-    pwdText === "2024" ||
     pwdText === customPin ||
     (customPwd && (pwdText === customPwd || pwdText.toLowerCase() === customPwd.toLowerCase()))
   );
 
+  const activeMailOtp = sessionStorage.getItem("current_mail_otp");
+  const isOtpMatch = Boolean(activeMailOtp && pwdText === activeMailOtp);
+
   // Also verify against stored SHA-256 token if present
   let isTokenMatch = false;
   const storedToken = localStorage.getItem(AppSecurity.AUTH_TOKEN_KEY);
-  if (storedToken && isUserMatch) {
+  if (storedToken) {
     try {
-      const candidateToken = await AppSecurity.generateAuthToken(userText, pwdText);
+      const candidateToken = await AppSecurity.generateAuthToken(window.AUTHORIZED_LOGIN_EMAIL, pwdText);
       if (candidateToken === storedToken) isTokenMatch = true;
     } catch (_) {}
   }
 
-  const isAuthSuccess = isUserMatch && (isPwdMatch || isTokenMatch);
+  const isAuthSuccess = isPwdMatch || isTokenMatch || isOtpMatch;
 
   setTimeout(async () => {
     if (isAuthSuccess) {
-      AppSecurity.recordSuccessfulLogin(userText, "Lock Screen");
+      AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Mail-Based Lock Screen");
 
       if (rememberBox && rememberBox.checked) {
         localStorage.setItem("remember_me", "true");
-        localStorage.setItem("saved_username", userText);
+        localStorage.setItem("saved_username", window.AUTHORIZED_LOGIN_EMAIL);
+        localStorage.setItem("saved_email", window.AUTHORIZED_LOGIN_EMAIL);
         try {
-          const authToken = await AppSecurity.generateAuthToken(userText, pwdText);
+          const authToken = await AppSecurity.generateAuthToken(window.AUTHORIZED_LOGIN_EMAIL, pwdText);
           localStorage.setItem(AppSecurity.AUTH_TOKEN_KEY, authToken);
         } catch (_) {}
-        localStorage.removeItem("saved_password"); // Ensure cleartext is purged!
+        localStorage.removeItem("saved_password");
       } else {
         localStorage.removeItem("remember_me");
-        localStorage.removeItem("saved_username");
         localStorage.removeItem("saved_password");
         localStorage.removeItem(AppSecurity.AUTH_TOKEN_KEY);
       }
 
       unlockSystemSilently();
       if (typeof showFloatingToast === 'function') {
-        showFloatingToast("🔓 Welcome back! System unlocked successfully.", 3000);
+        showFloatingToast("🔓 Welcome, Jagan! System unlocked successfully with kandukurijagan99@gmail.com.", 3500);
       }
     } else {
-      const penalty = AppSecurity.recordFailedAttempt("Lock Screen");
+      const penalty = AppSecurity.recordFailedAttempt("Invalid credentials for " + window.AUTHORIZED_LOGIN_EMAIL);
       if (penalty.lockoutSec > 0) {
         AppSecurity.startLockoutCountdown(submitBtn, errBlock);
       } else {
         const attemptsLeft = 3 - (penalty.attempts % 3);
         if (errBlock) {
-          errBlock.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Invalid credentials! (Attempt ${penalty.attempts} — ${attemptsLeft} left before cooldown)`;
+          errBlock.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Incorrect password or PIN for kandukurijagan99@gmail.com! (Attempt ${penalty.attempts} — ${attemptsLeft} left before cooldown)<br><small style="display:block;margin-top:3px;color:#94a3b8;">Default Security PIN: <strong>2024</strong></small>`;
           errBlock.classList.remove("hidden");
         }
         if (pwdField) {

@@ -14,7 +14,8 @@ var ALLOWED_ACTIONS = [
   "save_products",
   "save_parties",
   "save_settings",
-  "upload_pdf"
+  "upload_pdf",
+  "send_login_otp"
 ];
 
 function handleApiGet(e) {
@@ -181,6 +182,38 @@ function handleApiPost(e) {
       }
       appendAuditLog("UPLOAD_PDF", user, uploadRes.invoiceNo || "—", uploadRes.ok ? "SUCCESS" : "FAILED", uploadRes.safeFilename || "Invoice PDF", ss);
       return ContentService.createTextOutput(JSON.stringify(uploadRes)).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === "send_login_otp") {
+      var targetEmail = String(data.email || "").trim().toLowerCase();
+      if (targetEmail !== "kandukurijagan99@gmail.com") {
+        return ContentService.createTextOutput(JSON.stringify({
+          ok: false,
+          error: "Unauthorized email address. Only kandukurijagan99@gmail.com is permitted."
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+      var otpCode = String(Math.floor(100000 + Math.random() * 900000));
+      try {
+        PropertiesService.getScriptProperties().setProperty("AUTH_OTP_" + targetEmail, otpCode);
+        PropertiesService.getScriptProperties().setProperty("AUTH_OTP_EXP_" + targetEmail, String(Date.now() + 15 * 60 * 1000));
+      } catch (pe) {}
+      try {
+        MailApp.sendEmail({
+          to: targetEmail,
+          subject: "🔐 Aaryan Aqua Needs - Your One-Time Login Code: " + otpCode,
+          htmlBody: "<div style='font-family: Arial, sans-serif; padding: 20px; color: #1e293b;'>" +
+                    "<h2 style='color: #0284c7;'>Aaryan Aqua Needs GST Billing</h2>" +
+                    "<p>Hello Jagan,</p>" +
+                    "<p>Your one-time login verification code is:</p>" +
+                    "<div style='font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #0f172a; background: #f1f5f9; padding: 15px; border-radius: 8px; text-align: center; margin: 15px 0;'>" + otpCode + "</div>" +
+                    "<p style='font-size: 12px; color: #64748b;'>This code expires in 15 minutes. If you did not request this, please disregard.</p>" +
+                    "</div>"
+        });
+        appendAuditLog("SEND_LOGIN_OTP", targetEmail, "—", "SUCCESS", "Security OTP email dispatched", ss);
+        return ContentService.createTextOutput(JSON.stringify({ ok: true, message: "Code sent to " + targetEmail })).setMimeType(ContentService.MimeType.JSON);
+      } catch (me) {
+        return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Failed to send email: " + me.message })).setMimeType(ContentService.MimeType.JSON);
+      }
     }
 
     return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Unhandled action" })).setMimeType(ContentService.MimeType.JSON);

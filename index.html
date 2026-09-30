@@ -255,8 +255,8 @@
       
       <!-- SESSION TIMING & LOCK STATUS BADGE -->
       <div id="login-session-timing-banner">
-        <i class="fa-solid fa-shield-halved" id="login-session-status-icon"></i>
-        <span id="login-session-status-text">Session Locked • Enter Password or PIN</span>
+        <i class="fa-solid fa-envelope-circle-check" id="login-session-status-icon"></i>
+        <span id="login-session-status-text">Mail-Based Security • Enter Authorized Email</span>
       </div>
       
       <div id="login-error-message" class="login-error hidden">
@@ -265,18 +265,21 @@
       
       <form id="login-form" onsubmit="event.preventDefault(); submitUnlockLogin(event); return false;">
         <div class="login-input-group">
-          <label for="login-username">Username</label>
+          <label for="login-username"><i class="fa-solid fa-envelope" style="color: #38bdf8; margin-right: 4px;"></i> Authorized Email Address</label>
           <div class="input-icon-wrapper">
-            <i class="fa-solid fa-user input-icon"></i>
-            <input type="text" id="login-username" name="username" autocomplete="username" required placeholder="Enter username" value="Aaryanaqua">
+            <i class="fa-solid fa-at input-icon"></i>
+            <input type="email" id="login-username" name="email" autocomplete="email" required placeholder="kandukurijagan99@gmail.com" value="kandukurijagan99@gmail.com">
           </div>
+          <span style="font-size: 11px; color: #38bdf8; margin-top: 4px; display: flex; align-items: center; gap: 5px; font-weight: 600;">
+            <i class="fa-solid fa-shield-halved"></i> Access strictly limited to: <strong>kandukurijagan99@gmail.com</strong>
+          </span>
         </div>
         
         <div class="login-input-group">
-          <label for="login-password" id="login-auth-label">Master Password or 4-Digit PIN</label>
+          <label for="login-password" id="login-auth-label"><i class="fa-solid fa-key" style="color: #38bdf8; margin-right: 4px;"></i> Master Password or 4-Digit Security PIN</label>
           <div class="input-icon-wrapper">
             <i class="fa-solid fa-lock input-icon"></i>
-            <input type="password" id="login-password" name="password" autocomplete="current-password" required placeholder="Enter master password or 4-digit PIN" oninput="if(typeof handleLockPasswordInput === 'function') handleLockPasswordInput(this)">
+            <input type="password" id="login-password" name="password" autocomplete="current-password" required placeholder="Enter password or 4-digit PIN (2024)" oninput="if(typeof handleLockPasswordInput === 'function') handleLockPasswordInput(this)">
             <button type="button" class="btn-toggle-pwd" onclick="toggleLoginPasswordVisibility()" title="Toggle password visibility">
               <i id="toggle-pwd-icon" class="fa-solid fa-eye"></i>
             </button>
@@ -284,17 +287,22 @@
           <div id="login-caps-lock-warning" class="hidden" style="color: #f59e0b; font-size: 11px; margin-top: 4px; display: flex; align-items: center; gap: 5px;">
             <i class="fa-solid fa-arrow-up-from-bracket"></i> <span>Caps Lock is ON</span>
           </div>
-          <span style="font-size: 11px; color: #64748b; margin-top: 4px; display: block;">Authorized personnel only • Enter credentials to unlock</span>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
+            <span style="font-size: 11px; color: #94a3b8;">Default PIN: <strong style="color: #f8fafc;">2024</strong></span>
+            <button type="button" onclick="sendMailOtpToJagan()" style="background: none; border: none; color: #38bdf8; font-size: 11px; cursor: pointer; padding: 0; display: inline-flex; align-items: center; gap: 4px; font-weight: 600;" title="Send one-time security code to kandukurijagan99@gmail.com">
+              <i class="fa-solid fa-paper-plane"></i> Email Login Code
+            </button>
+          </div>
         </div>
         
         <div class="remember-me-group">
-          <input type="checkbox" id="login-remember-me">
-          <label for="login-remember-me">Remember Username &amp; Fast PIN Entry</label>
+          <input type="checkbox" id="login-remember-me" checked>
+          <label for="login-remember-me">Remember Authorized Email on This Device</label>
         </div>
         
         <button type="submit" class="btn-login-submit">
-          <span id="login-btn-text"><i class="fa-solid fa-key"></i> Unlock System</span>
-          <span id="login-btn-spinner" class="hidden"><i class="fa-solid fa-circle-notch fa-spin"></i> Unlocking...</span>
+          <span id="login-btn-text"><i class="fa-solid fa-right-to-bracket"></i> Authenticate &amp; Open System</span>
+          <span id="login-btn-spinner" class="hidden"><i class="fa-solid fa-circle-notch fa-spin"></i> Authenticating...</span>
         </button>
       </form>
       
@@ -357,13 +365,13 @@
 
       <div class="sidebar-profile">
         <div class="profile-avatar">
-          <i class="fa-solid fa-user-tie"></i>
+          <i class="fa-solid fa-user-check"></i>
         </div>
         <div class="profile-info">
-          <h4>Admin</h4>
-          <span>Aaryan Aqua Needs</span>
+          <h4>Jagan</h4>
+          <span title="kandukurijagan99@gmail.com" style="font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 135px; display: block; color: #38bdf8;">kandukurijagan99@gmail.com</span>
         </div>
-        <button class="btn-logout-placeholder" onclick="triggerManualLock()" title="Lock Screen">
+        <button class="btn-logout-placeholder" onclick="triggerManualLock()" title="Lock Screen (Alt+L)">
           <i class="fa-solid fa-lock text-muted cursor-pointer hover-teal"></i>
         </button>
       </div>
@@ -465,8 +473,8 @@
         <div class="dashboard-hero-card">
           <div class="hero-text-content">
             <span class="hero-badge"><i class="fa-solid fa-sparkles"></i> LIVE MANAGEMENT HUB</span>
-            <h2>Welcome back, Admin 👋</h2>
-            <p>Aaryan Aqua Needs • Quality Products for Better Aquaculture</p>
+            <h2>Welcome back, Jagan 👋</h2>
+            <p>Aaryan Aqua Needs • Authorized Login: <strong>kandukurijagan99@gmail.com</strong></p>
           </div>
           <div class="hero-actions">
             <button class="btn btn-cyan btn-hero" onclick="switchTab('billing')">
@@ -2008,8 +2016,9 @@
                     <span class="info-lbl">Controls live header session countdown and locks screen on idle</span>
                   </div>
                   <div class="form-group col-4">
-                    <label for="set-login-username"><i class="fa-solid fa-user text-cyan"></i> Username</label>
-                    <input type="text" id="set-login-username" required placeholder="e.g. Aaryanaqua">
+                    <label for="set-login-username"><i class="fa-solid fa-envelope text-cyan"></i> Authorized Email Address</label>
+                    <input type="email" id="set-login-username" required placeholder="kandukurijagan99@gmail.com" value="kandukurijagan99@gmail.com" readonly style="background: #f8fafc; color: #0284c7; font-weight: 700;">
+                    <span class="info-lbl">Strict Policy: Only kandukurijagan99@gmail.com is authorized to open</span>
                   </div>
                   <div class="form-group col-4">
                     <label for="set-login-password"><i class="fa-solid fa-lock text-cyan"></i> Master Password</label>
