@@ -279,9 +279,9 @@
         </div>
       </div>
 
-      <div style="display: flex; align-items: center; gap: 10px; margin: 10px 0 14px 0;">
+      <div style="display: flex; align-items: center; gap: 10px; margin: 12px 0 16px 0;">
         <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.14);"></div>
-        <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">or enter password / PIN</span>
+        <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">or verify with authorized email</span>
         <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.14);"></div>
       </div>
 
@@ -292,53 +292,44 @@
             <i class="fa-solid fa-at input-icon"></i>
             <input type="email" id="login-username" name="email" autocomplete="email" required placeholder="kandukurijagan99@gmail.com" value="kandukurijagan99@gmail.com">
           </div>
-          <span style="font-size: 11px; color: #38bdf8; margin-top: 4px; display: flex; align-items: center; gap: 5px; font-weight: 600;">
+          <span style="font-size: 11px; color: #38bdf8; margin-top: 5px; display: flex; align-items: center; gap: 5px; font-weight: 600;">
             <i class="fa-solid fa-shield-halved"></i> Access strictly limited to: <strong>kandukurijagan99@gmail.com</strong>
           </span>
         </div>
-        
-        <div class="login-input-group">
-          <label for="login-password" id="login-auth-label"><i class="fa-solid fa-key" style="color: #38bdf8; margin-right: 4px;"></i> Master Password or 4-Digit Security PIN</label>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; margin: 10px 0 14px 0; flex-wrap: wrap; gap: 8px;">
+          <button type="button" onclick="sendMailOtpToJagan('code')" style="background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.35); color: #38bdf8; font-size: 11.5px; border-radius: 6px; padding: 6px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-weight: 600; transition: all 0.2s;" title="Send one-time 6-digit security code to kandukurijagan99@gmail.com">
+            <i class="fa-solid fa-paper-plane"></i> Send Email OTP
+          </button>
+          <button type="button" onclick="sendMailOtpToJagan('link')" style="background: rgba(52, 211, 153, 0.12); border: 1px solid rgba(52, 211, 153, 0.35); color: #34d399; font-size: 11.5px; border-radius: 6px; padding: 6px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-weight: 600; transition: all 0.2s;" title="Send direct 1-click magic link to Gmail">
+            <i class="fa-solid fa-envelope-open-text"></i> Direct Gmail Link
+          </button>
+        </div>
+
+        <div class="login-input-group hidden" id="otp-input-container">
+          <label for="login-otp-code"><i class="fa-solid fa-shield-check" style="color: #38bdf8; margin-right: 4px;"></i> 6-Digit Email Code</label>
           <div class="input-icon-wrapper">
-            <i class="fa-solid fa-lock input-icon"></i>
-            <input type="password" id="login-password" name="password" autocomplete="current-password" required placeholder="Enter password or 4-digit PIN (2024)" oninput="if(typeof handleLockPasswordInput === 'function') handleLockPasswordInput(this)">
-            <button type="button" class="btn-toggle-pwd" onclick="toggleLoginPasswordVisibility()" title="Toggle password visibility">
-              <i id="toggle-pwd-icon" class="fa-solid fa-eye"></i>
-            </button>
-          </div>
-          <div id="login-caps-lock-warning" class="hidden" style="color: #f59e0b; font-size: 11px; margin-top: 4px; display: flex; align-items: center; gap: 5px;">
-            <i class="fa-solid fa-arrow-up-from-bracket"></i> <span>Caps Lock is ON</span>
-          </div>
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 5px; flex-wrap: wrap; gap: 6px;">
-            <span style="font-size: 11px; color: #94a3b8;">Default PIN: <strong style="color: #f8fafc;">2024</strong></span>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <button type="button" onclick="sendMailOtpToJagan('code')" style="background: none; border: none; color: #38bdf8; font-size: 11px; cursor: pointer; padding: 0; display: inline-flex; align-items: center; gap: 4px; font-weight: 600;" title="Send one-time security code to kandukurijagan99@gmail.com">
-                <i class="fa-solid fa-paper-plane"></i> Email OTP
-              </button>
-              <span style="color: rgba(255,255,255,0.25);">|</span>
-              <button type="button" onclick="sendMailOtpToJagan('link')" style="background: none; border: none; color: #34d399; font-size: 11px; cursor: pointer; padding: 0; display: inline-flex; align-items: center; gap: 4px; font-weight: 600;" title="Send direct 1-click magic link to Gmail">
-                <i class="fa-solid fa-envelope-open-text"></i> Direct Gmail Link
-              </button>
-            </div>
+            <i class="fa-solid fa-key input-icon"></i>
+            <input type="text" id="login-otp-code" maxlength="6" placeholder="Enter 6-digit code sent to Gmail">
           </div>
         </div>
         
-        <div class="remember-me-group">
+        <div class="remember-me-group" style="margin-top: 4px; margin-bottom: 14px;">
           <input type="checkbox" id="login-remember-me" checked>
           <label for="login-remember-me">Remember Authorized Email on This Device</label>
         </div>
         
         <button type="submit" class="btn-login-submit">
-          <span id="login-btn-text"><i class="fa-solid fa-right-to-bracket"></i> Authenticate &amp; Open System</span>
-          <span id="login-btn-spinner" class="hidden"><i class="fa-solid fa-circle-notch fa-spin"></i> Authenticating...</span>
+          <span id="login-btn-text"><i class="fa-solid fa-shield-halved"></i> Verify &amp; Open System</span>
+          <span id="login-btn-spinner" class="hidden"><i class="fa-solid fa-circle-notch fa-spin"></i> Verifying...</span>
         </button>
       </form>
       
       <div class="login-footer">
-        <span><i class="fa-solid fa-lock" style="color: #0ea5e9; margin-right: 4px;"></i> Protected by Anti-Brute-Force &amp; SHA-256 Auth Shield</span>
+        <span><i class="fa-solid fa-lock" style="color: #0ea5e9; margin-right: 4px;"></i> Protected by Zero-Trust Email &amp; Google Identity</span>
         <div id="login-session-lock-reason">
           <i class="fa-solid fa-shield-halved" style="color: #0ea5e9;"></i>
-          <span id="login-session-lock-subtext">Zero-Trust Enforced • Enter Password or PIN to Unlock</span>
+          <span id="login-session-lock-subtext">Zero-Trust Enforced • Strictly Authorized for kandukurijagan99@gmail.com</span>
         </div>
       </div>
     </div>
@@ -5105,7 +5096,7 @@
     <i class="fa-solid fa-wifi" id="network-banner-icon"></i> <span id="network-banner-text">Working Offline</span>
   </div>
 
-  <script src="index_v5.js?v=550_direct_google_auth_live"></script>
+  <script src="index_v5.js?v=570_passwordless_strict_email_live"></script>
 </body>
 </html>
 

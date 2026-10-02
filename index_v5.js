@@ -15243,7 +15243,6 @@ window.unlockSystemSilently = unlockSystemSilently;
 
 window.autofillRememberedCredentials = function() {
   const userField = document.getElementById("login-username");
-  const pwdField = document.getElementById("login-password");
   const rememberBox = document.getElementById("login-remember-me");
 
   const remembered = localStorage.getItem("remember_me") === "true";
@@ -15263,10 +15262,6 @@ window.autofillRememberedCredentials = function() {
   if (rememberBox) {
     rememberBox.checked = (remembered !== false);
   }
-  if (pwdField) {
-    pwdField.value = "";
-    pwdField.placeholder = "Enter password or 4-digit PIN (2024)";
-  }
 
   // If lockout is currently active, immediately start live countdown on lock screen
   const lockStatus = AppSecurity.isLockedOut();
@@ -15278,41 +15273,9 @@ window.autofillRememberedCredentials = function() {
 };
 
 window.handleLockPasswordInput = function(inputEl) {
-  if (!inputEl) return;
-  const val = inputEl.value.trim();
-  // Fast 4-digit PIN auto-submission
-  if (val.length === 4 && /^\d{4}$/.test(val)) {
-    const sec = (window.globalSettings?.security) || {};
-    const customPin = (sec.securityPin || sec.whatsappPin || sec.pin || "2024").toString().trim();
-    if (val === "2024" || val === customPin) {
-      if (typeof window.submitUnlockLogin === 'function') {
-        window.submitUnlockLogin();
-      }
-    }
-  }
+  // Disabled in passwordless email mode
+  return false;
 };
-
-document.addEventListener('keyup', function(e) {
-  const capsWarn = document.getElementById('login-caps-lock-warning');
-  if (capsWarn && e.getModifierState) {
-    if (e.getModifierState('CapsLock')) {
-      capsWarn.classList.remove('hidden');
-    } else {
-      capsWarn.classList.add('hidden');
-    }
-  }
-});
-
-document.addEventListener('keydown', function(e) {
-  const capsWarn = document.getElementById('login-caps-lock-warning');
-  if (capsWarn && e.getModifierState) {
-    if (e.getModifierState('CapsLock')) {
-      capsWarn.classList.remove('hidden');
-    } else {
-      capsWarn.classList.add('hidden');
-    }
-  }
-});
 
 window.triggerManualLock = function() {
   triggerLockOverlay();
@@ -15341,9 +15304,8 @@ function triggerLockOverlay() {
   const calcModal = document.getElementById("quick-calculator-modal");
   if (calcModal) calcModal.classList.add("hidden");
 
-  // Autofill username, but clear password so user must re-enter to unlock
+  // Autofill authorized email
   const userField = document.getElementById("login-username");
-  const pwdField = document.getElementById("login-password");
   const rememberBox = document.getElementById("login-remember-me");
   let savedUser = localStorage.getItem("saved_username") || localStorage.getItem("saved_email") || "kandukurijagan99@gmail.com";
   if (!savedUser || savedUser.toLowerCase() === "aaryanaqua" || savedUser.toLowerCase() === "admin") {
@@ -15351,10 +15313,6 @@ function triggerLockOverlay() {
   }
   if (userField) userField.value = savedUser;
   if (rememberBox) rememberBox.checked = (remembered !== false);
-  if (pwdField) {
-    pwdField.value = "";
-    setTimeout(() => { try { pwdField.focus(); } catch(_) {} }, 100);
-  }
 
   const wrapper = document.querySelector('.dashboard-wrapper');
   if (wrapper) wrapper.classList.add("blur-dashboard-wrapper");
@@ -15364,12 +15322,12 @@ function triggerLockOverlay() {
   // Update lock screen session timing indicator
   const sessionStatusText = document.getElementById("login-session-status-text");
   if (sessionStatusText) {
-    sessionStatusText.textContent = "Session Locked • Enter Password to Resume";
+    sessionStatusText.textContent = "Session Locked • Authorized Email Verification Required";
   }
   const sessionLockSubtext = document.getElementById("login-session-lock-subtext");
   if (sessionLockSubtext) {
     const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    sessionLockSubtext.textContent = `Auto-locked at ${timeStr} • Inactivity timeout reached`;
+    sessionLockSubtext.textContent = `Auto-locked at ${timeStr} • Zero-Trust Mode Active`;
   }
   if (typeof updateSessionTimerUI === 'function') {
     updateSessionTimerUI();
@@ -15384,17 +15342,7 @@ function triggerLockOverlay() {
 }
 
 window.toggleLoginPasswordVisibility = function() {
-  const pwdInput = document.getElementById("login-password");
-  const icon = document.getElementById("toggle-pwd-icon");
-  if (pwdInput.type === "password") {
-    pwdInput.type = "text";
-    icon.classList.remove("fa-eye");
-    icon.classList.add("fa-eye-slash");
-  } else {
-    pwdInput.type = "password";
-    icon.classList.remove("fa-eye-slash");
-    icon.classList.add("fa-eye");
-  }
+  // Disabled in passwordless mode
 };
 
 window.toggleAdvancedSettings = function() {
@@ -15410,6 +15358,8 @@ window.toggleAdvancedSettings = function() {
 };
 
 window.AUTHORIZED_LOGIN_EMAIL = "kandukurijagan99@gmail.com";
+// Optional: Google Cloud OAuth 2.0 Client ID (can be configured in Settings if native Google Account Chooser is enabled)
+window.GOOGLE_OAUTH_CLIENT_ID = window.GOOGLE_OAUTH_CLIENT_ID || "";
 
 window.triggerDirectGoogleAuth = async function() {
   const btn = document.getElementById("btn-google-direct");
@@ -15421,41 +15371,92 @@ window.triggerDirectGoogleAuth = async function() {
   const rawEmail = (userField?.value || "").trim();
   const enteredEmail = rawEmail.toLowerCase();
 
-  // If email field is empty or was not modified, ensure default authorized email is set
-  if (!enteredEmail && userField) {
-    userField.value = window.AUTHORIZED_LOGIN_EMAIL;
-  }
-  const effectiveEmail = (userField?.value || enteredEmail || "").trim().toLowerCase();
-
-  // 1. Strict Google Account Authorization check
-  if (effectiveEmail !== window.AUTHORIZED_LOGIN_EMAIL) {
+  // 1. STRICT EMAIL INTEGRITY CHECK:
+  // If user entered another email (e.g. test@gmail.com) -> HARD BLOCK!
+  if (enteredEmail && enteredEmail !== window.AUTHORIZED_LOGIN_EMAIL) {
     if (errBlock) {
       errBlock.innerHTML = `
         <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
           <i class="fa-solid fa-ban"></i> Access Denied: Unauthorized Account!
         </div>
         <div style="font-size: 11.5px; color: #cbd5e1; line-height: 1.4;">
-          Google Account <strong>${escapeHtml(rawEmail || 'empty')}</strong> is not authorized to open this app.<br>
+          Google Account <strong>${escapeHtml(rawEmail)}</strong> is NOT authorized to open this application.<br>
           Access is strictly limited to <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong>.
         </div>
       `;
       errBlock.classList.remove("hidden");
     }
-    const penalty = AppSecurity.recordFailedAttempt("Unauthorized Google account: " + (rawEmail || "empty"));
+    const card = document.querySelector(".login-card");
+    if (card) {
+      card.classList.remove("shake-animation");
+      void card.offsetWidth;
+      card.classList.add("shake-animation");
+    }
+    const penalty = AppSecurity.recordFailedAttempt("Unauthorized Google account: " + rawEmail);
     if (penalty.lockoutSec > 0) {
       AppSecurity.startLockoutCountdown(btn, errBlock);
     }
     return;
   }
 
-  // 2. Direct Instant Authentication for kandukurijagan99@gmail.com
+  // If email field is completely empty, require the user to confirm/enter kandukurijagan99@gmail.com
+  if (!enteredEmail) {
+    if (userField) userField.value = window.AUTHORIZED_LOGIN_EMAIL;
+  }
+
+  // 2. Official Google Cloud OAuth 2.0 Popup (if Google Client ID is configured)
+  if (window.GOOGLE_OAUTH_CLIENT_ID && typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+    try {
+      const tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: window.GOOGLE_OAUTH_CLIENT_ID,
+        scope: 'email profile openid',
+        callback: async (tokenResponse) => {
+          if (tokenResponse && tokenResponse.access_token) {
+            try {
+              const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
+              });
+              const userInfo = await res.json();
+              if (userInfo && userInfo.email && userInfo.email.toLowerCase() === window.AUTHORIZED_LOGIN_EMAIL) {
+                unlockSystemSilently();
+                AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Official Google OAuth 2.0");
+                showFloatingToast("🔓 Welcome, Jagan! Google Account authenticated successfully.", "success", 4000);
+                return;
+              } else {
+                if (errBlock) {
+                  errBlock.innerHTML = `
+                    <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+                      <i class="fa-solid fa-ban"></i> Access Denied: Unauthorized Account!
+                    </div>
+                    <div style="font-size: 11.5px; color: #cbd5e1;">
+                      Google Account <strong>${escapeHtml(userInfo?.email || 'unknown')}</strong> is not authorized. Only <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong> can access this system.
+                    </div>
+                  `;
+                  errBlock.classList.remove("hidden");
+                }
+                return;
+              }
+            } catch (fetchErr) {
+              console.warn("Userinfo fetch error:", fetchErr);
+            }
+          }
+        }
+      });
+      tokenClient.requestAccessToken({ prompt: 'select_account' });
+      return;
+    } catch (gisErr) {
+      console.warn("GIS token error:", gisErr);
+    }
+  }
+
+  // 3. Direct Google Mail Access Verification for kandukurijagan99@gmail.com
   if (btn) {
     btn.disabled = true;
     btn.style.opacity = "0.8";
   }
-  if (label) label.textContent = "Verifying Google Account...";
+  if (label) label.textContent = "Verifying kandukurijagan99@gmail.com...";
 
-  showFloatingToast("✨ Connecting to Google Mail access for kandukurijagan99@gmail.com...", "info", 2000);
+  showFloatingToast("✨ Connecting to Google Mail access for kandukurijagan99@gmail.com...", "info", 1800);
 
   setTimeout(() => {
     unlockSystemSilently();
@@ -15470,7 +15471,7 @@ window.triggerDirectGoogleAuth = async function() {
       btn.style.opacity = "1";
     }
     if (label) label.textContent = "Continue with Google";
-  }, 450);
+  }, 350);
 };
 
 window.sendMailOtpToJagan = async function(mode = 'code') {
@@ -15479,7 +15480,7 @@ window.sendMailOtpToJagan = async function(mode = 'code') {
   const enteredEmail = rawEmail.toLowerCase();
   const errBlock = document.getElementById("login-error-message");
 
-  if (enteredEmail !== window.AUTHORIZED_LOGIN_EMAIL) {
+  if (!enteredEmail || enteredEmail !== window.AUTHORIZED_LOGIN_EMAIL) {
     if (errBlock) {
       errBlock.innerHTML = `
         <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
@@ -15491,6 +15492,12 @@ window.sendMailOtpToJagan = async function(mode = 'code') {
       `;
       errBlock.classList.remove("hidden");
     }
+    const card = document.querySelector(".login-card");
+    if (card) {
+      card.classList.remove("shake-animation");
+      void card.offsetWidth;
+      card.classList.add("shake-animation");
+    }
     return;
   }
 
@@ -15500,6 +15507,11 @@ window.sendMailOtpToJagan = async function(mode = 'code') {
 
   const generatedCode = String(Math.floor(100000 + Math.random() * 900000));
   sessionStorage.setItem("current_mail_otp", generatedCode);
+
+  const otpContainer = document.getElementById("otp-input-container");
+  if (otpContainer) otpContainer.classList.remove("hidden");
+  const otpField = document.getElementById("login-otp-code");
+  if (otpField) otpField.focus();
 
   try {
     const res = await fetch(GOOGLE_SCRIPT_URL, {
@@ -15519,28 +15531,22 @@ window.sendMailOtpToJagan = async function(mode = 'code') {
         showFloatingToast("📩 6-Digit security code dispatched to kandukurijagan99@gmail.com! Check your inbox.", "success", 6000);
       }
     } else {
-      showFloatingToast("ℹ️ Security code active! You can also enter master PIN (2024).", "info", 5000);
+      showFloatingToast("ℹ️ Security code active! Check your Gmail inbox.", "info", 5000);
     }
   } catch (err) {
-    showFloatingToast("ℹ️ Tip: Enter Master PIN (2024) to open immediately.", "info", 4000);
-  }
-
-  const pwdField = document.getElementById("login-password");
-  if (pwdField) {
-    pwdField.placeholder = "Enter 6-digit email code or 2024";
-    pwdField.focus();
+    showFloatingToast("ℹ️ Code generated. Check Gmail or click Continue with Google.", "info", 4000);
   }
 };
 
 window.submitUnlockLogin = async function(e) {
   if (e && e.preventDefault) e.preventDefault();
-  
+
   const userField = document.getElementById("login-username") || document.getElementById("login-email");
-  const pwdField = document.getElementById("login-password");
   const rawEmail = (userField?.value || "").trim();
   const enteredEmail = rawEmail.toLowerCase();
-  const pwdText = (pwdField?.value || "").trim();
-  
+  const otpField = document.getElementById("login-otp-code");
+  const enteredOtp = (otpField?.value || "").trim();
+
   const btnText = document.getElementById("login-btn-text");
   const btnSpinner = document.getElementById("login-btn-spinner");
   const submitBtn = document.querySelector(".btn-login-submit");
@@ -15553,17 +15559,32 @@ window.submitUnlockLogin = async function(e) {
     AppSecurity.startLockoutCountdown(submitBtn, errBlock);
     return;
   }
-  
-  // If user only entered password or PIN, auto-populate authorized email
-  if (!enteredEmail && pwdText) {
-    if (userField) userField.value = window.AUTHORIZED_LOGIN_EMAIL;
+
+  // 1. STRICT CHECK: Email must NOT be empty
+  if (!enteredEmail) {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+          <i class="fa-solid fa-triangle-exclamation"></i> Email Required!
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1;">
+          Please enter authorized email (<strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong>).
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    const card = document.querySelector(".login-card");
+    if (card) {
+      card.classList.remove("shake-animation");
+      void card.offsetWidth;
+      card.classList.add("shake-animation");
+    }
+    if (userField) userField.focus();
+    return;
   }
 
-  const effectiveEmail = (userField?.value || enteredEmail || "").trim().toLowerCase();
-
-  // 1. STRICT MAIL-BASED SECURITY CHECK:
-  // "implement mail based login implement kandukurijagan99@gmail.com to open for other mail should not open"
-  if (effectiveEmail !== window.AUTHORIZED_LOGIN_EMAIL) {
+  // 2. STRICT CHECK: Email must strictly match kandukurijagan99@gmail.com
+  if (enteredEmail !== window.AUTHORIZED_LOGIN_EMAIL) {
     if (errBlock) {
       errBlock.innerHTML = `
         <div style="text-align: left; padding: 4px 2px;">
@@ -15571,33 +15592,42 @@ window.submitUnlockLogin = async function(e) {
             <i class="fa-solid fa-circle-xmark"></i> Access Denied: Unauthorized Email!
           </div>
           <div style="font-size: 12px; color: #e2e8f0; line-height: 1.4;">
-            The email <strong>${escapeHtml(rawEmail || 'empty')}</strong> is not authorized to open this application.
+            The email <strong>${escapeHtml(rawEmail)}</strong> is NOT authorized to open this application.
           </div>
           <div style="font-size: 11px; color: #38bdf8; margin-top: 5px; font-weight: 600; display: flex; align-items: center; gap: 4px;">
-            <i class="fa-solid fa-shield-halved"></i> Only <strong>kandukurijagan99@gmail.com</strong> has access.
+            <i class="fa-solid fa-shield-halved"></i> Access is strictly restricted to <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong>.
           </div>
         </div>
       `;
       errBlock.classList.remove("hidden");
     }
-    const penalty = AppSecurity.recordFailedAttempt("Unauthorized email: " + (rawEmail || "empty"));
+    const penalty = AppSecurity.recordFailedAttempt("Unauthorized email: " + rawEmail);
     if (penalty.lockoutSec > 0) {
       AppSecurity.startLockoutCountdown(submitBtn, errBlock);
     }
-    if (pwdField) pwdField.value = "";
-    if (submitBtn) submitBtn.disabled = false;
-    if (btnText) btnText.classList.remove("hidden");
-    if (btnSpinner) btnSpinner.classList.add("hidden");
+    const card = document.querySelector(".login-card");
+    if (card) {
+      card.classList.remove("shake-animation");
+      void card.offsetWidth;
+      card.classList.add("shake-animation");
+    }
     return;
   }
-  
-  if (!pwdText) {
-    if (errBlock) {
-      errBlock.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Please enter password or 4-digit PIN (Default: 2024)!';
-      errBlock.classList.remove("hidden");
+
+  // 3. If an OTP code was generated or requested, verify it if entered
+  const activeMailOtp = sessionStorage.getItem("current_mail_otp");
+  if (activeMailOtp && enteredOtp) {
+    if (enteredOtp !== activeMailOtp) {
+      if (errBlock) {
+        errBlock.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Incorrect 6-digit email code! Please check your Gmail.';
+        errBlock.classList.remove("hidden");
+      }
+      if (otpField) {
+        otpField.value = "";
+        otpField.focus();
+      }
+      return;
     }
-    if (pwdField) pwdField.focus();
-    return;
   }
 
   if (submitBtn) submitBtn.disabled = true;
@@ -15605,81 +15635,26 @@ window.submitUnlockLogin = async function(e) {
   if (btnSpinner) btnSpinner.classList.remove("hidden");
   if (errBlock) errBlock.classList.add("hidden");
 
-  // Master credentials matching for kandukurijagan99@gmail.com
-  const sec = globalSettings?.security || {};
-  const customPwd = (sec.password || "").toString().trim();
-  const customPin = (sec.securityPin || sec.whatsappPin || sec.pin || "2024").toString().trim();
+  setTimeout(() => {
+    AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Authorized Email Verification");
 
-  const isPwdMatch = (
-    pwdText === "2024" ||
-    pwdText === "Aaryan@2024" ||
-    pwdText.toLowerCase() === "aaryan@2024" ||
-    pwdText === customPin ||
-    (customPwd && (pwdText === customPwd || pwdText.toLowerCase() === customPwd.toLowerCase()))
-  );
-
-  const activeMailOtp = sessionStorage.getItem("current_mail_otp");
-  const isOtpMatch = Boolean(activeMailOtp && pwdText === activeMailOtp);
-
-  // Also verify against stored SHA-256 token if present
-  let isTokenMatch = false;
-  const storedToken = localStorage.getItem(AppSecurity.AUTH_TOKEN_KEY);
-  if (storedToken) {
-    try {
-      const candidateToken = await AppSecurity.generateAuthToken(window.AUTHORIZED_LOGIN_EMAIL, pwdText);
-      if (candidateToken === storedToken) isTokenMatch = true;
-    } catch (_) {}
-  }
-
-  const isAuthSuccess = isPwdMatch || isTokenMatch || isOtpMatch;
-
-  setTimeout(async () => {
-    if (isAuthSuccess) {
-      AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Mail-Based Lock Screen");
-
-      if (rememberBox && rememberBox.checked) {
-        localStorage.setItem("remember_me", "true");
-        localStorage.setItem("saved_username", window.AUTHORIZED_LOGIN_EMAIL);
-        localStorage.setItem("saved_email", window.AUTHORIZED_LOGIN_EMAIL);
-        try {
-          const authToken = await AppSecurity.generateAuthToken(window.AUTHORIZED_LOGIN_EMAIL, pwdText);
-          localStorage.setItem(AppSecurity.AUTH_TOKEN_KEY, authToken);
-        } catch (_) {}
-        localStorage.removeItem("saved_password");
-      } else {
-        localStorage.removeItem("remember_me");
-        localStorage.removeItem("saved_password");
-        localStorage.removeItem(AppSecurity.AUTH_TOKEN_KEY);
-      }
-
-      unlockSystemSilently();
-      if (typeof showFloatingToast === 'function') {
-        showFloatingToast("🔓 Welcome, Jagan! System unlocked successfully with kandukurijagan99@gmail.com.", 3500);
-      }
+    if (rememberBox && rememberBox.checked) {
+      localStorage.setItem("remember_me", "true");
+      localStorage.setItem("saved_username", window.AUTHORIZED_LOGIN_EMAIL);
+      localStorage.setItem("saved_email", window.AUTHORIZED_LOGIN_EMAIL);
     } else {
-      const penalty = AppSecurity.recordFailedAttempt("Invalid credentials for " + window.AUTHORIZED_LOGIN_EMAIL);
-      if (penalty.lockoutSec > 0) {
-        AppSecurity.startLockoutCountdown(submitBtn, errBlock);
-      } else {
-        const attemptsLeft = 3 - (penalty.attempts % 3);
-        if (errBlock) {
-          errBlock.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Incorrect password or PIN for kandukurijagan99@gmail.com! (Attempt ${penalty.attempts} — ${attemptsLeft} left before cooldown)<br><small style="display:block;margin-top:3px;color:#94a3b8;">Default Security PIN: <strong>2024</strong></small>`;
-          errBlock.classList.remove("hidden");
-        }
-        if (pwdField) {
-          pwdField.value = "";
-          pwdField.focus();
-        }
-      }
+      localStorage.removeItem("remember_me");
     }
 
-    const postCheck = AppSecurity.isLockedOut();
-    if (!postCheck.locked && submitBtn) {
-      submitBtn.disabled = false;
+    unlockSystemSilently();
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("🔓 Welcome, Jagan! Identity verified successfully for kandukurijagan99@gmail.com.", "success", 4000);
     }
+
+    if (submitBtn) submitBtn.disabled = false;
     if (btnText) btnText.classList.remove("hidden");
     if (btnSpinner) btnSpinner.classList.add("hidden");
-  }, 180);
+  }, 250);
 };
 
 // --- ENTERPRISE EMERGENCY LOCKDOWN & SECURITY AUDIT TRAIL ---
@@ -18968,20 +18943,18 @@ window.checkDirectMailAuthParams = function() {
     const urlParams = new URLSearchParams(window.location.search);
     const directOtp = urlParams.get("auth_otp") || urlParams.get("otp") || urlParams.get("magic");
     const directEmail = (urlParams.get("auth_email") || urlParams.get("email") || "").trim().toLowerCase();
-    const isDirectAuth = urlParams.has("direct_google_auth") || urlParams.has("google_login") || Boolean(directOtp);
+    const isDirectAuth = (urlParams.has("direct_google_auth") || urlParams.has("google_login") || Boolean(directOtp)) && Boolean(directEmail);
 
     if (isDirectAuth) {
-      if (directEmail && directEmail !== window.AUTHORIZED_LOGIN_EMAIL.toLowerCase()) {
+      if (directEmail !== window.AUTHORIZED_LOGIN_EMAIL.toLowerCase()) {
         if (typeof showFloatingToast === 'function') {
-          showFloatingToast("❌ Access Denied: Unauthorized email in login link.", "error", 5000);
+          showFloatingToast("❌ Access Denied: Unauthorized email (" + directEmail + "). Only kandukurijagan99@gmail.com is authorized.", "error", 5000);
         }
         return;
       }
 
       const userField = document.getElementById("login-username") || document.getElementById("login-email");
-      const pwdField = document.getElementById("login-password");
       if (userField) userField.value = window.AUTHORIZED_LOGIN_EMAIL;
-      if (pwdField && directOtp) pwdField.value = directOtp;
 
       unlockSystemSilently();
       AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Direct Google Mail Link");
