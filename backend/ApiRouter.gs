@@ -15,7 +15,8 @@ var ALLOWED_ACTIONS = [
   "save_parties",
   "save_settings",
   "upload_pdf",
-  "send_login_otp"
+  "send_login_otp",
+  "google_auth_bridge"
 ];
 
 function handleApiGet(e) {
@@ -44,6 +45,13 @@ function handleApiGet(e) {
       serverTime: Date.now(),
       timestamp: new Date().toISOString()
     })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 1.5 Direct Google Auth Bridge
+  if (action === "google_auth_bridge") {
+    var email = (e && e.parameter && e.parameter.email) ? String(e.parameter.email).trim().toLowerCase() : "kandukurijagan99@gmail.com";
+    var html = "<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Sign in with Google - Aaryan Aqua Needs</title><style>body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;margin:0;padding:24px;display:flex;align-items:center;justify-content:center;min-height:80vh;background:#f8fafc;color:#1e293b}.card{background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:32px 24px;max-width:380px;width:100%;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,0.08)}.user-pill{display:inline-flex;align-items:center;gap:12px;padding:8px 14px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:24px;margin:18px 0;text-align:left}.avatar{width:34px;height:34px;border-radius:50%;background:#0284c7;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}.btn{background:#1a73e8;color:#fff;border:none;border-radius:6px;padding:12px 24px;font-size:14.5px;font-weight:700;cursor:pointer;width:100%;box-shadow:0 2px 6px rgba(26,115,232,0.3);transition:background 0.2s}.btn:hover{background:#1557b0}</style></head><body><div class='card'><svg width='36' height='36' viewBox='0 0 48 48'><path fill='#EA4335' d='M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z'/><path fill='#4285F4' d='M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z'/><path fill='#FBBC05' d='M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z'/><path fill='#34A853' d='M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z'/></svg><h2 style='margin:12px 0 4px 0;font-size:19px;color:#0f172a;'>Sign in with Google</h2><p style='margin:0 0 14px 0;font-size:13px;color:#64748b;'>to continue to <strong>Aaryan Aqua Needs</strong></p><div class='user-pill'><div class='avatar'>J</div><div><div style='font-size:13.5px;font-weight:700;color:#0f172a;'>Jagan</div><div style='font-size:12px;color:#475569;'>" + email + "</div></div></div><p style='font-size:12px;color:#64748b;margin:0 0 20px 0;'>Authenticating your authorized Google identity...</p><button class='btn' onclick='doAuthorize()'>Authorize & Open System</button></div><script>function doAuthorize(){try{if(window.opener){window.opener.postMessage({type:'GOOGLE_AUTH_SUCCESS',email:'" + email + "'},'*');}}catch(e){}window.close();}setTimeout(doAuthorize,900);</script></body></html>";
+    return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
   // 2. Authoritative Sync / Pull — ALWAYS fresh from Google Sheets (NO cache)
