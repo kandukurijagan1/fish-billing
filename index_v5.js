@@ -15358,8 +15358,75 @@ window.toggleAdvancedSettings = function() {
 };
 
 window.AUTHORIZED_LOGIN_EMAIL = "kandukurijagan99@gmail.com";
-// Optional: Google Cloud OAuth 2.0 Client ID (can be configured in Settings if native Google Account Chooser is enabled)
-window.GOOGLE_OAUTH_CLIENT_ID = window.GOOGLE_OAUTH_CLIENT_ID || "";
+// Official Google Cloud OAuth 2.0 Web Client ID
+window.GOOGLE_OAUTH_CLIENT_ID = "902168382803-6gof845v72ku6k4lp4mecsgr3l1uc3s0.apps.googleusercontent.com";
+
+function parseGoogleJwt(token) {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  } catch(e) {
+    return null;
+  }
+}
+
+window.initGoogleIdentityServices = function() {
+  if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) return;
+  try {
+    google.accounts.id.initialize({
+      client_id: window.GOOGLE_OAUTH_CLIENT_ID,
+      callback: (response) => {
+        if (!response || !response.credential) return;
+        const payload = parseGoogleJwt(response.credential);
+        const email = (payload?.email || "").toLowerCase().trim();
+        if (email === window.AUTHORIZED_LOGIN_EMAIL) {
+          unlockSystemSilently();
+          AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Google One Tap Credential");
+          showFloatingToast(`🔓 Welcome, ${payload.name || 'Jagan'}! Google Account verified.`, "success", 4000);
+        } else {
+          const errBlock = document.getElementById("login-error-message");
+          if (errBlock) {
+            errBlock.innerHTML = `
+              <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+                <i class="fa-solid fa-ban"></i> Access Denied: Unauthorized Account!
+              </div>
+              <div style="font-size: 11.5px; color: #cbd5e1;">
+                Google Account <strong>${escapeHtml(email || 'unknown')}</strong> is not authorized to open this application.
+              </div>
+            `;
+            errBlock.classList.remove("hidden");
+          }
+          const card = document.querySelector(".login-card");
+          if (card) {
+            card.classList.remove("shake-animation");
+            void card.offsetWidth;
+            card.classList.add("shake-animation");
+          }
+        }
+      },
+      auto_select: false,
+      cancel_on_tap_outside: true
+    });
+
+    if (typeof isLocked !== 'undefined' && isLocked) {
+      google.accounts.id.prompt();
+    }
+  } catch (e) {
+    console.warn("GIS prompt error:", e);
+  }
+};
+
+window.addEventListener("load", () => {
+  setTimeout(() => {
+    if (typeof window.initGoogleIdentityServices === 'function') {
+      window.initGoogleIdentityServices();
+    }
+  }, 600);
+});
 
 window.triggerDirectGoogleAuth = async function() {
   const btn = document.getElementById("btn-google-direct");
@@ -15404,23 +15471,43 @@ window.triggerDirectGoogleAuth = async function() {
     if (userField) userField.value = window.AUTHORIZED_LOGIN_EMAIL;
   }
 
-  // 2. Official Google Cloud OAuth 2.0 Popup (if Google Client ID is configured)
+  // 2. Official Google Cloud OAuth 2.0 Popup (using User's Registered Client ID)
   if (window.GOOGLE_OAUTH_CLIENT_ID && typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+    if (btn) {
+      btn.disabled = true;
+      btn.style.opacity = "0.85";
+    }
+    if (label) label.textContent = "Connecting to Google...";
+
     try {
       const tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: window.GOOGLE_OAUTH_CLIENT_ID,
         scope: 'email profile openid',
+        hint: window.AUTHORIZED_LOGIN_EMAIL,
         callback: async (tokenResponse) => {
+          if (btn) {
+            btn.disabled = false;
+            btn.style.opacity = "1";
+          }
+          if (label) label.textContent = "Continue with Google";
+
+          if (tokenResponse && tokenResponse.error) {
+            console.warn("Google OAuth error:", tokenResponse);
+            return;
+          }
+
           if (tokenResponse && tokenResponse.access_token) {
             try {
               const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
                 headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
               });
               const userInfo = await res.json();
-              if (userInfo && userInfo.email && userInfo.email.toLowerCase() === window.AUTHORIZED_LOGIN_EMAIL) {
+              const authedEmail = (userInfo?.email || "").toLowerCase().trim();
+
+              if (authedEmail === window.AUTHORIZED_LOGIN_EMAIL) {
                 unlockSystemSilently();
                 AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Official Google OAuth 2.0");
-                showFloatingToast("🔓 Welcome, Jagan! Google Account authenticated successfully.", "success", 4000);
+                showFloatingToast(`🔓 Welcome, ${userInfo.name || 'Jagan'}! Google Account verified successfully.`, "success", 4000);
                 return;
               } else {
                 if (errBlock) {
@@ -15434,6 +15521,12 @@ window.triggerDirectGoogleAuth = async function() {
                   `;
                   errBlock.classList.remove("hidden");
                 }
+                const card = document.querySelector(".login-card");
+                if (card) {
+                  card.classList.remove("shake-animation");
+                  void card.offsetWidth;
+                  card.classList.add("shake-animation");
+                }
                 return;
               }
             } catch (fetchErr) {
@@ -15442,7 +15535,7 @@ window.triggerDirectGoogleAuth = async function() {
           }
         }
       });
-      tokenClient.requestAccessToken({ prompt: 'select_account' });
+      tokenClient.requestAccessToken({ prompt: '' });
       return;
     } catch (gisErr) {
       console.warn("GIS token error:", gisErr);
