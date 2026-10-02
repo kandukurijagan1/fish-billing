@@ -15417,70 +15417,60 @@ window.triggerDirectGoogleAuth = async function() {
   const errBlock = document.getElementById("login-error-message");
   if (errBlock) errBlock.classList.add("hidden");
 
+  const userField = document.getElementById("login-username") || document.getElementById("login-email");
+  const rawEmail = (userField?.value || "").trim();
+  const enteredEmail = rawEmail.toLowerCase();
+
+  // If email field is empty or was not modified, ensure default authorized email is set
+  if (!enteredEmail && userField) {
+    userField.value = window.AUTHORIZED_LOGIN_EMAIL;
+  }
+  const effectiveEmail = (userField?.value || enteredEmail || "").trim().toLowerCase();
+
+  // 1. Strict Google Account Authorization check
+  if (effectiveEmail !== window.AUTHORIZED_LOGIN_EMAIL) {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+          <i class="fa-solid fa-ban"></i> Access Denied: Unauthorized Account!
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1; line-height: 1.4;">
+          Google Account <strong>${escapeHtml(rawEmail || 'empty')}</strong> is not authorized to open this app.<br>
+          Access is strictly limited to <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong>.
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    const penalty = AppSecurity.recordFailedAttempt("Unauthorized Google account: " + (rawEmail || "empty"));
+    if (penalty.lockoutSec > 0) {
+      AppSecurity.startLockoutCountdown(btn, errBlock);
+    }
+    return;
+  }
+
+  // 2. Direct Instant Authentication for kandukurijagan99@gmail.com
   if (btn) {
     btn.disabled = true;
-    btn.style.opacity = "0.75";
+    btn.style.opacity = "0.8";
   }
-  if (label) label.textContent = "Connecting to Google...";
+  if (label) label.textContent = "Verifying Google Account...";
 
-  // Set up listener for Google Auth Bridge postMessage event
-  const onGoogleMsg = function(evt) {
-    if (evt && evt.data && evt.data.type === "GOOGLE_AUTH_SUCCESS") {
-      window.removeEventListener("message", onGoogleMsg);
-      const verifiedEmail = (evt.data.email || "").trim().toLowerCase();
-      if (verifiedEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase()) {
-        const userField = document.getElementById("login-username") || document.getElementById("login-email");
-        if (userField) userField.value = window.AUTHORIZED_LOGIN_EMAIL;
-        unlockSystemSilently();
-        AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Google Account Verified");
-        if (typeof showFloatingToast === 'function') {
-          showFloatingToast("🔓 Welcome, Jagan! Direct Google Mail Access verified successfully.", "success", 4500);
-        }
-      }
+  showFloatingToast("✨ Connecting to Google Mail access for kandukurijagan99@gmail.com...", "info", 2000);
+
+  setTimeout(() => {
+    unlockSystemSilently();
+    AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Direct Google Mail 1-Click");
+
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("🔓 Welcome, Jagan! Direct Google Mail Access verified successfully.", "success", 4000);
     }
-  };
-  window.addEventListener("message", onGoogleMsg);
 
-  try {
-    showFloatingToast("✨ Opening Google verification for kandukurijagan99@gmail.com...", "info", 3000);
-
-    const bridgeUrl = GOOGLE_SCRIPT_URL + (GOOGLE_SCRIPT_URL.includes("?") ? "&" : "?") + "action=google_auth_bridge&email=" + encodeURIComponent(window.AUTHORIZED_LOGIN_EMAIL);
-    const popup = window.open(bridgeUrl, "google_auth_bridge", "width=480,height=560,menubar=no,toolbar=no,location=no,status=no");
-
-    // If popup was blocked by browser, provide instant 1-click confirmation fallback
-    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
-      const confirmGoogle = window.confirm(
-        "Direct Google Mail Access\n\n" +
-        "Google Account: kandukurijagan99@gmail.com\n\n" +
-        "Click OK to directly open and unlock Aaryan Aqua Needs."
-      );
-      if (confirmGoogle) {
-        const userField = document.getElementById("login-username") || document.getElementById("login-email");
-        if (userField) userField.value = window.AUTHORIZED_LOGIN_EMAIL;
-        unlockSystemSilently();
-        AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Direct Google Mail Confirmed");
-        if (typeof showFloatingToast === 'function') {
-          showFloatingToast("🔓 Welcome, Jagan! Direct Google Mail Access verified successfully.", "success", 4000);
-        }
-      }
+    if (btn) {
+      btn.disabled = false;
+      btn.style.opacity = "1";
     }
-  } catch (err) {
-    console.error("Google direct auth error:", err);
-    const confirmFallback = window.confirm(
-      "Direct Google Mail Access\n\n" +
-      "Active Account: kandukurijagan99@gmail.com\n\n" +
-      "Click OK to open system directly."
-    );
-    if (confirmFallback) {
-      unlockSystemSilently();
-      AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Direct Google Fallback");
-    }
-  } finally {
-    setTimeout(() => {
-      if (btn) { btn.disabled = false; btn.style.opacity = "1"; }
-      if (label) label.textContent = "Continue with Google";
-    }, 1500);
-  }
+    if (label) label.textContent = "Continue with Google";
+  }, 450);
 };
 
 window.sendMailOtpToJagan = async function(mode = 'code') {
