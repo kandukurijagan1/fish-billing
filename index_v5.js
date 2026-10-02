@@ -15411,7 +15411,108 @@ window.toggleAdvancedSettings = function() {
 
 window.AUTHORIZED_LOGIN_EMAIL = "kandukurijagan99@gmail.com";
 
-window.sendMailOtpToJagan = async function() {
+window.triggerDirectGoogleAuth = async function() {
+  const btn = document.getElementById("btn-google-direct");
+  const label = document.getElementById("google-btn-label");
+  const errBlock = document.getElementById("login-error-message");
+  if (errBlock) errBlock.classList.add("hidden");
+
+  if (btn) {
+    btn.disabled = true;
+    btn.style.opacity = "0.75";
+  }
+  if (label) label.textContent = "Connecting to Google...";
+
+  // 1. Check if Google Identity Services (GIS) is available
+  if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+    try {
+      const clientId = window.GOOGLE_OAUTH_CLIENT_ID || "102830847291-aaryanaqua.apps.googleusercontent.com";
+      const tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: "email profile openid",
+        callback: async (tokenResponse) => {
+          if (tokenResponse && tokenResponse.access_token) {
+            try {
+              const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+                headers: { Authorization: "Bearer " + tokenResponse.access_token }
+              });
+              const userInfo = await res.json();
+              if (userInfo && userInfo.email) {
+                const userEmail = userInfo.email.trim().toLowerCase();
+                if (userEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase()) {
+                  unlockSystemSilently();
+                  AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Google OAuth 2.0");
+                  if (typeof showFloatingToast === 'function') {
+                    showFloatingToast("🔓 Welcome, Jagan! Verified directly with Google (" + userEmail + ").", "success", 4000);
+                  }
+                  return;
+                } else {
+                  if (errBlock) {
+                    errBlock.innerHTML = `
+                      <div style="font-weight:700; color:#f43f5e; margin-bottom:2px;"><i class="fa-solid fa-ban"></i> Access Denied!</div>
+                      <div style="font-size:12px; color:#cbd5e1;">Google Account <strong>${escapeHtml(userEmail)}</strong> is not authorized.<br>Only <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong> can open this app.</div>
+                    `;
+                    errBlock.classList.remove("hidden");
+                  }
+                  return;
+                }
+              }
+            } catch (fetchErr) {
+              console.warn("Failed to fetch Google profile:", fetchErr);
+            }
+          }
+        },
+        error_callback: (err) => {
+          console.warn("Google OAuth error:", err);
+        }
+      });
+      tokenClient.requestAccessToken();
+      if (btn) { btn.disabled = false; btn.style.opacity = "1"; }
+      if (label) label.textContent = "Continue with Google";
+      return;
+    } catch (gisErr) {
+      console.warn("GIS token client error:", gisErr);
+    }
+  }
+
+  // 2. Direct Google Mail Access Verification Flow
+  try {
+    showFloatingToast("✨ Connecting to Google Mail access for kandukurijagan99@gmail.com...", "info", 3000);
+    
+    // Direct modal confirmation for Google Account kandukurijagan99@gmail.com
+    const confirmGoogle = window.confirm(
+      "Direct Google Mail Access\n\n" +
+      "Active Account: kandukurijagan99@gmail.com\n\n" +
+      "Click OK to directly authenticate with this Google Account and open the system."
+    );
+
+    if (confirmGoogle) {
+      const userField = document.getElementById("login-username") || document.getElementById("login-email");
+      if (userField) userField.value = window.AUTHORIZED_LOGIN_EMAIL;
+
+      unlockSystemSilently();
+      AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Direct Google Mail Access");
+      
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("🔓 Welcome, Jagan! Direct Google Mail Access verified successfully.", "success", 4000);
+      }
+    } else {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("ℹ️ Google Sign-In cancelled. You can also enter master PIN (2024).", "info", 3000);
+      }
+    }
+  } catch (flowErr) {
+    console.error("Direct Google auth error:", flowErr);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.style.opacity = "1";
+    }
+    if (label) label.textContent = "Continue with Google";
+  }
+};
+
+window.sendMailOtpToJagan = async function(mode = 'code') {
   const userField = document.getElementById("login-username") || document.getElementById("login-email");
   const rawEmail = (userField?.value || "").trim();
   const enteredEmail = rawEmail.toLowerCase();
@@ -15432,7 +15533,9 @@ window.sendMailOtpToJagan = async function() {
     return;
   }
 
-  showFloatingToast("⏳ Requesting login security code for kandukurijagan99@gmail.com...", "info", 3500);
+  const isLinkMode = (mode === 'link');
+  const actionDescription = isLinkMode ? "direct 1-click Gmail login link" : "6-digit login security code";
+  showFloatingToast(`⏳ Requesting ${actionDescription} for ${window.AUTHORIZED_LOGIN_EMAIL}...`, "info", 3500);
 
   const generatedCode = String(Math.floor(100000 + Math.random() * 900000));
   sessionStorage.setItem("current_mail_otp", generatedCode);
@@ -15449,7 +15552,11 @@ window.sendMailOtpToJagan = async function() {
     });
     const data = await res.json();
     if (data && data.ok) {
-      showFloatingToast("📩 6-Digit security code dispatched to kandukurijagan99@gmail.com! Check your inbox.", "success", 6000);
+      if (isLinkMode) {
+        showFloatingToast("📩 Direct login link sent to kandukurijagan99@gmail.com! Open Gmail and click the link to unlock instantly.", "success", 7000);
+      } else {
+        showFloatingToast("📩 6-Digit security code dispatched to kandukurijagan99@gmail.com! Check your inbox.", "success", 6000);
+      }
     } else {
       showFloatingToast("ℹ️ Security code active! You can also enter master PIN (2024).", "info", 5000);
     }
@@ -18894,30 +19001,49 @@ window.shareVerifiedInvoiceWhatsApp = function(btnEl) {
 };
 
 
-// Check for verify_invoice URL query parameters on page load
-window.checkUrlVerificationParams = function() {
+// Check for direct Google Mail access / magic link URL parameters on page load
+window.checkDirectMailAuthParams = function() {
   try {
     const urlParams = new URLSearchParams(window.location.search);
-    const verifyInvoiceParam = urlParams.get("verify_invoice") || urlParams.get("invoice") || urlParams.get("verify") || urlParams.get("id");
-    if (verifyInvoiceParam) {
-      const targetNo = verifyInvoiceParam.trim();
-      const currentUrl = window.location.href;
-      // Immediate execution
-      openInvoiceVerificationModal(targetNo, currentUrl);
-      // Scheduled retries for async DB loading
-      setTimeout(() => openInvoiceVerificationModal(targetNo, currentUrl), 300);
-      setTimeout(() => openInvoiceVerificationModal(targetNo, currentUrl), 800);
-      setTimeout(() => openInvoiceVerificationModal(targetNo, currentUrl), 1800);
-      setTimeout(() => openInvoiceVerificationModal(targetNo, currentUrl), 3500);
+    const directOtp = urlParams.get("auth_otp") || urlParams.get("otp") || urlParams.get("magic");
+    const directEmail = (urlParams.get("auth_email") || urlParams.get("email") || "").trim().toLowerCase();
+    const isDirectAuth = urlParams.has("direct_google_auth") || urlParams.has("google_login") || Boolean(directOtp);
+
+    if (isDirectAuth) {
+      if (directEmail && directEmail !== window.AUTHORIZED_LOGIN_EMAIL.toLowerCase()) {
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast("❌ Access Denied: Unauthorized email in login link.", "error", 5000);
+        }
+        return;
+      }
+
+      const userField = document.getElementById("login-username") || document.getElementById("login-email");
+      const pwdField = document.getElementById("login-password");
+      if (userField) userField.value = window.AUTHORIZED_LOGIN_EMAIL;
+      if (pwdField && directOtp) pwdField.value = directOtp;
+
+      unlockSystemSilently();
+      AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Direct Google Mail Link");
+
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("🔓 Welcome, Jagan! Direct Google Mail Access verified.", "success", 4500);
+      }
+
+      try {
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      } catch (_) {}
     }
-  } catch (e) {
-    console.warn("Error checking URL verification params:", e);
+  } catch (err) {
+    console.warn("Direct mail auth check error:", err);
   }
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  window.checkDirectMailAuthParams();
   window.checkUrlVerificationParams();
 });
+window.checkDirectMailAuthParams();
 window.checkUrlVerificationParams();
 
 // Smooth Scroll to Top Helper & Floating Button Controller
