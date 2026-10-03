@@ -276,6 +276,8 @@ function handleApiPost(e) {
 
     if (action === "save_settings") {
       var settingsObj = data.settings || {};
+      writeSettingsToSheet(settingsObj, ss);
+      /* [CLOUD-ONLY] No server-side cache to invalidate */
       appendAuditLog("SAVE_SETTINGS", user, "—", "SUCCESS", "System settings updated", ss);
       return ContentService.createTextOutput(JSON.stringify({ ok: true, settings: settingsObj })).setMimeType(ContentService.MimeType.JSON);
     }
