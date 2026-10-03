@@ -15283,12 +15283,7 @@ window.autofillRememberedCredentials = function() {
   const rememberBox = document.getElementById("login-remember-me");
 
   const remembered = localStorage.getItem("remember_me") === "true";
-  let savedUser = localStorage.getItem("saved_username") || localStorage.getItem("saved_email") || "kandukurijagan99@gmail.com";
-  if (!savedUser || savedUser.toLowerCase() === "aaryanaqua" || savedUser.toLowerCase() === "admin") {
-    savedUser = "kandukurijagan99@gmail.com";
-    localStorage.setItem("saved_username", "kandukurijagan99@gmail.com");
-    localStorage.setItem("saved_email", "kandukurijagan99@gmail.com");
-  }
+  let savedUser = localStorage.getItem("last_logged_in_email") || "";
 
   // Purge any legacy plaintext passwords
   AppSecurity.purgePlaintextPasswords();
@@ -15378,10 +15373,7 @@ function triggerLockOverlay(reason = "manual", shouldBroadcast = true) {
 
   // Autofill authorized email
   const userField = document.getElementById("login-username");
-  let savedUser = localStorage.getItem("saved_username") || localStorage.getItem("saved_email") || "kandukurijagan99@gmail.com";
-  if (!savedUser || savedUser.toLowerCase() === "aaryanaqua" || savedUser.toLowerCase() === "admin") {
-    savedUser = "kandukurijagan99@gmail.com";
-  }
+  let savedUser = localStorage.getItem("last_logged_in_email") || "";
   if (userField) userField.value = savedUser;
 
   const wrapper = document.querySelector('.dashboard-wrapper');
@@ -15558,15 +15550,11 @@ window.initGoogleIdentityServices = function() {
         type: "standard",
         theme: "outline",
         size: "large",
-        text: "continue_with",
+        text: "signin_with",
         shape: "rectangular",
         logo_alignment: "left",
         width: 320
       });
-    }
-
-    if (typeof isLocked !== 'undefined' && isLocked) {
-      google.accounts.id.prompt();
     }
   } catch (e) {
     console.warn("GIS initialization error:", e);
@@ -15670,12 +15658,26 @@ window.verifyAndAuthorizeUser = function(email, displayName) {
 
   const usersList = window.getAuthorizedUsersList();
   const isMainAdmin = (normEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
-  const matchedUser = isMainAdmin
+  let matchedUser = isMainAdmin
     ? { email: window.AUTHORIZED_LOGIN_EMAIL, name: displayName || "Jagan (Main Admin)", role: "super_admin", status: "active" }
     : usersList.find(u => (u.email || "").toLowerCase().trim() === normEmail);
 
+  // Direct login for any user / customer: automatically create their account if new
+  if (!matchedUser) {
+    matchedUser = {
+      email: normEmail,
+      name: displayName || normEmail.split("@")[0],
+      role: "customer",
+      status: "active",
+      createdAt: new Date().toISOString(),
+      lastLogin: new Date().toISOString()
+    };
+    usersList.push(matchedUser);
+    window.saveAuthorizedUsersList(usersList);
+  }
+
   if (matchedUser && matchedUser.status === "active") {
-    const role = matchedUser.role || (isMainAdmin ? "super_admin" : "operator");
+    const role = matchedUser.role || (isMainAdmin ? "super_admin" : "customer");
     const name = displayName || matchedUser.name || normEmail.split("@")[0];
 
     // Store active session credentials
@@ -15715,28 +15717,8 @@ window.verifyAndAuthorizeUser = function(email, displayName) {
       card.classList.add("shake-animation");
     }
     return false;
-  } else {
-    // Completely unauthorized account
-    if (errBlock) {
-      errBlock.innerHTML = `
-        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
-          <i class="fa-solid fa-ban"></i> Access Denied
-        </div>
-        <div style="font-size: 11.5px; color: #cbd5e1;">
-          <strong>${escapeHtml(normEmail)}</strong> is not authorized to access this system.<br>
-          Please contact Main Admin (<strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong>) to request access.
-        </div>
-      `;
-      errBlock.classList.remove("hidden");
-    }
-    const card = document.querySelector(".login-card");
-    if (card) {
-      card.classList.remove("shake-animation");
-      void card.offsetWidth;
-      card.classList.add("shake-animation");
-    }
-    return false;
   }
+  return false;
 };
 
 window.handleGoogleCredentialResponse = function(response) {
@@ -15753,40 +15735,51 @@ window.triggerDirectGoogleAuth = async function() {
   const errBlock = document.getElementById("login-error-message");
   if (errBlock) errBlock.classList.add("hidden");
 
-  // If GIS is ready, trigger prompt
-  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+  // Primary: Google OAuth 2.0 Token Client with native Account Chooser (No prefilled admin email!)
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
     try {
-      google.accounts.id.prompt((notification) => {
-        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          // If One-Tap is suppressed, try oauth2 TokenClient
-          if (google.accounts.oauth2) {
+      if (label) label.textContent = "Connecting to Google...";
+      const tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: window.GOOGLE_OAUTH_CLIENT_ID,
+        scope: 'email profile openid',
+        callback: async (tokenResponse) => {
+          if (tokenResponse && tokenResponse.access_token) {
             try {
-              const tokenClient = google.accounts.oauth2.initTokenClient({
-                client_id: window.GOOGLE_OAUTH_CLIENT_ID,
-                scope: 'email profile openid',
-                hint: window.AUTHORIZED_LOGIN_EMAIL,
-                callback: async (tokenResponse) => {
-                  if (tokenResponse && tokenResponse.access_token) {
-                    try {
-                      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                        headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
-                      });
-                      const userInfo = await res.json();
-                      const authedEmail = (userInfo?.email || "").toLowerCase().trim();
-                      window.verifyAndAuthorizeUser(authedEmail, userInfo?.name || "");
-                    } catch (e) {
-                      console.warn("Userinfo fetch error:", e);
-                    }
-                  }
-                }
+              if (label) label.textContent = "Verifying account...";
+              const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
               });
-              tokenClient.requestAccessToken({ prompt: 'select_account' });
-            } catch (gisErr) {
-              console.warn("OAuth2 error:", gisErr);
+              const userInfo = await res.json();
+              const authedEmail = (userInfo?.email || "").toLowerCase().trim();
+              const displayName = userInfo?.name || userInfo?.given_name || "";
+              window.verifyAndAuthorizeUser(authedEmail, displayName);
+            } catch (e) {
+              console.warn("Userinfo fetch error:", e);
+              if (errBlock) {
+                errBlock.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Error retrieving profile from Google.`;
+                errBlock.classList.remove("hidden");
+              }
+            } finally {
+              if (label) label.textContent = "Sign in with Google";
             }
+          } else {
+            if (label) label.textContent = "Sign in with Google";
           }
         }
       });
+      // prompt: 'select_account' ensures Google asks user to choose ANY account without prefilling admin email
+      tokenClient.requestAccessToken({ prompt: 'select_account' });
+      return;
+    } catch (gisErr) {
+      console.warn("OAuth2 error:", gisErr);
+      if (label) label.textContent = "Sign in with Google";
+    }
+  }
+
+  // Fallback to GIS prompt if oauth2 is not ready yet
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+    try {
+      google.accounts.id.prompt();
       return;
     } catch (e) {
       console.warn("Prompt error:", e);
@@ -16007,16 +16000,17 @@ window.deleteAuthorizedUser = async function(email) {
 
 // 7. Role Permissions Application
 window.applyRolePermissions = function(role) {
-  const currentRole = role || sessionStorage.getItem("current_user_role") || "super_admin";
-  const isSuperAdmin = (currentRole === 'super_admin');
+  const currentEmail = (sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
+  const isSuperAdmin = (currentEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
+  const currentRole = isSuperAdmin ? "super_admin" : (role || sessionStorage.getItem("current_user_role") || "customer");
   const isAdmin = (currentRole === 'admin' || isSuperAdmin);
   const isCustomer = (currentRole === 'customer');
 
   // Header user badge
   const badgeSlot = document.getElementById("header-user-badge-slot");
   if (badgeSlot) {
-    const email = sessionStorage.getItem("current_user_email") || window.AUTHORIZED_LOGIN_EMAIL;
-    const name = sessionStorage.getItem("current_user_name") || "Jagan";
+    const email = sessionStorage.getItem("current_user_email") || (isSuperAdmin ? window.AUTHORIZED_LOGIN_EMAIL : "");
+    const name = sessionStorage.getItem("current_user_name") || (isSuperAdmin ? "Jagan (Main Admin)" : (email.split("@")[0] || "User"));
     const roleIcon = isSuperAdmin ? "fa-crown" : (isAdmin ? "fa-shield-halved" : (isCustomer ? "fa-user-check" : "fa-briefcase"));
     const roleLabel = isSuperAdmin ? "Main Admin" : (isAdmin ? "Admin" : (isCustomer ? "Customer" : "Staff"));
     const badgeBg = isSuperAdmin ? "background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.35); color: #f59e0b;"
