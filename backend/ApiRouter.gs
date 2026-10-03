@@ -73,8 +73,8 @@ function handleApiGet(e) {
       invoices: invs,
       products: prods,
       parties: parts,
-      settings: {},
-      globalSettings: {},
+      settings: readSettingsFromSheet(ssMaster),
+      globalSettings: readSettingsFromSheet(ssMaster),
       serverTime: Date.now(),
       timestamp: new Date().toISOString()
     };

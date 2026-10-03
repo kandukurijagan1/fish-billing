@@ -879,14 +879,15 @@ TurboDataStore.rebuildIndexes();
     });
   };
 
-  // Pre-seed phantom deleted IDs into tombstones, including test invoice #0099
+  // Pre-seed phantom deleted IDs into tombstones
   try {
     let curTombstones = window.getDeletedInvoiceTombstones();
     curTombstones = curTombstones.filter(t => {
       const str = String(t).trim().toLowerCase();
       return str !== '0035' && str !== '35' && str !== '#0035' && str !== 'inv_0035' && str !== 'inv_35';
     });
-    ['0201', '0102', '201', '102', 'inv_201', 'inv_102', '#0201', '#0102', '0099', '#0099', '99', 'inv_0099'].forEach(phantom => {
+    // Only seed commonly tested phantom IDs that don't conflict with legitimate invoices
+    ['0201', '0102', '201', '102', 'inv_201', 'inv_102', '#0201', '#0102'].forEach(phantom => {
       if (!curTombstones.includes(phantom)) curTombstones.push(phantom);
     });
     localStorage.setItem("deleted_invoice_ids", JSON.stringify(curTombstones));
@@ -4195,6 +4196,10 @@ function loadAllDatabases() {
   if (Number.isNaN(lockTimerSeconds)) {
     lockTimerSeconds = 1800;
   }
+
+  if (typeof window.applyRolePermissions === 'function') {
+    window.applyRolePermissions();
+  }
 }
 
 // Robust Helper: Normalize & locate product in master catalog (O(1) Turbo Retrieval)
@@ -4531,6 +4536,9 @@ window.switchTab = function(tabName) {
     resetReportsView();
   } else if (tabName === 'settings') {
     loadSettingsFields();
+    if (typeof window.renderUserManagerTable === 'function') {
+      window.renderUserManagerTable();
+    }
   }
 };
 
@@ -15241,6 +15249,11 @@ function unlockSystemSilently() {
   if (typeof resetAutolockTimer === 'function') {
     resetAutolockTimer();
   }
+
+  // Apply user role permissions and update profile badge
+  if (typeof window.applyRolePermissions === 'function') {
+    window.applyRolePermissions();
+  }
 }
 window.unlockSystemSilently = unlockSystemSilently;
 
@@ -15415,28 +15428,137 @@ window.initGoogleIdentityServices = function() {
   }
 };
 
-window.handleGoogleCredentialResponse = function(response) {
-  if (!response || !response.credential) return;
-  const payload = parseGoogleJwt(response.credential);
-  const email = (payload?.email || "").toLowerCase().trim();
+// ============================================================================
+// ENTERPRISE USER ACCESS & ROLE-BASED ACCESS CONTROL (RBAC)
+// ============================================================================
+
+// 1. Authoritative list of authorized users (Main Admin is permanent master)
+window.getAuthorizedUsersList = function() {
+  let list = [];
+  try {
+    const rawLocal = localStorage.getItem("authorized_users");
+    const rawGlobal = (typeof globalSettings !== 'undefined' && globalSettings.authorizedUsers);
+    if (rawLocal) {
+      list = JSON.parse(rawLocal);
+    } else if (rawGlobal) {
+      list = Array.isArray(rawGlobal) ? rawGlobal : JSON.parse(rawGlobal);
+    }
+  } catch (e) {
+    list = [];
+  }
+  if (!Array.isArray(list)) list = [];
+
+  const mainAdminNorm = window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
+  const adminIndex = list.findIndex(u => (u.email || "").toLowerCase().trim() === mainAdminNorm);
+
+  if (adminIndex === -1) {
+    list.unshift({
+      email: window.AUTHORIZED_LOGIN_EMAIL,
+      name: "Jagan Kandukuri (Main Admin)",
+      role: "super_admin",
+      status: "active",
+      addedAt: "2026-09-01T00:00:00.000Z",
+      lastLogin: new Date().toISOString(),
+      isMainAdmin: true
+    });
+  } else {
+    list[adminIndex].isMainAdmin = true;
+    list[adminIndex].role = "super_admin";
+    list[adminIndex].status = "active";
+    if (!list[adminIndex].name) list[adminIndex].name = "Jagan Kandukuri (Main Admin)";
+  }
+  return list;
+};
+
+// 2. Persist user access list locally and to Google Sheets Cloud
+window.saveAuthorizedUsersList = function(list) {
+  if (!Array.isArray(list)) return;
+  try {
+    localStorage.setItem("authorized_users", JSON.stringify(list));
+  } catch (e) {}
+
+  if (typeof globalSettings !== 'undefined') {
+    globalSettings.authorizedUsers = list;
+    try {
+      localStorage.setItem("settings", JSON.stringify(globalSettings));
+    } catch (e) {}
+    if (typeof syncDatabaseToServer === 'function') {
+      syncDatabaseToServer("settings", globalSettings);
+    }
+  }
+
+  if (typeof window.renderUserManagerTable === 'function') {
+    window.renderUserManagerTable();
+  }
+};
+
+// 3. Update last login timestamp for an authorized user
+window.updateUserLastLogin = function(email) {
+  const normEmail = (email || "").toLowerCase().trim();
+  if (!normEmail) return;
+  const list = window.getAuthorizedUsersList();
+  const user = list.find(u => (u.email || "").toLowerCase().trim() === normEmail);
+  if (user) {
+    user.lastLogin = new Date().toISOString();
+    try {
+      localStorage.setItem("authorized_users", JSON.stringify(list));
+      if (typeof globalSettings !== 'undefined') {
+        globalSettings.authorizedUsers = list;
+        localStorage.setItem("settings", JSON.stringify(globalSettings));
+      }
+    } catch (e) {}
+  }
+};
+
+// 4. Central Authenticator for Google Identity
+window.verifyAndAuthorizeUser = function(email, displayName) {
+  const normEmail = (email || "").toLowerCase().trim();
   const errBlock = document.getElementById("login-error-message");
 
-  if (email === window.AUTHORIZED_LOGIN_EMAIL) {
-    unlockSystemSilently();
-    AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Google Identity (Verified JWT)");
-    if (typeof showFloatingToast === 'function') {
-      showFloatingToast(`🔓 Welcome, ${payload.name || 'Jagan'}! Google Account verified successfully.`, "success", 4000);
+  if (!normEmail) {
+    if (errBlock) {
+      errBlock.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> No email returned from Google.`;
+      errBlock.classList.remove("hidden");
     }
+    return false;
+  }
+
+  const usersList = window.getAuthorizedUsersList();
+  const isMainAdmin = (normEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
+  const matchedUser = isMainAdmin
+    ? { email: window.AUTHORIZED_LOGIN_EMAIL, name: displayName || "Jagan (Main Admin)", role: "super_admin", status: "active" }
+    : usersList.find(u => (u.email || "").toLowerCase().trim() === normEmail);
+
+  if (matchedUser && matchedUser.status === "active") {
+    const role = matchedUser.role || (isMainAdmin ? "super_admin" : "operator");
+    const name = displayName || matchedUser.name || normEmail.split("@")[0];
+
+    // Store active session credentials
+    sessionStorage.setItem("current_user_email", normEmail);
+    sessionStorage.setItem("current_user_name", name);
+    sessionStorage.setItem("current_user_role", role);
+    sessionStorage.setItem("is_main_admin", isMainAdmin ? "true" : "false");
+    localStorage.setItem("last_logged_in_email", normEmail);
+
+    window.updateUserLastLogin(normEmail);
+
+    unlockSystemSilently();
+    AppSecurity.recordSuccessfulLogin(normEmail, `Google Identity (${role})`);
+    window.applyRolePermissions(role);
+
     if (errBlock) errBlock.classList.add("hidden");
-  } else {
+
+    const roleName = role === 'super_admin' ? 'Main Admin' : (role === 'admin' ? 'Administrator' : (role === 'customer' ? 'Customer' : 'Billing Staff'));
+    showFloatingToast(`🔓 Welcome, ${name}! (${roleName})`, "success", 4500);
+    return true;
+  } else if (matchedUser && matchedUser.status === "suspended") {
     if (errBlock) {
       errBlock.innerHTML = `
         <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
-          <i class="fa-solid fa-ban"></i> Access Denied: Unauthorized Google Account!
+          <i class="fa-solid fa-user-lock"></i> Access Suspended!
         </div>
         <div style="font-size: 11.5px; color: #cbd5e1;">
-          You signed in as <strong>${escapeHtml(email || 'unknown')}</strong>.<br>
-          Access is strictly restricted to <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong>.
+          Your account (<strong>${escapeHtml(normEmail)}</strong>) has been paused by the Main Admin.
         </div>
       `;
       errBlock.classList.remove("hidden");
@@ -15447,16 +15569,38 @@ window.handleGoogleCredentialResponse = function(response) {
       void card.offsetWidth;
       card.classList.add("shake-animation");
     }
+    return false;
+  } else {
+    // Completely unauthorized account
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+          <i class="fa-solid fa-ban"></i> Access Denied
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1;">
+          <strong>${escapeHtml(normEmail)}</strong> is not authorized to access this system.<br>
+          Please contact Main Admin (<strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong>) to request access.
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    const card = document.querySelector(".login-card");
+    if (card) {
+      card.classList.remove("shake-animation");
+      void card.offsetWidth;
+      card.classList.add("shake-animation");
+    }
+    return false;
   }
 };
 
-window.addEventListener("load", () => {
-  setTimeout(() => {
-    if (typeof window.initGoogleIdentityServices === 'function') {
-      window.initGoogleIdentityServices();
-    }
-  }, 500);
-});
+window.handleGoogleCredentialResponse = function(response) {
+  if (!response || !response.credential) return;
+  const payload = parseGoogleJwt(response.credential);
+  const email = (payload?.email || "").toLowerCase().trim();
+  const name = payload?.name || payload?.given_name || "";
+  window.verifyAndAuthorizeUser(email, name);
+};
 
 window.triggerDirectGoogleAuth = async function() {
   const btn = document.getElementById("btn-google-direct");
@@ -15484,29 +15628,7 @@ window.triggerDirectGoogleAuth = async function() {
                       });
                       const userInfo = await res.json();
                       const authedEmail = (userInfo?.email || "").toLowerCase().trim();
-                      if (authedEmail === window.AUTHORIZED_LOGIN_EMAIL) {
-                        unlockSystemSilently();
-                        AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Official Google OAuth 2.0");
-                        showFloatingToast(`🔓 Welcome, ${userInfo.name || 'Jagan'}! Google Account verified successfully.`, "success", 4000);
-                      } else {
-                        if (errBlock) {
-                          errBlock.innerHTML = `
-                            <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
-                              <i class="fa-solid fa-ban"></i> Access Denied: Unauthorized Account!
-                            </div>
-                            <div style="font-size: 11.5px; color: #cbd5e1;">
-                              Google Account <strong>${escapeHtml(userInfo?.email || 'unknown')}</strong> is not authorized. Only <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong> can access this system.
-                            </div>
-                          `;
-                          errBlock.classList.remove("hidden");
-                        }
-                        const card = document.querySelector(".login-card");
-                        if (card) {
-                          card.classList.remove("shake-animation");
-                          void card.offsetWidth;
-                          card.classList.add("shake-animation");
-                        }
-                      }
+                      window.verifyAndAuthorizeUser(authedEmail, userInfo?.name || "");
                     } catch (e) {
                       console.warn("Userinfo fetch error:", e);
                     }
@@ -15526,10 +15648,260 @@ window.triggerDirectGoogleAuth = async function() {
     }
   }
 
-  // If Google is offline or not loaded, alert user clearly to use OTP:
-  showFloatingToast("ℹ️ Please click 'Send 6-Digit Code' below to receive your security code in Gmail.", "info", 5000);
-  const otpBtn = document.getElementById("btn-send-mail-otp");
-  if (otpBtn) otpBtn.focus();
+  showFloatingToast("ℹ️ Connecting to Google Identity Services...", "info", 3000);
+};
+
+// 5. Render User Management Table in Settings
+window.renderUserManagerTable = function() {
+  const tbody = document.getElementById("users-management-tbody");
+  if (!tbody) return;
+
+  const users = window.getAuthorizedUsersList();
+  if (!users || users.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 20px;">No authorized users found.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = users.map((u) => {
+    const isMain = !!u.isMainAdmin || (u.email || '').toLowerCase().trim() === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
+    const role = u.role || 'operator';
+    const status = u.status || 'active';
+    const isActive = (status === 'active');
+
+    let roleBadge = '';
+    if (role === 'super_admin' || isMain) {
+      roleBadge = `<span style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.35); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-crown"></i> Main Admin (Master)</span>`;
+    } else if (role === 'admin') {
+      roleBadge = `<span style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-shield-halved"></i> Administrator</span>`;
+    } else if (role === 'customer') {
+      roleBadge = `<span style="background: rgba(52, 211, 153, 0.15); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.35); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-user-check"></i> Customer / Client</span>`;
+    } else {
+      roleBadge = `<span style="background: rgba(168, 85, 247, 0.15); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.35); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-briefcase"></i> Billing Staff</span>`;
+    }
+
+    const statusBadge = isActive
+      ? `<span style="background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px;"><i class="fa-solid fa-circle" style="font-size: 7px; margin-right: 4px;"></i>Active</span>`
+      : `<span style="background: rgba(244, 63, 94, 0.12); color: #f43f5e; border: 1px solid rgba(244, 63, 94, 0.3); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px;"><i class="fa-solid fa-circle" style="font-size: 7px; margin-right: 4px;"></i>Suspended</span>`;
+
+    let lastLoginStr = "Never";
+    if (u.lastLogin) {
+      try {
+        lastLoginStr = new Date(u.lastLogin).toLocaleDateString("en-IN", { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        lastLoginStr = u.lastLogin;
+      }
+    }
+
+    const initial = (u.name || u.email || 'U').charAt(0).toUpperCase();
+
+    let actionBtns = '';
+    if (isMain) {
+      actionBtns = `<span style="color: #64748b; font-size: 11px; font-style: italic;">Permanent Master Account</span>`;
+    } else {
+      actionBtns = `
+        <div style="display: flex; gap: 6px; justify-content: flex-end;">
+          <button type="button" class="btn btn-xs" onclick="window.toggleUserStatus('${escapeHtml(u.email)}')" style="background: ${isActive ? 'rgba(244, 63, 94, 0.12)' : 'rgba(16, 185, 129, 0.12)'}; color: ${isActive ? '#f43f5e' : '#10b981'}; border: 1px solid ${isActive ? 'rgba(244, 63, 94, 0.3)' : 'rgba(16, 185, 129, 0.3)'}; border-radius: 5px; padding: 4px 8px; font-size: 11px; cursor: pointer;" title="${isActive ? 'Suspend Access' : 'Activate Access'}">
+            <i class="fa-solid ${isActive ? 'fa-pause' : 'fa-play'}"></i> ${isActive ? 'Suspend' : 'Activate'}
+          </button>
+          <button type="button" class="btn btn-xs btn-secondary" onclick="window.openEditUserModal('${escapeHtml(u.email)}')" style="padding: 4px 8px; font-size: 11px;" title="Edit Role">
+            <i class="fa-solid fa-pen"></i> Edit
+          </button>
+          <button type="button" class="btn btn-xs" onclick="window.deleteAuthorizedUser('${escapeHtml(u.email)}')" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 5px; padding: 4px 8px; font-size: 11px; cursor: pointer;" title="Revoke & Delete Access">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </div>
+      `;
+    }
+
+    return `
+      <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.06); transition: background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+        <td style="padding: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 32px; height: 32px; border-radius: 50%; background: ${isMain ? '#f59e0b' : '#0284c7'}; color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 12.5px;">
+              ${initial}
+            </div>
+            <div>
+              <div style="font-weight: 700; color: #ffffff;">${escapeHtml(u.name || u.email)}</div>
+              ${isMain ? '<div style="font-size: 10.5px; color: #f59e0b; font-weight: 600;">Main Administrator</div>' : ''}
+            </div>
+          </div>
+        </td>
+        <td style="padding: 12px; color: #93c5fd; font-family: monospace; font-size: 12px;">${escapeHtml(u.email)}</td>
+        <td style="padding: 12px;">${roleBadge}</td>
+        <td style="padding: 12px;">${statusBadge}</td>
+        <td style="padding: 12px; color: #94a3b8; font-size: 11.5px;">${lastLoginStr}</td>
+        <td style="padding: 12px; text-align: right;">${actionBtns}</td>
+      </tr>
+    `;
+  }).join('');
+};
+
+// 6. Modal Open / Close Handlers
+window.openAddUserModal = function() {
+  const modal = document.getElementById("user-modal-overlay");
+  if (!modal) return;
+  document.getElementById("user-modal-title").innerHTML = `<i class="fa-solid fa-user-plus text-cyan"></i> Grant Access to User / Customer`;
+  document.getElementById("user-edit-orig-email").value = "";
+  document.getElementById("user-input-email").value = "";
+  document.getElementById("user-input-email").readOnly = false;
+  document.getElementById("user-input-name").value = "";
+  document.getElementById("user-input-role").value = "customer";
+  document.getElementById("user-input-status").value = "active";
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+  setTimeout(() => document.getElementById("user-input-email")?.focus(), 100);
+};
+
+window.openEditUserModal = function(email) {
+  const normEmail = (email || "").toLowerCase().trim();
+  const users = window.getAuthorizedUsersList();
+  const user = users.find(u => (u.email || "").toLowerCase().trim() === normEmail);
+  if (!user) return;
+
+  const modal = document.getElementById("user-modal-overlay");
+  if (!modal) return;
+  document.getElementById("user-modal-title").innerHTML = `<i class="fa-solid fa-user-pen text-cyan"></i> Edit User Access`;
+  document.getElementById("user-edit-orig-email").value = normEmail;
+  document.getElementById("user-input-email").value = user.email;
+  document.getElementById("user-input-email").readOnly = true;
+  document.getElementById("user-input-name").value = user.name || "";
+  document.getElementById("user-input-role").value = user.role || "customer";
+  document.getElementById("user-input-status").value = user.status || "active";
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+};
+
+window.closeUserModal = function() {
+  const modal = document.getElementById("user-modal-overlay");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+  }
+};
+
+window.saveUserAccessSubmit = function(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const origEmail = (document.getElementById("user-edit-orig-email")?.value || "").toLowerCase().trim();
+  const email = (document.getElementById("user-input-email")?.value || "").toLowerCase().trim();
+  const name = (document.getElementById("user-input-name")?.value || "").trim();
+  const role = document.getElementById("user-input-role")?.value || "customer";
+  const status = document.getElementById("user-input-status")?.value || "active";
+
+  if (!email || !name) {
+    showFloatingToast("⚠️ Please enter both Email and Name!", "warning");
+    return;
+  }
+
+  if (email === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim() && origEmail !== email) {
+    showFloatingToast("⚠️ kandukurijagan99@gmail.com is already the permanent Main Admin!", "warning");
+    return;
+  }
+
+  const list = window.getAuthorizedUsersList();
+  const targetEmail = origEmail || email;
+  const existingIdx = list.findIndex(u => (u.email || "").toLowerCase().trim() === targetEmail);
+
+  if (existingIdx !== -1) {
+    // Edit existing user
+    list[existingIdx].name = name;
+    list[existingIdx].role = role;
+    list[existingIdx].status = status;
+    list[existingIdx].updatedAt = new Date().toISOString();
+    showFloatingToast(`✅ User access updated for ${email}`, "success", 4000);
+  } else {
+    // Add new user
+    list.push({
+      email,
+      name,
+      role,
+      status,
+      addedAt: new Date().toISOString(),
+      lastLogin: null
+    });
+    showFloatingToast(`✅ Access granted for ${email}! They can now log in via Google.`, "success", 5000);
+  }
+
+  window.saveAuthorizedUsersList(list);
+  window.closeUserModal();
+};
+
+window.toggleUserStatus = function(email) {
+  const normEmail = (email || "").toLowerCase().trim();
+  if (normEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim()) {
+    showFloatingToast("⚠️ Main Admin account cannot be suspended!", "warning");
+    return;
+  }
+  const list = window.getAuthorizedUsersList();
+  const user = list.find(u => (u.email || "").toLowerCase().trim() === normEmail);
+  if (!user) return;
+
+  user.status = (user.status === "active") ? "suspended" : "active";
+  window.saveAuthorizedUsersList(list);
+  const statusLabel = user.status === "active" ? "Activated" : "Suspended";
+  showFloatingToast(`ℹ️ Account access for ${email} is now ${statusLabel}.`, "info", 3500);
+};
+
+window.deleteAuthorizedUser = async function(email) {
+  const normEmail = (email || "").toLowerCase().trim();
+  if (normEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim()) {
+    showFloatingToast("⚠️ Main Admin account cannot be deleted!", "warning");
+    return;
+  }
+
+  const confirmed = await customConfirm(
+    `Are you sure you want to revoke Google login access for <strong>${escapeHtml(email)}</strong>? They will no longer be able to log into the billing system.`,
+    "Revoke User Access"
+  );
+  if (!confirmed) return;
+
+  let list = window.getAuthorizedUsersList();
+  list = list.filter(u => (u.email || "").toLowerCase().trim() !== normEmail);
+  window.saveAuthorizedUsersList(list);
+  showFloatingToast(`🗑️ Login access revoked for ${email}.`, "info", 4000);
+};
+
+// 7. Role Permissions Application
+window.applyRolePermissions = function(role) {
+  const currentRole = role || sessionStorage.getItem("current_user_role") || "super_admin";
+  const isSuperAdmin = (currentRole === 'super_admin');
+  const isAdmin = (currentRole === 'admin' || isSuperAdmin);
+  const isCustomer = (currentRole === 'customer');
+
+  // Header user badge
+  const badgeSlot = document.getElementById("header-user-badge-slot");
+  if (badgeSlot) {
+    const email = sessionStorage.getItem("current_user_email") || window.AUTHORIZED_LOGIN_EMAIL;
+    const name = sessionStorage.getItem("current_user_name") || "Jagan";
+    const roleIcon = isSuperAdmin ? "fa-crown" : (isAdmin ? "fa-shield-halved" : (isCustomer ? "fa-user-check" : "fa-briefcase"));
+    const roleLabel = isSuperAdmin ? "Main Admin" : (isAdmin ? "Admin" : (isCustomer ? "Customer" : "Staff"));
+    const badgeBg = isSuperAdmin ? "background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.35); color: #f59e0b;"
+      : (isAdmin ? "background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.35); color: #38bdf8;"
+      : (isCustomer ? "background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.35); color: #10b981;"
+      : "background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.35); color: #a855f7;"));
+
+    badgeSlot.innerHTML = `
+      <div style="${badgeBg} padding: 4px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; cursor: ${isSuperAdmin ? 'pointer' : 'default'};" ${isSuperAdmin ? 'onclick="window.switchTab(\'settings\'); document.getElementById(\'user-management-panel\')?.scrollIntoView({behavior:\'smooth\'});" title="Main Admin - Click to Manage Users"' : ''}>
+        <i class="fa-solid ${roleIcon}"></i>
+        <span>${escapeHtml(name)} (${roleLabel})</span>
+      </div>
+    `;
+  }
+
+  // User management panel visibility in Settings (Main Admin only)
+  const userMgrPanel = document.getElementById("user-management-panel");
+  if (userMgrPanel) {
+    userMgrPanel.style.display = isSuperAdmin ? "" : "none";
+  }
+
+  // Customer restrictions
+  const settingsTabBtn = document.querySelector('.nav-item[data-tab="settings"]');
+  if (settingsTabBtn) {
+    settingsTabBtn.style.display = isCustomer ? "none" : "";
+  }
+
+  if (isSuperAdmin && typeof window.renderUserManagerTable === 'function') {
+    window.renderUserManagerTable();
+  }
 };
 
 window.sendMailOtpToJagan = async function(mode = 'code') {

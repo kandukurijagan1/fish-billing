@@ -386,6 +386,11 @@
               <i class="fa-brands fa-telegram" style="color: #0284c7;"></i>
               <span id="tg-bot-status-text">Telegram</span>
             </div>
+            <!-- ACTIVE USER PROFILE BADGE & ACCESS SHORTCUT -->
+            <div id="header-user-badge-slot" style="display: inline-flex; align-items: center; margin-left: 4px;"></div>
+            <button type="button" class="btn btn-sm" onclick="triggerManualLock()" title="Lock Screen / Switch User" style="background: rgba(244, 63, 94, 0.12); color: #f43f5e; border: 1px solid rgba(244, 63, 94, 0.3); border-radius: 20px; padding: 4px 10px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+              <i class="fa-solid fa-lock"></i> <span>Lock</span>
+            </button>
           </div>
           <div class="header-tools-group" style="display: none !important;">
             <button type="button" id="btn-pwa-install-header" class="pwa-install-pill hidden cursor-pointer" style="display: none !important;" onclick="window.triggerPwaInstall()" title="Install Aaryan Aqua App on this Device (Standalone App)">
@@ -1805,6 +1810,41 @@
 
       <!-- VIEW: SETTINGS -->
       <section id="view-settings" class="content-view hidden">
+        <!-- USER ACCESS & CUSTOMER LOGIN MANAGEMENT (MAIN ADMIN MASTER PANEL) -->
+        <div class="card-box margin-bottom-20" id="user-management-panel" style="border: 1px solid rgba(14, 165, 233, 0.35); background: rgba(14, 165, 233, 0.03); border-radius: 12px;">
+          <div class="card-box-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div>
+              <h3 style="color: var(--accent-cyan); margin: 0; display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-users-gear" style="color: #0ea5e9;"></i> User Access &amp; Customer Login Management
+              </h3>
+              <p style="margin: 4px 0 0 0; font-size: 12px; color: var(--text-muted);">
+                Main Admin (<strong>kandukurijagan99@gmail.com</strong>) has master authority to grant, suspend, or revoke Google login access.
+              </p>
+            </div>
+            <button type="button" class="btn btn-primary btn-sm" onclick="window.openAddUserModal()" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700; border-radius: 8px; padding: 7px 14px;">
+              <i class="fa-solid fa-user-plus"></i> Grant Access to User / Customer
+            </button>
+          </div>
+          
+          <div style="margin-top: 14px; overflow-x: auto;">
+            <table class="data-table" id="users-management-table" style="width: 100%; font-size: 12.5px; border-collapse: collapse;">
+              <thead>
+                <tr style="background: rgba(15, 23, 42, 0.6); text-align: left;">
+                  <th style="padding: 10px 12px;">User / Customer</th>
+                  <th style="padding: 10px 12px;">Google Email</th>
+                  <th style="padding: 10px 12px;">Role &amp; Permissions</th>
+                  <th style="padding: 10px 12px;">Status</th>
+                  <th style="padding: 10px 12px;">Last Login</th>
+                  <th style="padding: 10px 12px; text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="users-management-tbody">
+                <!-- Rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- Global Header & Bank Details defaults -->
         <div class="card-box">
           <div class="card-box-header">
@@ -3928,6 +3968,62 @@
     </div>
   </div>
 
+  <!-- USER ACCESS & CUSTOMER LOGIN MANAGEMENT MODAL -->
+  <div id="user-modal-overlay" class="modal-overlay hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(6px); align-items: center; justify-content: center; z-index: 10005;">
+    <div class="modal-box" style="max-width: 480px; width: 92%; border-radius: 16px; overflow: hidden; background: #0f172a; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7); color: white;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: white; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center;">
+        <h3 id="user-modal-title" style="margin: 0; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-user-plus"></i> Grant Access to User / Customer
+        </h3>
+        <button type="button" class="btn-close" onclick="window.closeUserModal()" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer; line-height: 1;">&times;</button>
+      </div>
+      <form id="user-access-form" onsubmit="window.saveUserAccessSubmit(event)" style="padding: 22px;">
+        <input type="hidden" id="user-edit-orig-email" value="">
+
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label for="user-input-email" style="display: block; font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 6px;">
+            <i class="fa-brands fa-google text-cyan"></i> Google Email Address <span style="color: #f43f5e;">*</span>
+          </label>
+          <input type="email" id="user-input-email" required placeholder="e.g. customer@gmail.com" style="width: 100%; padding: 10px 12px; background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(255,255,255,0.18); border-radius: 8px; color: #ffffff; font-size: 13.5px;">
+          <span style="font-size: 11px; color: #94a3b8; margin-top: 4px; display: block;">Authorized user will log in instantly with this Google account.</span>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label for="user-input-name" style="display: block; font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 6px;">
+            <i class="fa-solid fa-user text-cyan"></i> Name / Customer Business Name <span style="color: #f43f5e;">*</span>
+          </label>
+          <input type="text" id="user-input-name" required placeholder="e.g. Ramesh Kumar or Kavitha Feeds" style="width: 100%; padding: 10px 12px; background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(255,255,255,0.18); border-radius: 8px; color: #ffffff; font-size: 13.5px;">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 14px;">
+          <label for="user-input-role" style="display: block; font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 6px;">
+            <i class="fa-solid fa-id-badge text-cyan"></i> Role &amp; Permissions <span style="color: #f43f5e;">*</span>
+          </label>
+          <select id="user-input-role" style="width: 100%; padding: 10px 12px; background: #1e293b; border: 1px solid rgba(255,255,255,0.18); border-radius: 8px; color: #ffffff; font-size: 13px;">
+            <option value="customer">👤 Customer / Client (View Invoices &amp; Ledger only)</option>
+            <option value="operator" selected>💼 Billing Operator / Staff (Create Bills &amp; Inventory)</option>
+            <option value="admin">🛡️ Administrator (Full Store Management)</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 18px;">
+          <label for="user-input-status" style="display: block; font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 6px;">
+            <i class="fa-solid fa-toggle-on text-cyan"></i> Login Status
+          </label>
+          <select id="user-input-status" style="width: 100%; padding: 10px 12px; background: #1e293b; border: 1px solid rgba(255,255,255,0.18); border-radius: 8px; color: #ffffff; font-size: 13px;">
+            <option value="active">🟢 Active (Access Enabled)</option>
+            <option value="suspended">🔴 Suspended (Temporarily Paused)</option>
+          </select>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 14px;">
+          <button type="button" class="btn btn-secondary" onclick="window.closeUserModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-save-user-access"><i class="fa-solid fa-check"></i> Save &amp; Grant Access</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- WHATSAPP BOT & AUTOMATION MODAL -->
   <div id="whatsapp-bot-modal" class="modal-overlay hidden" onclick="if(event.target === this) closeWhatsAppBotModal(event);" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(4px); align-items: center; justify-content: center;">
     <div class="modal-box" style="max-width: 520px; width: 92%; border-radius: 16px; overflow: hidden; background: #ffffff; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);">
@@ -5044,7 +5140,7 @@
     <i class="fa-solid fa-wifi" id="network-banner-icon"></i> <span id="network-banner-text">Working Offline</span>
   </div>
 
-  <script src="index_v5.js?v=592_clean_minimal_login"></script>
+  <script src="index_v5.js?v=593_rbac_user_management"></script>
 </body>
 </html>
 

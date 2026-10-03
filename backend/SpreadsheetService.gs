@@ -378,3 +378,60 @@ function appendAuditLog(action, user, recordId, status, details, ss) {
     Logger.log("Audit log failed: " + e.message);
   }
 }
+
+// --- SETTINGS STORAGE IN AUTHORITATIVE GOOGLE SHEET ---
+
+function readSettingsFromSheet(ss) {
+  try {
+    if (!ss) ss = getMasterSpreadsheet();
+    var sheet = ss.getSheetByName("Settings");
+    if (!sheet) return {};
+
+    var data = sheet.getDataRange().getValues();
+    if (!data || data.length < 2) return {};
+
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0] || "").trim() === "GLOBAL_SETTINGS") {
+        var rawJson = String(data[i][1] || "");
+        if (rawJson) {
+          return JSON.parse(rawJson);
+        }
+      }
+    }
+    return {};
+  } catch (e) {
+    Logger.log("Failed to read settings from sheet: " + e.message);
+    return {};
+  }
+}
+
+function writeSettingsToSheet(settingsObj, ss) {
+  try {
+    if (!settingsObj || typeof settingsObj !== "object") return;
+    if (!ss) ss = getMasterSpreadsheet();
+    var sheet = ss.getSheetByName("Settings");
+    if (!sheet) return;
+
+    var jsonStr = JSON.stringify(settingsObj);
+    var nowIso = new Date().toISOString();
+    var data = sheet.getDataRange().getValues();
+    var rowIdx = -1;
+
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0] || "").trim() === "GLOBAL_SETTINGS") {
+        rowIdx = i + 1;
+        break;
+      }
+    }
+
+    if (rowIdx !== -1) {
+      sheet.getRange(rowIdx, 2).setValue(jsonStr);
+      sheet.getRange(rowIdx, 3).setValue(nowIso);
+    } else {
+      sheet.appendRow(["GLOBAL_SETTINGS", jsonStr, nowIso]);
+    }
+  } catch (e) {
+    Logger.log("Failed to write settings to sheet: " + e.message);
+  }
+}
+
