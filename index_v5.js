@@ -1055,7 +1055,7 @@ elements.sumIgstRow = elements.sumIgst ? elements.sumIgst.closest('.summary-row'
 window.lastSyncETag = null;
 window.lastSyncTimestamp = parseInt(localStorage.getItem("aaryan_last_sync_time") || "0", 10);
 
-const GOOGLE_SCRIPT_URL = window.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbyPxzRKWP-3X2TwohWJYEqUeRVwW3YZ_5e0eNFjRKRwDEwBB-PIWZC061-ooIy7uFU9FA/exec";
+const GOOGLE_SCRIPT_URL = window.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbzfqLngWe61R8GLiXcxBkl6t-SlLP5NXsnMlv_ocuYu-5J7jIeiGcXnNgpi5oAE32nDww/exec";
 const API_SECRET_TOKEN = window.API_SECRET_TOKEN || "AARYAN_AQUA_SECURE_KEY_2026";
 const GOOGLE_SCRIPT_FALLBACK_URL = GOOGLE_SCRIPT_URL;
 
@@ -3447,7 +3447,9 @@ let lockTimerSeconds = 1800; // 30 mins default enterprise duration (or 0 for di
 let isLocked = true;
 let autolockInterval = null;
 
-window.AUTHORIZED_LOGIN_EMAIL = "kandukurijagan99@gmail.com";
+Object.defineProperty(window, 'AUTHORIZED_LOGIN_EMAIL', {
+  get: function() { return (typeof globalSettings !== 'undefined' && globalSettings.security?.username) ? globalSettings.security.username : "kandukurijagan99@gmail.com"; }
+});
 
 // ============================================================================
 // REAL-WORLD ENTERPRISE PERSISTENT AUTHENTICATION ENGINE (30-DAY REMEMBERED LOGIN)
@@ -5402,12 +5404,18 @@ function bindBillingFormInputs() {
   window.playAudioFeedback = function(type) {
     if (!audioFxEnabled) return;
     try {
+      // Prevent browser warnings by only initializing audio if user has interacted
+      if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
+
       if (!audioCtx) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (AudioContext) audioCtx = new AudioContext();
       }
       if (!audioCtx) return;
-      if (audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(()=>{});
+        if (audioCtx.state === 'suspended') return;
+      }
 
       const now = audioCtx.currentTime;
       const osc = audioCtx.createOscillator();
@@ -14776,7 +14784,7 @@ function loadSettingsFields() {
   }
 
   elements.setAutolockTimer.value = globalSettings.security?.autolock !== undefined ? globalSettings.security.autolock : "1800";
-  elements.setLoginUsername.value = "kandukurijagan99@gmail.com";
+  elements.setLoginUsername.value = globalSettings.security?.username || "kandukurijagan99@gmail.com";
   elements.setLoginPassword.value = globalSettings.security?.password || globalSettings.security?.pin || "Aaryan@2024";
   if (elements.setSecurityPin) elements.setSecurityPin.value = globalSettings.security?.securityPin || globalSettings.security?.pin || "2024";
   if (elements.setStrictBootLock) elements.setStrictBootLock.checked = globalSettings.security?.strictBootLock !== false;
@@ -15659,7 +15667,7 @@ window.toggleAdvancedSettings = function() {
   }
 };
 
-window.AUTHORIZED_LOGIN_EMAIL = "kandukurijagan99@gmail.com";
+// Removed redundant hardcoded AUTHORIZED_LOGIN_EMAIL assignment
 // Official Google Cloud OAuth 2.0 Web Client ID
 window.GOOGLE_OAUTH_CLIENT_ID = "902168382803-6gof845v72ku6k4lp4mecsgr3l1uc3s0.apps.googleusercontent.com";
 
@@ -15721,14 +15729,12 @@ window.getAuthorizedUsersList = function() {
 
   const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
 
-  // STRICT AUDIT & PURGE: Keep ONLY users explicitly authorized by Main Admin!
-  // Any legacy auto-created test account (e.g. endukuniku35@gmail.com) is completely discarded.
+  // Retain all authorized users explicitly added to the access list
   list = list.filter(u => {
     if (!u || !u.email) return false;
     const email = (u.email || "").toLowerCase().trim();
     if (email === mainAdminNorm) return false; // Handled below as permanent master
-    if (email === "endukuniku35@gmail.com") return false; // Hard blocked test account
-    return (u.addedBy === mainAdminNorm || u.isMainAdminApproved === true || String(u.isMainAdminApproved) === "true");
+    return true;
   });
 
   // Main Admin is ALWAYS permanent index 0
@@ -15763,8 +15769,8 @@ window.isUserAuthorizedByAdmin = function(email) {
   if (!norm) return false;
   const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
   if (norm === mainAdminNorm) return true;
-  if (norm === "endukuniku35@gmail.com") return false;
   
+
   const list = window.getAuthorizedUsersList();
   const matched = list.find(u => (u.email || "").toLowerCase().trim() === norm);
   if (!matched) return false;

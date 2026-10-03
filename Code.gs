@@ -1278,13 +1278,13 @@ function handleApiPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 1.5 Authentication-exempt Actions (Strictly scoped to kandukurijagan99@gmail.com)
+    // 1.5 Authentication-exempt Actions
     if (action === "send_login_otp") {
       var targetEmail = String(data.email || "").trim().toLowerCase();
-      if (targetEmail !== "kandukurijagan99@gmail.com") {
+      if (!targetEmail) {
         return ContentService.createTextOutput(JSON.stringify({
           ok: false,
-          error: "Unauthorized email address. Only kandukurijagan99@gmail.com is permitted."
+          error: "Valid email address is required."
         })).setMimeType(ContentService.MimeType.JSON);
       }
       var otpCode = String(Math.floor(100000 + Math.random() * 900000));
@@ -1310,7 +1310,7 @@ function handleApiPost(e) {
                     "</div>" +
                     "<p style='font-size: 13px; color: #475569;'>Or use this 6-digit one-time code on the lock screen:</p>" +
                     "<div style='font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #0f172a; background: #f1f5f9; padding: 14px; border-radius: 8px; text-align: center; margin: 15px 0; border: 1px dashed #cbd5e1;'>" + otpCode + "</div>" +
-                    "<p style='font-size: 11.5px; color: #94a3b8; margin-top: 20px; border-top: 1px solid #f1f5f9; padding-top: 12px;'>Authorized for <strong>kandukurijagan99@gmail.com</strong> only. Expires in 15 minutes.</p>" +
+                    "<p style='font-size: 11.5px; color: #94a3b8; margin-top: 20px; border-top: 1px solid #f1f5f9; padding-top: 12px;'>Authorized login access. Expires in 15 minutes.</p>" +
                     "</div>"
         });
         try {
@@ -1326,10 +1326,10 @@ function handleApiPost(e) {
     if (action === "verify_login_otp") {
       var targetEmail = String(data.email || "").trim().toLowerCase();
       var enteredCode = String(data.otp || "").trim();
-      if (targetEmail !== "kandukurijagan99@gmail.com") {
+      if (!targetEmail) {
         return ContentService.createTextOutput(JSON.stringify({
           ok: false,
-          error: "Unauthorized email address. Access denied."
+          error: "Valid email address is required."
         })).setMimeType(ContentService.MimeType.JSON);
       }
       var storedOtp = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_" + targetEmail);
