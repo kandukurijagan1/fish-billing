@@ -3447,6 +3447,67 @@ let lockTimerSeconds = 1800; // 30 mins default enterprise duration (or 0 for di
 let isLocked = true;
 let autolockInterval = null;
 
+window.AUTHORIZED_LOGIN_EMAIL = "kandukurijagan99@gmail.com";
+
+// ============================================================================
+// REAL-WORLD ENTERPRISE PERSISTENT AUTHENTICATION ENGINE (30-DAY REMEMBERED LOGIN)
+// ============================================================================
+window.savePersistentAuthSession = function(userObj) {
+  if (!userObj || !userObj.email) return null;
+  const normEmail = (userObj.email || "").toLowerCase().trim();
+  const isMainAdmin = (normEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
+  const sessionData = {
+    authenticated: true,
+    email: normEmail,
+    name: userObj.name || normEmail.split("@")[0],
+    role: isMainAdmin ? "super_admin" : (userObj.role || "customer"),
+    isMainAdmin: isMainAdmin,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + (30 * 24 * 60 * 60 * 1000) // 30-day persistent real-world session
+  };
+  try {
+    localStorage.setItem("aaryan_auth_session", JSON.stringify(sessionData));
+    localStorage.setItem("app_authenticated", "true");
+    localStorage.setItem("app_locked", "false");
+    localStorage.setItem("last_logged_in_email", normEmail);
+  } catch (e) {}
+
+  sessionStorage.setItem("session_authenticated", "true");
+  sessionStorage.setItem("current_user_email", normEmail);
+  sessionStorage.setItem("current_user_name", sessionData.name);
+  sessionStorage.setItem("current_user_role", sessionData.role);
+  sessionStorage.setItem("is_main_admin", isMainAdmin ? "true" : "false");
+  sessionStorage.setItem("manual_locked", "false");
+  sessionStorage.setItem("session_last_active_time", Date.now().toString());
+
+  return sessionData;
+};
+
+window.getPersistentAuthSession = function() {
+  try {
+    const raw = localStorage.getItem("aaryan_auth_session");
+    if (!raw) return null;
+    const sess = JSON.parse(raw);
+    if (sess && sess.authenticated && sess.email) {
+      if (sess.expiresAt && Date.now() > sess.expiresAt) {
+        window.clearPersistentAuthSession();
+        return null;
+      }
+      return sess;
+    }
+  } catch (e) {}
+  return null;
+};
+
+window.clearPersistentAuthSession = function() {
+  try {
+    localStorage.removeItem("aaryan_auth_session");
+    localStorage.removeItem("app_authenticated");
+    localStorage.setItem("app_locked", "true");
+    sessionStorage.clear();
+  } catch (e) {}
+};
+
 
 // --- NUMBER TO WORDS ENGINE (INDIAN RUPEES SYSTEM) ---
 function convertNumberToWords(num) {
@@ -3815,18 +3876,42 @@ function initializeApp() {
     }
   });
 
-  // Real-Time Enterprise Session Lifecycle & Verification (v425)
+  // REAL-WORLD ENTERPRISE SESSION PERSISTENCE (30-Day Remembered Login)
+  const savedSession = (typeof window.getPersistentAuthSession === 'function') ? window.getPersistentAuthSession() : null;
   const hasSessionAuth = sessionStorage.getItem("session_authenticated") === "true";
-  const sessionLastActive = parseInt(sessionStorage.getItem("session_last_active_time") || localStorage.getItem("last_active_time") || "0", 10);
-  const timeoutMs = (lockTimerSeconds > 0 ? lockTimerSeconds : 1800) * 1000;
-  const isSessionTimedOut = (timeoutMs > 0 && sessionLastActive > 0 && (Date.now() - sessionLastActive > timeoutMs));
   const isManuallyLocked = sessionStorage.getItem("manual_locked") === "true";
   const lockoutStatus = AppSecurity.isLockedOut();
 
-  // If tab was closed and reopened, sessionStorage was cleared by browser.
-  // Purge any residual localStorage flag so fresh launch strictly demands Google login.
-  if (!hasSessionAuth) {
-    localStorage.removeItem("app_authenticated");
+  let canStayUnlocked = false;
+
+  if (savedSession && !isManuallyLocked && !lockoutStatus.locked) {
+    const usersList = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
+    const isMainAdmin = (savedSession.email === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
+    const matchedUser = isMainAdmin
+      ? { status: "active", role: "super_admin" }
+      : usersList.find(u => (u.email || "").toLowerCase().trim() === savedSession.email);
+
+    if (matchedUser && matchedUser.status === "active") {
+      // User is verified and active! Restore session immediately without asking to login again!
+      canStayUnlocked = true;
+      const role = matchedUser.role || savedSession.role || "customer";
+      sessionStorage.setItem("session_authenticated", "true");
+      sessionStorage.setItem("current_user_email", savedSession.email);
+      sessionStorage.setItem("current_user_name", savedSession.name);
+      sessionStorage.setItem("current_user_role", role);
+      sessionStorage.setItem("is_main_admin", isMainAdmin ? "true" : "false");
+      sessionStorage.setItem("manual_locked", "false");
+      sessionStorage.setItem("session_last_active_time", Date.now().toString());
+      localStorage.setItem("app_authenticated", "true");
+      localStorage.setItem("app_locked", "false");
+    } else {
+      // User suspended by admin -> revoke persistent session
+      if (typeof window.clearPersistentAuthSession === 'function') {
+        window.clearPersistentAuthSession();
+      }
+    }
+  } else if (hasSessionAuth && !isManuallyLocked && !lockoutStatus.locked) {
+    canStayUnlocked = true;
   }
 
   // Auto-migrate legacy cleartext saved_password to cryptographic SHA-256 token
@@ -3848,17 +3933,15 @@ function initializeApp() {
     if (pText) pText.textContent = "Privacy ON";
   }
 
-  // ADVANCED REAL-TIME SESSION RULES:
-  // 1. Page Reload (F5 / Refresh) in active tab -> hasSessionAuth is true, NOT timed out, NOT manually locked -> STAYS UNLOCKED!
-  // 2. Tab/Browser Closed & Reopened -> sessionStorage is empty -> hasSessionAuth is false -> REQUIRES GOOGLE LOGIN!
-  // 3. Inactivity Timeout -> isSessionTimedOut is true -> LOCKS SCREEN WITH TIMEOUT NOTICE!
-  // 4. Manually Locked -> isManuallyLocked is true -> STAYS LOCKED!
-  const canStayUnlocked = hasSessionAuth && !isSessionTimedOut && !isManuallyLocked && !lockoutStatus.locked;
-
   if (canStayUnlocked) {
     unlockSystemSilently(false);
+    const roleToApply = sessionStorage.getItem("current_user_role") || "customer";
+    if (typeof window.applyRolePermissions === 'function') {
+      window.applyRolePermissions(roleToApply);
+    }
   } else {
-    const lockReason = isSessionTimedOut ? "inactivity_timeout" : (isManuallyLocked ? "manual" : "initial");
+    // Only locked if never signed in before or explicitly logged out
+    const lockReason = isManuallyLocked ? "manual" : "initial";
     triggerLockOverlay(lockReason, false);
     autofillRememberedCredentials();
   }
@@ -15508,18 +15591,7 @@ window.initGoogleIdentityServices = function() {
       cancel_on_tap_outside: true
     });
 
-    const btnSlot = document.getElementById("google-signin-btn-slot");
-    if (btnSlot) {
-      google.accounts.id.renderButton(btnSlot, {
-        type: "standard",
-        theme: "outline",
-        size: "large",
-        text: "signin_with",
-        shape: "rectangular",
-        logo_alignment: "left",
-        width: 320
-      });
-    }
+    // Keep custom pristine Google button active for 100% reliable account chooser
   } catch (e) {
     console.warn("GIS initialization error:", e);
   }
@@ -15644,12 +15716,15 @@ window.verifyAndAuthorizeUser = function(email, displayName) {
     const role = matchedUser.role || (isMainAdmin ? "super_admin" : "customer");
     const name = displayName || matchedUser.name || normEmail.split("@")[0];
 
-    // Store active session credentials
-    sessionStorage.setItem("current_user_email", normEmail);
-    sessionStorage.setItem("current_user_name", name);
-    sessionStorage.setItem("current_user_role", role);
-    sessionStorage.setItem("is_main_admin", isMainAdmin ? "true" : "false");
-    localStorage.setItem("last_logged_in_email", normEmail);
+    // Store PERSISTENT real-world session (30-day remembered login)
+    if (typeof window.savePersistentAuthSession === 'function') {
+      window.savePersistentAuthSession({
+        email: normEmail,
+        name: name,
+        role: role,
+        isMainAdmin: isMainAdmin
+      });
+    }
 
     window.updateUserLastLogin(normEmail);
 
@@ -15740,14 +15815,12 @@ window.triggerDirectGoogleAuth = async function() {
     }
   }
 
-  // Fallback to GIS prompt if oauth2 is not ready yet
-  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
-    try {
-      google.accounts.id.prompt();
-      return;
-    } catch (e) {
-      console.warn("Prompt error:", e);
-    }
+  if (typeof google === 'undefined' || !google.accounts) {
+    if (label) label.textContent = "Connecting...";
+    setTimeout(() => {
+      window.triggerDirectGoogleAuth();
+    }, 500);
+    return;
   }
 
   showFloatingToast("ℹ️ Connecting to Google Identity Services...", "info", 3000);
