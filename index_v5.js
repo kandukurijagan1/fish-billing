@@ -15698,18 +15698,30 @@ window.verifyAndAuthorizeUser = function(email, displayName) {
     ? { email: window.AUTHORIZED_LOGIN_EMAIL, name: displayName || "Jagan (Main Admin)", role: "super_admin", status: "active" }
     : usersList.find(u => (u.email || "").toLowerCase().trim() === normEmail);
 
-  // Direct login for any user / customer: automatically create their account if new
+  // STRICT ACCESS CONTROL: Only users explicitly granted access by Main Admin can log in!
   if (!matchedUser) {
-    matchedUser = {
-      email: normEmail,
-      name: displayName || normEmail.split("@")[0],
-      role: "customer",
-      status: "active",
-      createdAt: new Date().toISOString(),
-      lastLogin: new Date().toISOString()
-    };
-    usersList.push(matchedUser);
-    window.saveAuthorizedUsersList(usersList);
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 4px; font-size: 13.5px;">
+          <i class="fa-solid fa-ban"></i> Access Denied
+        </div>
+        <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5;">
+          <strong>${escapeHtml(normEmail)}</strong> is not authorized to access this billing system.<br>
+          Please contact Main Admin (<strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong>) to request access.
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    const card = document.querySelector(".login-card");
+    if (card) {
+      card.classList.remove("shake-animation");
+      void card.offsetWidth;
+      card.classList.add("shake-animation");
+    }
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`⛔ Access Denied: ${normEmail} has not been authorized by Main Admin.`, "warning", 5000);
+    }
+    return false;
   }
 
   if (matchedUser && matchedUser.status === "active") {
@@ -16043,13 +16055,14 @@ window.applyRolePermissions = function(role) {
   const isAdmin = (currentRole === 'admin' || isSuperAdmin);
   const isCustomer = (currentRole === 'customer');
 
-  // Header user badge
+  const email = sessionStorage.getItem("current_user_email") || (isSuperAdmin ? window.AUTHORIZED_LOGIN_EMAIL : "");
+  const name = sessionStorage.getItem("current_user_name") || (isSuperAdmin ? "Jagan (Main Admin)" : (email.split("@")[0] || "User"));
+  const roleIcon = isSuperAdmin ? "fa-crown" : (isAdmin ? "fa-shield-halved" : (isCustomer ? "fa-user-check" : "fa-briefcase"));
+  const roleLabel = isSuperAdmin ? "Main Admin" : (isAdmin ? "Admin" : (isCustomer ? "Customer" : "Staff"));
+
+  // 1. Header user badge
   const badgeSlot = document.getElementById("header-user-badge-slot");
   if (badgeSlot) {
-    const email = sessionStorage.getItem("current_user_email") || (isSuperAdmin ? window.AUTHORIZED_LOGIN_EMAIL : "");
-    const name = sessionStorage.getItem("current_user_name") || (isSuperAdmin ? "Jagan (Main Admin)" : (email.split("@")[0] || "User"));
-    const roleIcon = isSuperAdmin ? "fa-crown" : (isAdmin ? "fa-shield-halved" : (isCustomer ? "fa-user-check" : "fa-briefcase"));
-    const roleLabel = isSuperAdmin ? "Main Admin" : (isAdmin ? "Admin" : (isCustomer ? "Customer" : "Staff"));
     const badgeBg = isSuperAdmin ? "background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.35); color: #f59e0b;"
       : (isAdmin ? "background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.35); color: #38bdf8;"
       : (isCustomer ? "background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.35); color: #10b981;"
@@ -16063,16 +16076,55 @@ window.applyRolePermissions = function(role) {
     `;
   }
 
-  // User management panel visibility in Settings (Main Admin only)
+  // 2. Sidebar profile (bottom-left)
+  const sbName = document.getElementById("sidebar-user-name");
+  const sbEmail = document.getElementById("sidebar-user-email");
+  if (sbName) sbName.textContent = name;
+  if (sbEmail) {
+    sbEmail.textContent = email;
+    sbEmail.title = email;
+  }
+
+  // 3. Dashboard Hero greeting & metadata
+  const dashGreeting = document.getElementById("dashboard-user-greeting");
+  const dashMeta = document.getElementById("dashboard-user-auth-meta");
+  if (dashGreeting) {
+    dashGreeting.innerHTML = `Welcome back, ${escapeHtml(name)} 👋`;
+  }
+  if (dashMeta) {
+    dashMeta.innerHTML = isSuperAdmin
+      ? `Aaryan Aqua Needs • Main Administrator Master: <strong>${escapeHtml(email)}</strong>`
+      : `Aaryan Aqua Needs • Logged in as: <strong>${escapeHtml(email)}</strong> (${roleLabel})`;
+  }
+
+  // 4. Role Navigation Restrictions
+  // Settings Tab (Super Admin and Admin only)
+  const settingsTabBtn = document.querySelector('.nav-item[data-tab="settings"]');
+  if (settingsTabBtn) {
+    settingsTabBtn.style.display = isCustomer ? "none" : "";
+  }
+
+  // Reports Tab (Super Admin, Admin, and Staff only - NOT Customer)
+  const reportsTabBtn = document.querySelector('.nav-item[data-tab="reports"]');
+  if (reportsTabBtn) {
+    reportsTabBtn.style.display = isCustomer ? "none" : "";
+  }
+
+  // User Management Panel in Settings (Main Admin only)
   const userMgrPanel = document.getElementById("user-management-panel");
   if (userMgrPanel) {
     userMgrPanel.style.display = isSuperAdmin ? "" : "none";
   }
 
-  // Customer restrictions
-  const settingsTabBtn = document.querySelector('.nav-item[data-tab="settings"]');
-  if (settingsTabBtn) {
-    settingsTabBtn.style.display = isCustomer ? "none" : "";
+  // 5. Customer Privacy Shield on Sensitive Financial Metrics
+  const grossProfitCards = document.querySelectorAll('.stat-card');
+  const chartsGrid = document.querySelector('.dashboard-charts-grid');
+  if (isCustomer) {
+    if (grossProfitCards && grossProfitCards[3]) grossProfitCards[3].style.display = "none";
+    if (chartsGrid) chartsGrid.style.display = "none";
+  } else {
+    if (grossProfitCards && grossProfitCards[3]) grossProfitCards[3].style.display = "";
+    if (chartsGrid) chartsGrid.style.display = "";
   }
 
   if (isSuperAdmin && typeof window.renderUserManagerTable === 'function') {
