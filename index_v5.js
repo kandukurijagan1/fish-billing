@@ -15864,9 +15864,16 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
       if (res.ok) {
         const text = await res.text();
         const data = JSON.parse(text);
-        if (data && data.settings && data.settings.authorizedUsers) {
-           window.saveAuthorizedUsersList(data.settings.authorizedUsers);
-           isAuthorized = window.isUserAuthorizedByAdmin(normEmail);
+        let cloudSettings = data ? (data.settings || data.globalSettings) : null;
+        if (typeof cloudSettings === 'string') {
+          try { cloudSettings = JSON.parse(cloudSettings); } catch(_) {}
+        }
+        if (cloudSettings && typeof cloudSettings === 'object') {
+          const authList = cloudSettings.authorizedUsers || cloudSettings.authorized_users;
+          if (authList) {
+            window.saveAuthorizedUsersList(authList);
+            isAuthorized = window.isUserAuthorizedByAdmin(normEmail);
+          }
         }
       }
     } catch(e) {

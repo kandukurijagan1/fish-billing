@@ -1503,7 +1503,9 @@ function writeSettingsToSheet(settingsObj, ss) {
     if (!settingsObj || typeof settingsObj !== "object") return;
     if (!ss) ss = getMasterSpreadsheet();
     var sheet = ss.getSheetByName("Settings");
-    if (!sheet) return;
+    if (!sheet) {
+      sheet = ensureSheetWithHeaders(ss, "Settings", ["Setting Key", "Setting Value JSON", "Last Updated"], "#ea580c");
+    }
 
     var jsonStr = JSON.stringify(settingsObj);
     var nowIso = new Date().toISOString();
@@ -1535,4 +1537,3 @@ function doGet(e) {
 function doPost(e) {
   return handleApiPost(e);
 }
-
