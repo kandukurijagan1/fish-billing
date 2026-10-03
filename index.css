@@ -1097,24 +1097,9 @@ body {
 }
 
 /* Live Active Session Timing Pill */
-.session-timer-pill {
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 5px !important;
-  height: 28px !important;
-  padding: 0 9px !important;
-  border-radius: 14px !important;
-  font-size: 11px !important;
-  font-weight: 700 !important;
-  font-variant-numeric: tabular-nums !important;
-  white-space: nowrap !important;
-  flex-shrink: 0 !important;
-  cursor: pointer !important;
-  user-select: none !important;
-  transition: all 0.2s ease !important;
-  background: rgba(13, 148, 136, 0.1) !important;
-  border: 1px solid rgba(13, 148, 136, 0.25) !important;
-  color: #0f766e !important;
+.session-timer-pill,
+#live-session-timer-pill {
+  display: none !important;
 }
 
 .session-timer-pill:hover {

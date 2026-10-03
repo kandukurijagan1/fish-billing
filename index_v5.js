@@ -280,31 +280,20 @@ const TurboOutboxQueue = {
       window.updateCloudSyncBadge("syncing");
     }
 
-    // High-speed parallel worker pool (concurrency = 4)
-    const CONCURRENCY = 4;
+    // Robust sequential drain to eliminate Google Apps Script lock contention
     const remaining = [];
-
-    for (let i = 0; i < items.length; i += CONCURRENCY) {
-      const chunk = items.slice(i, i + CONCURRENCY);
-      const results = await Promise.allSettled(chunk.map(async (item) => {
-        try {
-          const res = await pushDirectToGoogleDatabaseRaw(item.action, item.payload);
-          if (!res || (!res.ok && !res.success)) {
-            item.attempts = (item.attempts || 0) + 1;
-            return { success: false, item };
-          }
-          return { success: true, item };
-        } catch (e) {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      try {
+        const res = await pushDirectToGoogleDatabaseRaw(item.action, item.payload);
+        if (!res || (!res.ok && !res.success)) {
           item.attempts = (item.attempts || 0) + 1;
-          return { success: false, item };
+          if (item.attempts < 5) remaining.push(item);
         }
-      }));
-
-      results.forEach((r, idx) => {
-        if (r.status === 'rejected' || (r.value && !r.value.success)) {
-          remaining.push(r.value ? r.value.item : chunk[idx]);
-        }
-      });
+      } catch (e) {
+        item.attempts = (item.attempts || 0) + 1;
+        if (item.attempts < 5) remaining.push(item);
+      }
     }
 
     this.setItems(remaining);
@@ -2612,9 +2601,11 @@ async function pushDirectToGoogleDatabase(action, payload, maxRetries = 2) {
 
   const bodyStr = JSON.stringify(gasPayload);
 
+  window._lastWriteTimestamp = Date.now();
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    // 25-second timeout gives Google Apps Script ample time to execute locks and sheet writes
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
     try {
       const res = await fetch(GOOGLE_SCRIPT_URL, {
         method: "POST",
@@ -2636,6 +2627,10 @@ async function pushDirectToGoogleDatabase(action, payload, maxRetries = 2) {
         try { data = JSON.parse(text); } catch (pe) {}
         if (data && (data.ok || data.success)) {
           window.lastSyncTimeMs = Date.now();
+          window._lastWriteTimestamp = Date.now();
+          if (data.hash) {
+            lastSyncDataHash = data.hash;
+          }
           if (typeof window.updateCloudSyncBadge === "function") {
             window.updateCloudSyncBadge("synced");
           }
@@ -2647,7 +2642,7 @@ async function pushDirectToGoogleDatabase(action, payload, maxRetries = 2) {
     }
 
     if (attempt < maxRetries) {
-      const backoffMs = Math.pow(2, attempt) * 60 + Math.floor(Math.random() * 30);
+      const backoffMs = Math.pow(2, attempt) * 200 + Math.floor(Math.random() * 100);
       await new Promise(r => setTimeout(r, backoffMs));
     }
   }
@@ -3228,32 +3223,27 @@ try {
       fetch(pingUrl, { mode: 'no-cors', cache: 'no-store', keepalive: true, priority: 'low' }).catch(() => {});
     }
   };
-  // Immediate warm-up ping on script load (0ms)
-  doPing();
-  setTimeout(doPing, 300);
-  // Keep-alive ping every 40 seconds to prevent cold starts
-  setInterval(doPing, 40000);
-  // Prewarm on window focus and online
-  window.addEventListener('focus', doPing);
-  window.addEventListener('online', doPing);
+  // Gentle warm-up ping
+  setTimeout(doPing, 1000);
+  // Keep-alive ping every 3 minutes to keep V8 warm without spamming
+  setInterval(doPing, 180000);
 })();
 
-// Auto-sync heartbeat: refresh data from Google Cloud every 30 seconds or on tab focus
+// Auto-sync heartbeat: refresh data from Google Cloud with smart debouncing (no congestion)
 (function startAutoSyncHeartbeat() {
   setInterval(() => {
-    if (navigator.onLine && !isSyncing && document.visibilityState === 'visible') {
+    const timeSinceLastWrite = Date.now() - (window._lastWriteTimestamp || 0);
+    const timeSinceLastSync = Date.now() - (window.lastSyncTimeMs || 0);
+    if (navigator.onLine && !isSyncing && document.visibilityState === 'visible' && timeSinceLastWrite > 20000 && timeSinceLastSync > 40000) {
       window.triggerDatabaseSync(false);
     }
-  }, 15000);
+  }, 45000);
 
+  let lastFocusSync = 0;
   window.addEventListener('focus', () => {
-    if (navigator.onLine && !isSyncing) {
-      window.triggerDatabaseSync(false);
-    }
-  });
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && navigator.onLine && !isSyncing) {
+    const timeSinceLastWrite = Date.now() - (window._lastWriteTimestamp || 0);
+    if (navigator.onLine && !isSyncing && timeSinceLastWrite > 20000 && Date.now() - lastFocusSync > 45000) {
+      lastFocusSync = Date.now();
       window.triggerDatabaseSync(false);
     }
   });
@@ -15122,21 +15112,15 @@ function formatSessionDuration(seconds) {
 
 function updateSessionTimerUI() {
   const pill = document.getElementById("live-session-timer-pill");
-  const textEl = document.getElementById("session-timer-text");
-  const iconEl = document.getElementById("session-timer-icon");
-  if (!pill || !textEl) return;
+  if (pill) {
+    pill.style.display = "none";
+  }
 
   if (isLocked) {
-    pill.style.display = "none";
     return;
   }
 
-  pill.style.display = "inline-flex";
-
   if (!lockTimerSeconds || lockTimerSeconds <= 0) {
-    textEl.innerHTML = `<span class="session-label">Session: </span><span class="session-val">Active ∞</span>`;
-    pill.className = "session-timer-pill";
-    if (iconEl) iconEl.className = "fa-solid fa-infinity text-teal";
     return;
   }
 
@@ -15145,27 +15129,7 @@ function updateSessionTimerUI() {
   const elapsedSec = Math.floor((now - lastActive) / 1000);
   const remainingSec = Math.max(0, lockTimerSeconds - elapsedSec);
 
-  const timeStr = formatSessionDuration(remainingSec);
-  textEl.innerHTML = `<span class="session-label">Idle Lock: </span><span class="session-val">${timeStr}</span>`;
-
-  if (remainingSec <= 30) {
-    pill.className = "session-timer-pill critical";
-    if (iconEl) iconEl.className = "fa-solid fa-hourglass-end text-rose fa-shake";
-    if (!window._inactivityWarningToastShown && remainingSec > 5) {
-      window._inactivityWarningToastShown = true;
-      if (typeof showFloatingToast === 'function') {
-        showFloatingToast(`⚠️ Inactivity Warning: Screen will lock in ${remainingSec}s unless active.`, "warning", 4000);
-      }
-    }
-  } else if (remainingSec <= 120) {
-    pill.className = "session-timer-pill warning";
-    if (iconEl) iconEl.className = "fa-solid fa-hourglass-half text-amber";
-  } else {
-    pill.className = "session-timer-pill";
-    if (iconEl) iconEl.className = "fa-solid fa-hourglass-start text-teal";
-  }
-
-  // Trigger auto-lock strictly if session timing exhausted
+  // Trigger silent background security auto-lock strictly if session timing exhausted
   if (remainingSec <= 0 && !isLocked) {
     triggerLockOverlay("inactivity_timeout", true);
   }

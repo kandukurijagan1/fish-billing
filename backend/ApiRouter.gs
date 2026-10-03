@@ -55,26 +55,59 @@ function handleApiGet(e) {
     return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
 
-  // 2. Authoritative Sync / Pull — ALWAYS fresh from Google Sheets (NO cache)
+  // 2. Authoritative Sync / Pull — Fast RAM Cache & Delta Validation
   if (action === "sync" || action === "pull") {
     var auth = authenticateRequest(e, null);
     if (!auth.ok) {
       return ContentService.createTextOutput(JSON.stringify(auth)).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // Read Authoritative Data DIRECTLY from Google Sheets — no cache
+    var clientHash = e && e.parameter && e.parameter.hash ? String(e.parameter.hash).trim() : "";
+    var cache = CacheService.getScriptCache();
+    var latestSyncHash = cache.get("latest_sync_hash");
+
+    // ⚡ Lightning-Fast Check (<20ms): if client hash matches cached latest hash, return 304 Not Modified
+    if (clientHash && latestSyncHash && clientHash === latestSyncHash) {
+      return ContentService.createTextOutput(JSON.stringify({
+        ok: true,
+        notModified: true,
+        hash: latestSyncHash,
+        serverTime: Date.now()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Read Authoritative Data DIRECTLY from Google Sheets
     var ssMaster = getMasterSpreadsheet();
     var invs = readInvoicesFromSheet(ssMaster);
     var prods = readInventoryFromSheet(ssMaster);
     var parts = readCustomersFromSheet(ssMaster);
+    var settingsData = readSettingsFromSheet(ssMaster);
+
+    var serverHash = (typeof computeSyncDataHash === 'function') 
+      ? computeSyncDataHash(invs, prods, parts) 
+      : ((invs ? invs.length : 0) + '|' + (prods ? prods.length : 0) + '|' + (parts ? parts.length : 0));
+
+    try {
+      cache.put("latest_sync_hash", serverHash, 21600);
+    } catch (_) {}
+
+    if (clientHash && clientHash === serverHash) {
+      return ContentService.createTextOutput(JSON.stringify({
+        ok: true,
+        notModified: true,
+        hash: serverHash,
+        serverTime: Date.now()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
 
     var fullBundle = {
       ok: true,
+      hash: serverHash,
       invoices: invs,
       products: prods,
       parties: parts,
-      settings: readSettingsFromSheet(ssMaster),
-      globalSettings: readSettingsFromSheet(ssMaster),
+      settings: settingsData,
+      globalSettings: settingsData,
       serverTime: Date.now(),
       timestamp: new Date().toISOString()
     };

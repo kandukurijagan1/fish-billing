@@ -617,10 +617,6 @@ function writeInvoiceToSheet(inv, ss) {
     sheet.getRange(targetRow, 1, 1, rowData.length).setValues([rowData]);
   } else {
     sheet.appendRow(rowData);
-    var newRow = sheet.getLastRow();
-    sheet.getRange(newRow, 5).setNumberFormat("₹#,##0.00");
-    sheet.getRange(newRow, 8).setNumberFormat("₹#,##0.00");
-    sheet.getRange(newRow, 9).setNumberFormat("₹#,##0.00");
   }
 }
 
@@ -740,10 +736,6 @@ function writeInventoryToSheet(products, ss) {
   });
 
   sheet.getRange(2, 1, rows.length, 11).setValues(rows);
-  sheet.getRange(2, 6, rows.length, 1).setNumberFormat("₹#,##0.00");
-  sheet.getRange(2, 7, rows.length, 1).setNumberFormat("0.00\"%\"");
-  sheet.getRange(2, 8, rows.length, 1).setNumberFormat("₹#,##0.00");
-  sheet.getRange(2, 10, rows.length, 1).setNumberFormat("₹#,##0.00");
 }
 
 // --- CUSTOMERS CRUD FROM AUTHORITATIVE GOOGLE SHEET ---
@@ -973,9 +965,12 @@ function processSaveInvoice(invoiceData, user, ss) {
     writeInvoiceToSheet(fullInvoice, ss);
     writeInventoryToSheet(updatedInventory, ss);
 
-    // 8. Invalidate High-Speed Cache Bundle
+    // 8. Invalidate High-Speed Cache Bundle & Generate New Global Sync Hash
+    var newHash = Utilities.getUuid().substr(0, 8) + "_" + Date.now();
     try {
-      CacheService.getScriptCache().remove("cache_sync_bundle");
+      var scriptCache = CacheService.getScriptCache();
+      scriptCache.put("latest_sync_hash", newHash, 21600);
+      scriptCache.remove("cache_sync_bundle");
     } catch (e) {}
 
     // 9. Audit Logging
@@ -983,6 +978,7 @@ function processSaveInvoice(invoiceData, user, ss) {
 
     return {
       ok: true,
+      hash: newHash,
       invoice: fullInvoice,
       record: fullInvoice,
       serverTime: Date.now()
@@ -1158,8 +1154,18 @@ function handleApiGet(e) {
 
     var clientHash = e && e.parameter && e.parameter.hash ? String(e.parameter.hash).trim() : "";
 
-    // ⚡ Fast Cache-First RAM Retrieval (<100ms)
+    // ⚡ Ultra-Fast RAM Cache Check (<20ms)
     var cache = CacheService.getScriptCache();
+    var latestSyncHash = cache.get("latest_sync_hash");
+    if (clientHash && latestSyncHash && clientHash === latestSyncHash) {
+      return ContentService.createTextOutput(JSON.stringify({
+        ok: true,
+        notModified: true,
+        hash: latestSyncHash,
+        serverTime: Date.now()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     var cachedBundleJson = cache.get("cache_sync_bundle");
     if (cachedBundleJson) {
       try {
@@ -1183,6 +1189,9 @@ function handleApiGet(e) {
     var parts = readCustomersFromSheet(ssMaster);
 
     var serverHash = computeSyncDataHash(invs, prods, parts);
+    try {
+      cache.put("latest_sync_hash", serverHash, 21600);
+    } catch (_) {}
 
     // If client data matches server hash, return ultra-lightweight notModified response (< 50 bytes)
     if (clientHash && clientHash === serverHash) {
@@ -1194,14 +1203,15 @@ function handleApiGet(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
+    var settingsData = readSettingsFromSheet(ssMaster || ss);
     var fullBundle = {
       ok: true,
       hash: serverHash,
       invoices: invs,
       products: prods,
       parties: parts,
-      settings: readSettingsFromSheet(ssMaster || ss),
-      globalSettings: readSettingsFromSheet(ssMaster || ss),
+      settings: settingsData,
+      globalSettings: settingsData,
       serverTime: Date.now(),
       timestamp: new Date().toISOString()
     };

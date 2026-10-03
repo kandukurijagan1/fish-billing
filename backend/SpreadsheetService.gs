@@ -291,10 +291,6 @@ function writeInventoryToSheet(products, ss) {
   });
 
   sheet.getRange(2, 1, rows.length, 11).setValues(rows);
-  sheet.getRange(2, 6, rows.length, 1).setNumberFormat("₹#,##0.00");
-  sheet.getRange(2, 7, rows.length, 1).setNumberFormat("0.00\"%\"");
-  sheet.getRange(2, 8, rows.length, 1).setNumberFormat("₹#,##0.00");
-  sheet.getRange(2, 10, rows.length, 1).setNumberFormat("₹#,##0.00");
 }
 
 // --- CUSTOMERS CRUD FROM AUTHORITATIVE GOOGLE SHEET ---
