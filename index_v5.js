@@ -16215,17 +16215,19 @@ window.toggleUserStatus = function(email) {
   showFloatingToast(`ℹ️ Account access for ${email} is now ${statusLabel}.`, "info", 3500);
 };
 
-window.deleteAuthorizedUser = async function(email) {
+window.customConfirm = function(msg) {
+  const cleanMsg = (msg || "").replace(/<[^>]*>/g, '');
+  return Promise.resolve(window.confirm(cleanMsg));
+};
+
+window.deleteAuthorizedUser = function(email) {
   const normEmail = (email || "").toLowerCase().trim();
   if (normEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim()) {
     showFloatingToast("⚠️ Main Admin account cannot be deleted!", "warning");
     return;
   }
 
-  const confirmed = await customConfirm(
-    `Are you sure you want to revoke Google login access for <strong>${escapeHtml(email)}</strong>? They will no longer be able to log into the billing system.`,
-    "Revoke User Access"
-  );
+  const confirmed = confirm(`Are you sure you want to revoke Google login access for ${email}? They will no longer be able to log into the billing system.`);
   if (!confirmed) return;
 
   let list = window.getAuthorizedUsersList();
