@@ -12973,6 +12973,13 @@ document.addEventListener("keydown", function(e) {
       window.executePrintFromPreview();
     }
   }
+  const balModal = document.getElementById("balance-qr-modal");
+  if (balModal && !balModal.classList.contains("hidden") && balModal.style.display !== "none") {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      window.closeBalanceQrModal();
+    }
+  }
 });
 
 let pendingDeleteIdentifier = null;
@@ -19763,7 +19770,9 @@ function initDashboardScreenFit() {
   try {
     const dash = document.getElementById('view-dashboard');
     const savedMode = localStorage.getItem('aaryan_dashboard_view_mode');
-    if (savedMode === 'fitted') {
+    // If user has chosen 'fitted' or on compact laptop screens (height <= 820px) without explicit choice
+    const shouldFit = savedMode === 'fitted' || (!savedMode && window.innerHeight <= 820);
+    if (shouldFit) {
       if (dash) dash.classList.add('dashboard-fitted-mode');
       updateDashboardFitButton(true);
     } else {
