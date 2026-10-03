@@ -2249,7 +2249,7 @@ function initRealtimeMeshSync() {
             if (!msg || msg.senderId === MY_SYNC_CLIENT_ID) return; // Drop invalid, stale, forged or self-echo
             processRealtimeSyncMessage(msg, 'mqtt_mesh');
           }).catch(err => {
-            console.warn("Wire packet unpack error:", err);
+            // console.warn("Wire packet unpack error:", err);
           });
           return;
         } else if (typeof checkAndRespondToP2PPairing === 'function') {
@@ -2262,7 +2262,7 @@ function initRealtimeMeshSync() {
     });
 
     realtimeMeshClient.on('error', (err) => {
-      console.warn(`Mesh broker note (${brokerUrl}):`, err.message);
+      // console.warn(`Mesh broker note (${brokerUrl}):`, err.message);
       consecutiveBrokerErrors++;
       if (consecutiveBrokerErrors >= 2) {
         rotateMeshBroker();
@@ -2274,7 +2274,7 @@ function initRealtimeMeshSync() {
       // Keep same broker across temporary mobile sleep/disconnect so devices never partition
     });
   } catch (err) {
-    console.warn("Real-time mesh init note:", err.message);
+      // console.warn("Real-time mesh init note:", err.message);
     consecutiveBrokerErrors++;
     if (consecutiveBrokerErrors >= 2) {
       rotateMeshBroker();
@@ -2285,7 +2285,7 @@ function initRealtimeMeshSync() {
 function rotateMeshBroker() {
   consecutiveBrokerErrors = 0;
   currentBrokerIdx = (currentBrokerIdx + 1) % MESH_BROKERS.length;
-  console.log(`Switching real-time mesh to next broker: ${MESH_BROKERS[currentBrokerIdx]}`);
+  // console.log(`Switching real-time mesh to next broker: ${MESH_BROKERS[currentBrokerIdx]}`);
   setTimeout(initRealtimeMeshSync, 350);
 }
 
@@ -5407,7 +5407,7 @@ function bindBillingFormInputs() {
         if (AudioContext) audioCtx = new AudioContext();
       }
       if (!audioCtx) return;
-      if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (audioCtx.state === 'suspended') audioCtx.resume().catch(()=>{});
 
       const now = audioCtx.currentTime;
       const osc = audioCtx.createOscillator();
@@ -9713,6 +9713,7 @@ function playSuccessChime() {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return;
     const ctx = new AudioContext();
+    if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
     const now = ctx.currentTime;
     
     // Pleasant dual-tone bell chime (587.33Hz [D5] -> 880Hz [A5])
