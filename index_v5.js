@@ -15715,13 +15715,29 @@ window.initGoogleIdentityServices = function() {
 window.getAuthorizedUsersList = function() {
   let list = [];
   try {
+    let localArr = [];
+    let globalArr = [];
     const rawLocal = localStorage.getItem("authorized_users");
     const rawGlobal = (typeof globalSettings !== 'undefined' && globalSettings.authorizedUsers);
     if (rawLocal) {
-      list = JSON.parse(rawLocal);
-    } else if (rawGlobal) {
-      list = Array.isArray(rawGlobal) ? rawGlobal : JSON.parse(rawGlobal);
+      try { localArr = JSON.parse(rawLocal); } catch(_) {}
     }
+    if (rawGlobal) {
+      globalArr = Array.isArray(rawGlobal) ? rawGlobal : (typeof rawGlobal === 'string' ? JSON.parse(rawGlobal) : []);
+    }
+    
+    // Combine both sources by email
+    const map = new Map();
+    (Array.isArray(localArr) ? localArr : []).forEach(u => {
+      if (u && u.email) map.set(u.email.toLowerCase().trim(), u);
+    });
+    (Array.isArray(globalArr) ? globalArr : []).forEach(u => {
+      if (u && u.email) {
+        const k = u.email.toLowerCase().trim();
+        if (!map.has(k)) map.set(k, u);
+      }
+    });
+    list = Array.from(map.values());
   } catch (e) {
     list = [];
   }

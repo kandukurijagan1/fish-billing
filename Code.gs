@@ -1364,6 +1364,7 @@ function handleApiPost(e) {
       var invs = readInvoicesFromSheet(ss);
       var prods = readInventoryFromSheet(ss);
       var parts = readCustomersFromSheet(ss);
+      var sets = readSettingsFromSheet(ss);
       var sHash = computeSyncDataHash(invs, prods, parts);
 
       if (data.hash && data.hash === sHash) {
@@ -1371,6 +1372,7 @@ function handleApiPost(e) {
           ok: true,
           notModified: true,
           hash: sHash,
+          settings: sets,
           serverTime: Date.now()
         })).setMimeType(ContentService.MimeType.JSON);
       }
@@ -1381,6 +1383,7 @@ function handleApiPost(e) {
         invoices: invs,
         products: prods,
         parties: parts,
+        settings: sets,
         serverTime: Date.now(),
         timestamp: new Date().toISOString()
       })).setMimeType(ContentService.MimeType.JSON);
