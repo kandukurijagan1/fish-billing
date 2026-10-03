@@ -1055,7 +1055,7 @@ elements.sumIgstRow = elements.sumIgst ? elements.sumIgst.closest('.summary-row'
 window.lastSyncETag = null;
 window.lastSyncTimestamp = parseInt(localStorage.getItem("aaryan_last_sync_time") || "0", 10);
 
-const GOOGLE_SCRIPT_URL = window.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwkegJvhM42cPIROIKg5Dlx6py8OnS5NXuIJeyf1Zb3V3Oc_2jyXPS_aDN7uW0t874d/exec";
+const GOOGLE_SCRIPT_URL = window.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbyPxzRKWP-3X2TwohWJYEqUeRVwW3YZ_5e0eNFjRKRwDEwBB-PIWZC061-ooIy7uFU9FA/exec";
 const API_SECRET_TOKEN = window.API_SECRET_TOKEN || "AARYAN_AQUA_SECURE_KEY_2026";
 const GOOGLE_SCRIPT_FALLBACK_URL = GOOGLE_SCRIPT_URL;
 
@@ -12423,8 +12423,6 @@ window.filterInvoicesByStatus = async function() {
 
 // --- SAVED INVOICE VIEW EDIT & DELETE HISTORY ---
 function loadInvoicesHistoryTable() {
-  loadAllDatabases();
-
   if (invoicesDb && invoicesDb.length > 0) {
     if (elements.historyCount) elements.historyCount.textContent = invoicesDb.length;
     renderHistoryTableRows(invoicesDb);
