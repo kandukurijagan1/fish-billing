@@ -265,28 +265,32 @@
         <i class="fa-solid fa-triangle-exclamation"></i> Invalid credentials!
       </div>
       
-      <!-- DIRECT GOOGLE MAIL ACCESS (1-CLICK SSO) -->
-      <div class="google-auth-container" style="margin-bottom: 14px;">
-        <button type="button" class="btn-google-direct-auth" onclick="triggerDirectGoogleAuth()" id="btn-google-direct" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 11px 16px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; color: #1e293b; font-size: 13.5px; font-weight: 700; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
-          <svg width="20" height="20" viewBox="0 0 48 48">
-            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-          </svg>
-          <span id="google-btn-label">Continue with Google</span>
-        </button>
+      <!-- GOOGLE SIGN-IN SECTION -->
+      <div class="google-auth-container" style="margin-bottom: 14px; display: flex; flex-direction: column; align-items: center;">
+        <div id="google-signin-btn-slot" style="width: 100%; display: flex; justify-content: center; min-height: 44px; margin-bottom: 4px;">
+          <!-- Fallback button while Google SDK loads or if offline -->
+          <button type="button" class="btn-google-direct-auth" onclick="triggerDirectGoogleAuth()" id="btn-google-direct" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 11px 16px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; color: #1e293b; font-size: 13.5px; font-weight: 700; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
+            <svg width="20" height="20" viewBox="0 0 48 48">
+              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+            </svg>
+            <span id="google-btn-label">Continue with Google</span>
+          </button>
+        </div>
         <div style="font-size: 11px; color: #38bdf8; text-align: center; margin-top: 6px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px;">
-          <i class="fa-brands fa-google"></i> Direct Google Mail Access: <strong>kandukurijagan99@gmail.com</strong>
+          <i class="fa-brands fa-google"></i> Authorized Google Account: <strong>kandukurijagan99@gmail.com</strong>
         </div>
       </div>
 
       <div style="display: flex; align-items: center; gap: 10px; margin: 12px 0 16px 0;">
         <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.14);"></div>
-        <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">or verify with authorized email</span>
+        <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">or verify with email OTP</span>
         <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.14);"></div>
       </div>
 
+      <!-- EMAIL OTP VERIFICATION FORM (REQUIRES REAL OTP CODE) -->
       <form id="login-form" onsubmit="event.preventDefault(); submitUnlockLogin(event); return false;">
         <div class="login-input-group">
           <label for="login-username"><i class="fa-solid fa-envelope" style="color: #38bdf8; margin-right: 4px;"></i> Authorized Email Address</label>
@@ -300,29 +304,28 @@
         </div>
 
         <div style="display: flex; align-items: center; justify-content: space-between; margin: 10px 0 14px 0; flex-wrap: wrap; gap: 8px;">
-          <button type="button" onclick="sendMailOtpToJagan('code')" style="background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.35); color: #38bdf8; font-size: 11.5px; border-radius: 6px; padding: 6px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-weight: 600; transition: all 0.2s;" title="Send one-time 6-digit security code to kandukurijagan99@gmail.com">
-            <i class="fa-solid fa-paper-plane"></i> Send Email OTP
+          <button type="button" id="btn-send-mail-otp" onclick="sendMailOtpToJagan('code')" style="background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.35); color: #38bdf8; font-size: 11.5px; border-radius: 6px; padding: 7px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-weight: 600; transition: all 0.2s;" title="Send one-time 6-digit security code to kandukurijagan99@gmail.com">
+            <i class="fa-solid fa-paper-plane"></i> Send 6-Digit Code
           </button>
-          <button type="button" onclick="sendMailOtpToJagan('link')" style="background: rgba(52, 211, 153, 0.12); border: 1px solid rgba(52, 211, 153, 0.35); color: #34d399; font-size: 11.5px; border-radius: 6px; padding: 6px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-weight: 600; transition: all 0.2s;" title="Send direct 1-click magic link to Gmail">
-            <i class="fa-solid fa-envelope-open-text"></i> Direct Gmail Link
+          <button type="button" onclick="sendMailOtpToJagan('link')" style="background: rgba(52, 211, 153, 0.12); border: 1px solid rgba(52, 211, 153, 0.35); color: #34d399; font-size: 11.5px; border-radius: 6px; padding: 7px 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; font-weight: 600; transition: all 0.2s;" title="Send direct 1-click magic link to Gmail">
+            <i class="fa-solid fa-envelope-open-text"></i> Send Gmail Magic Link
           </button>
         </div>
 
-        <div class="login-input-group hidden" id="otp-input-container">
-          <label for="login-otp-code"><i class="fa-solid fa-shield-check" style="color: #38bdf8; margin-right: 4px;"></i> 6-Digit Email Code</label>
+        <!-- 6-Digit Code is explicitly required -->
+        <div class="login-input-group" id="otp-input-container">
+          <label for="login-otp-code"><i class="fa-solid fa-key" style="color: #38bdf8; margin-right: 4px;"></i> 6-Digit Email Verification Code</label>
           <div class="input-icon-wrapper">
-            <i class="fa-solid fa-key input-icon"></i>
-            <input type="text" id="login-otp-code" maxlength="6" placeholder="Enter 6-digit code sent to Gmail">
+            <i class="fa-solid fa-shield-check input-icon"></i>
+            <input type="text" id="login-otp-code" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" placeholder="Enter 6-digit code received in Gmail">
           </div>
+          <span style="font-size: 10.5px; color: #94a3b8; margin-top: 4px; display: block;">
+            Click <strong>"Send 6-Digit Code"</strong> above, then enter the code sent to your Gmail inbox.
+          </span>
         </div>
         
-        <div class="remember-me-group" style="margin-top: 4px; margin-bottom: 14px;">
-          <input type="checkbox" id="login-remember-me" checked>
-          <label for="login-remember-me">Remember Authorized Email on This Device</label>
-        </div>
-        
-        <button type="submit" class="btn-login-submit">
-          <span id="login-btn-text"><i class="fa-solid fa-shield-halved"></i> Verify &amp; Open System</span>
+        <button type="submit" class="btn-login-submit" style="margin-top: 10px;">
+          <span id="login-btn-text"><i class="fa-solid fa-lock-open"></i> Verify Code &amp; Open System</span>
           <span id="login-btn-spinner" class="hidden"><i class="fa-solid fa-circle-notch fa-spin"></i> Verifying...</span>
         </button>
       </form>
@@ -5098,7 +5101,7 @@
     <i class="fa-solid fa-wifi" id="network-banner-icon"></i> <span id="network-banner-text">Working Offline</span>
   </div>
 
-  <script src="index_v5.js?v=580_google_client_id_live"></script>
+  <script src="index_v5.js?v=590_strict_auth_enforced"></script>
 </body>
 </html>
 

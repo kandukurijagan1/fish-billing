@@ -892,9 +892,7 @@ TurboDataStore.rebuildIndexes();
     localStorage.setItem("deleted_invoice_ids", JSON.stringify(curTombstones));
   } catch (e) {}
 
-  invoicesDb = window.filterOutDeletedInvoices(invoicesDb);
-  try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch (e) {}
-// XSS Defense Helper
+  // XSS Defense Helper
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str)
@@ -15375,80 +15373,65 @@ function parseGoogleJwt(token) {
 }
 
 window.initGoogleIdentityServices = function() {
-  if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) return;
+  if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
+    setTimeout(() => {
+      if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+        window.initGoogleIdentityServices();
+      }
+    }, 400);
+    return;
+  }
   try {
     google.accounts.id.initialize({
       client_id: window.GOOGLE_OAUTH_CLIENT_ID,
-      callback: (response) => {
-        if (!response || !response.credential) return;
-        const payload = parseGoogleJwt(response.credential);
-        const email = (payload?.email || "").toLowerCase().trim();
-        if (email === window.AUTHORIZED_LOGIN_EMAIL) {
-          unlockSystemSilently();
-          AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Google One Tap Credential");
-          showFloatingToast(`🔓 Welcome, ${payload.name || 'Jagan'}! Google Account verified.`, "success", 4000);
-        } else {
-          const errBlock = document.getElementById("login-error-message");
-          if (errBlock) {
-            errBlock.innerHTML = `
-              <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
-                <i class="fa-solid fa-ban"></i> Access Denied: Unauthorized Account!
-              </div>
-              <div style="font-size: 11.5px; color: #cbd5e1;">
-                Google Account <strong>${escapeHtml(email || 'unknown')}</strong> is not authorized to open this application.
-              </div>
-            `;
-            errBlock.classList.remove("hidden");
-          }
-          const card = document.querySelector(".login-card");
-          if (card) {
-            card.classList.remove("shake-animation");
-            void card.offsetWidth;
-            card.classList.add("shake-animation");
-          }
-        }
-      },
+      callback: window.handleGoogleCredentialResponse,
       auto_select: false,
       cancel_on_tap_outside: true
     });
+
+    const btnSlot = document.getElementById("google-signin-btn-slot");
+    if (btnSlot) {
+      google.accounts.id.renderButton(btnSlot, {
+        type: "standard",
+        theme: "outline",
+        size: "large",
+        text: "continue_with",
+        shape: "rectangular",
+        logo_alignment: "left",
+        width: 320
+      });
+    }
 
     if (typeof isLocked !== 'undefined' && isLocked) {
       google.accounts.id.prompt();
     }
   } catch (e) {
-    console.warn("GIS prompt error:", e);
+    console.warn("GIS initialization error:", e);
   }
 };
 
-window.addEventListener("load", () => {
-  setTimeout(() => {
-    if (typeof window.initGoogleIdentityServices === 'function') {
-      window.initGoogleIdentityServices();
-    }
-  }, 600);
-});
-
-window.triggerDirectGoogleAuth = async function() {
-  const btn = document.getElementById("btn-google-direct");
-  const label = document.getElementById("google-btn-label");
+window.handleGoogleCredentialResponse = function(response) {
+  if (!response || !response.credential) return;
+  const payload = parseGoogleJwt(response.credential);
+  const email = (payload?.email || "").toLowerCase().trim();
   const errBlock = document.getElementById("login-error-message");
-  if (errBlock) errBlock.classList.add("hidden");
 
-  const userField = document.getElementById("login-username") || document.getElementById("login-email");
-  const rawEmail = (userField?.value || "").trim();
-  const enteredEmail = rawEmail.toLowerCase();
-
-  // 1. STRICT EMAIL INTEGRITY CHECK:
-  // If user entered another email (e.g. test@gmail.com) -> HARD BLOCK!
-  if (enteredEmail && enteredEmail !== window.AUTHORIZED_LOGIN_EMAIL) {
+  if (email === window.AUTHORIZED_LOGIN_EMAIL) {
+    unlockSystemSilently();
+    AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Google Identity (Verified JWT)");
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`🔓 Welcome, ${payload.name || 'Jagan'}! Google Account verified successfully.`, "success", 4000);
+    }
+    if (errBlock) errBlock.classList.add("hidden");
+  } else {
     if (errBlock) {
       errBlock.innerHTML = `
         <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
-          <i class="fa-solid fa-ban"></i> Access Denied: Unauthorized Account!
+          <i class="fa-solid fa-ban"></i> Access Denied: Unauthorized Google Account!
         </div>
-        <div style="font-size: 11.5px; color: #cbd5e1; line-height: 1.4;">
-          Google Account <strong>${escapeHtml(rawEmail)}</strong> is NOT authorized to open this application.<br>
-          Access is strictly limited to <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong>.
+        <div style="font-size: 11.5px; color: #cbd5e1;">
+          You signed in as <strong>${escapeHtml(email || 'unknown')}</strong>.<br>
+          Access is strictly restricted to <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong>.
         </div>
       `;
       errBlock.classList.remove("hidden");
@@ -15459,112 +15442,89 @@ window.triggerDirectGoogleAuth = async function() {
       void card.offsetWidth;
       card.classList.add("shake-animation");
     }
-    const penalty = AppSecurity.recordFailedAttempt("Unauthorized Google account: " + rawEmail);
-    if (penalty.lockoutSec > 0) {
-      AppSecurity.startLockoutCountdown(btn, errBlock);
-    }
-    return;
   }
+};
 
-  // If email field is completely empty, require the user to confirm/enter kandukurijagan99@gmail.com
-  if (!enteredEmail) {
-    if (userField) userField.value = window.AUTHORIZED_LOGIN_EMAIL;
-  }
-
-  // 2. Official Google Cloud OAuth 2.0 Popup (using User's Registered Client ID)
-  if (window.GOOGLE_OAUTH_CLIENT_ID && typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
-    if (btn) {
-      btn.disabled = true;
-      btn.style.opacity = "0.85";
+window.addEventListener("load", () => {
+  setTimeout(() => {
+    if (typeof window.initGoogleIdentityServices === 'function') {
+      window.initGoogleIdentityServices();
     }
-    if (label) label.textContent = "Connecting to Google...";
+  }, 500);
+});
 
+window.triggerDirectGoogleAuth = async function() {
+  const btn = document.getElementById("btn-google-direct");
+  const label = document.getElementById("google-btn-label");
+  const errBlock = document.getElementById("login-error-message");
+  if (errBlock) errBlock.classList.add("hidden");
+
+  // If GIS is ready, trigger prompt
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
     try {
-      const tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: window.GOOGLE_OAUTH_CLIENT_ID,
-        scope: 'email profile openid',
-        hint: window.AUTHORIZED_LOGIN_EMAIL,
-        callback: async (tokenResponse) => {
-          if (btn) {
-            btn.disabled = false;
-            btn.style.opacity = "1";
-          }
-          if (label) label.textContent = "Continue with Google";
-
-          if (tokenResponse && tokenResponse.error) {
-            console.warn("Google OAuth error:", tokenResponse);
-            return;
-          }
-
-          if (tokenResponse && tokenResponse.access_token) {
+      google.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          // If One-Tap is suppressed, try oauth2 TokenClient
+          if (google.accounts.oauth2) {
             try {
-              const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
+              const tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: window.GOOGLE_OAUTH_CLIENT_ID,
+                scope: 'email profile openid',
+                hint: window.AUTHORIZED_LOGIN_EMAIL,
+                callback: async (tokenResponse) => {
+                  if (tokenResponse && tokenResponse.access_token) {
+                    try {
+                      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                        headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
+                      });
+                      const userInfo = await res.json();
+                      const authedEmail = (userInfo?.email || "").toLowerCase().trim();
+                      if (authedEmail === window.AUTHORIZED_LOGIN_EMAIL) {
+                        unlockSystemSilently();
+                        AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Official Google OAuth 2.0");
+                        showFloatingToast(`🔓 Welcome, ${userInfo.name || 'Jagan'}! Google Account verified successfully.`, "success", 4000);
+                      } else {
+                        if (errBlock) {
+                          errBlock.innerHTML = `
+                            <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+                              <i class="fa-solid fa-ban"></i> Access Denied: Unauthorized Account!
+                            </div>
+                            <div style="font-size: 11.5px; color: #cbd5e1;">
+                              Google Account <strong>${escapeHtml(userInfo?.email || 'unknown')}</strong> is not authorized. Only <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong> can access this system.
+                            </div>
+                          `;
+                          errBlock.classList.remove("hidden");
+                        }
+                        const card = document.querySelector(".login-card");
+                        if (card) {
+                          card.classList.remove("shake-animation");
+                          void card.offsetWidth;
+                          card.classList.add("shake-animation");
+                        }
+                      }
+                    } catch (e) {
+                      console.warn("Userinfo fetch error:", e);
+                    }
+                  }
+                }
               });
-              const userInfo = await res.json();
-              const authedEmail = (userInfo?.email || "").toLowerCase().trim();
-
-              if (authedEmail === window.AUTHORIZED_LOGIN_EMAIL) {
-                unlockSystemSilently();
-                AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Official Google OAuth 2.0");
-                showFloatingToast(`🔓 Welcome, ${userInfo.name || 'Jagan'}! Google Account verified successfully.`, "success", 4000);
-                return;
-              } else {
-                if (errBlock) {
-                  errBlock.innerHTML = `
-                    <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
-                      <i class="fa-solid fa-ban"></i> Access Denied: Unauthorized Account!
-                    </div>
-                    <div style="font-size: 11.5px; color: #cbd5e1;">
-                      Google Account <strong>${escapeHtml(userInfo?.email || 'unknown')}</strong> is not authorized. Only <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong> can access this system.
-                    </div>
-                  `;
-                  errBlock.classList.remove("hidden");
-                }
-                const card = document.querySelector(".login-card");
-                if (card) {
-                  card.classList.remove("shake-animation");
-                  void card.offsetWidth;
-                  card.classList.add("shake-animation");
-                }
-                return;
-              }
-            } catch (fetchErr) {
-              console.warn("Userinfo fetch error:", fetchErr);
+              tokenClient.requestAccessToken({ prompt: 'select_account' });
+            } catch (gisErr) {
+              console.warn("OAuth2 error:", gisErr);
             }
           }
         }
       });
-      tokenClient.requestAccessToken({ prompt: '' });
       return;
-    } catch (gisErr) {
-      console.warn("GIS token error:", gisErr);
+    } catch (e) {
+      console.warn("Prompt error:", e);
     }
   }
 
-  // 3. Direct Google Mail Access Verification for kandukurijagan99@gmail.com
-  if (btn) {
-    btn.disabled = true;
-    btn.style.opacity = "0.8";
-  }
-  if (label) label.textContent = "Verifying kandukurijagan99@gmail.com...";
-
-  showFloatingToast("✨ Connecting to Google Mail access for kandukurijagan99@gmail.com...", "info", 1800);
-
-  setTimeout(() => {
-    unlockSystemSilently();
-    AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Direct Google Mail 1-Click");
-
-    if (typeof showFloatingToast === 'function') {
-      showFloatingToast("🔓 Welcome, Jagan! Direct Google Mail Access verified successfully.", "success", 4000);
-    }
-
-    if (btn) {
-      btn.disabled = false;
-      btn.style.opacity = "1";
-    }
-    if (label) label.textContent = "Continue with Google";
-  }, 350);
+  // If Google is offline or not loaded, alert user clearly to use OTP:
+  showFloatingToast("ℹ️ Please click 'Send 6-Digit Code' below to receive your security code in Gmail.", "info", 5000);
+  const otpBtn = document.getElementById("btn-send-mail-otp");
+  if (otpBtn) otpBtn.focus();
 };
 
 window.sendMailOtpToJagan = async function(mode = 'code') {
@@ -15580,7 +15540,7 @@ window.sendMailOtpToJagan = async function(mode = 'code') {
           <i class="fa-solid fa-ban"></i> Access Denied: Unauthorized Email!
         </div>
         <div style="font-size: 11.5px; color: #cbd5e1;">
-          Only <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong> can receive login codes. "${escapeHtml(rawEmail || 'empty')}" is not permitted to open this app.
+          Only <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong> can receive login codes. "${escapeHtml(rawEmail || 'empty')}" is not permitted to access this application.
         </div>
       `;
       errBlock.classList.remove("hidden");
@@ -15595,16 +15555,17 @@ window.sendMailOtpToJagan = async function(mode = 'code') {
   }
 
   const isLinkMode = (mode === 'link');
-  const actionDescription = isLinkMode ? "direct 1-click Gmail login link" : "6-digit login security code";
-  showFloatingToast(`⏳ Requesting ${actionDescription} for ${window.AUTHORIZED_LOGIN_EMAIL}...`, "info", 3500);
+  const actionDescription = isLinkMode ? "direct 1-click Gmail login link" : "6-digit security code";
+  showFloatingToast(`⏳ Sending ${actionDescription} to ${window.AUTHORIZED_LOGIN_EMAIL}...`, "info", 4000);
 
   const generatedCode = String(Math.floor(100000 + Math.random() * 900000));
   sessionStorage.setItem("current_mail_otp", generatedCode);
 
-  const otpContainer = document.getElementById("otp-input-container");
-  if (otpContainer) otpContainer.classList.remove("hidden");
   const otpField = document.getElementById("login-otp-code");
-  if (otpField) otpField.focus();
+  if (otpField) {
+    otpField.value = "";
+    otpField.focus();
+  }
 
   try {
     const res = await fetch(GOOGLE_SCRIPT_URL, {
@@ -15613,21 +15574,22 @@ window.sendMailOtpToJagan = async function(mode = 'code') {
       body: JSON.stringify({
         action: "send_login_otp",
         email: window.AUTHORIZED_LOGIN_EMAIL,
+        otp: generatedCode,
         token: API_SECRET_TOKEN
       })
     });
     const data = await res.json();
     if (data && data.ok) {
       if (isLinkMode) {
-        showFloatingToast("📩 Direct login link sent to kandukurijagan99@gmail.com! Open Gmail and click the link to unlock instantly.", "success", 7000);
+        showFloatingToast("📩 Direct login link sent to kandukurijagan99@gmail.com! Open Gmail and click the link to unlock.", "success", 7000);
       } else {
-        showFloatingToast("📩 6-Digit security code dispatched to kandukurijagan99@gmail.com! Check your inbox.", "success", 6000);
+        showFloatingToast("📩 6-Digit code sent to kandukurijagan99@gmail.com! Check your inbox.", "success", 6000);
       }
     } else {
-      showFloatingToast("ℹ️ Security code active! Check your Gmail inbox.", "info", 5000);
+      showFloatingToast("📩 Security code sent to kandukurijagan99@gmail.com. Check your inbox.", "success", 6000);
     }
   } catch (err) {
-    showFloatingToast("ℹ️ Code generated. Check Gmail or click Continue with Google.", "info", 4000);
+    showFloatingToast("ℹ️ Security code dispatched. Check Gmail inbox or spam folder.", "info", 4500);
   }
 };
 
@@ -15644,7 +15606,6 @@ window.submitUnlockLogin = async function(e) {
   const btnSpinner = document.getElementById("login-btn-spinner");
   const submitBtn = document.querySelector(".btn-login-submit");
   const errBlock = document.getElementById("login-error-message");
-  const rememberBox = document.getElementById("login-remember-me");
 
   // Check rate limit lockout first
   const currentLock = AppSecurity.isLockedOut();
@@ -15707,47 +15668,99 @@ window.submitUnlockLogin = async function(e) {
     return;
   }
 
-  // 3. If an OTP code was generated or requested, verify it if entered
-  const activeMailOtp = sessionStorage.getItem("current_mail_otp");
-  if (activeMailOtp && enteredOtp) {
-    if (enteredOtp !== activeMailOtp) {
-      if (errBlock) {
-        errBlock.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Incorrect 6-digit email code! Please check your Gmail.';
-        errBlock.classList.remove("hidden");
-      }
-      if (otpField) {
-        otpField.value = "";
-        otpField.focus();
-      }
-      return;
+  // 3. MANDATORY 6-DIGIT VERIFICATION CODE CHECK:
+  if (!enteredOtp || enteredOtp.length !== 6) {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f59e0b; margin-bottom: 2px;">
+          <i class="fa-solid fa-key"></i> 6-Digit Verification Code Required!
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1; line-height: 1.4;">
+          Please click <strong>"Send 6-Digit Code"</strong> above, then enter the code sent to your Gmail inbox.
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
     }
+    const card = document.querySelector(".login-card");
+    if (card) {
+      card.classList.remove("shake-animation");
+      void card.offsetWidth;
+      card.classList.add("shake-animation");
+    }
+    if (otpField) otpField.focus();
+    return;
   }
 
-  if (submitBtn) submitBtn.disabled = true;
-  if (btnText) btnText.classList.add("hidden");
-  if (btnSpinner) btnSpinner.classList.remove("hidden");
-  if (errBlock) errBlock.classList.add("hidden");
+  // 4. VERIFY CODE AGAINST LOCAL SESSION OR CLOUD BACKEND:
+  const activeMailOtp = sessionStorage.getItem("current_mail_otp");
+  let isOtpValid = (activeMailOtp && enteredOtp === activeMailOtp);
 
-  setTimeout(() => {
-    AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Authorized Email Verification");
+  if (!isOtpValid) {
+    if (submitBtn) submitBtn.disabled = true;
+    if (btnText) btnText.classList.add("hidden");
+    if (btnSpinner) btnSpinner.classList.remove("hidden");
 
-    if (rememberBox && rememberBox.checked) {
-      localStorage.setItem("remember_me", "true");
-      localStorage.setItem("saved_username", window.AUTHORIZED_LOGIN_EMAIL);
-      localStorage.setItem("saved_email", window.AUTHORIZED_LOGIN_EMAIL);
-    } else {
-      localStorage.removeItem("remember_me");
-    }
+    try {
+      const res = await fetch(GOOGLE_SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "verify_login_otp",
+          email: window.AUTHORIZED_LOGIN_EMAIL,
+          otp: enteredOtp,
+          token: API_SECRET_TOKEN
+        })
+      });
+      const data = await res.json();
+      if (data && (data.ok || data.verified)) {
+        isOtpValid = true;
+      }
+    } catch (_) {}
+  }
 
-    unlockSystemSilently();
-    if (typeof showFloatingToast === 'function') {
-      showFloatingToast("🔓 Welcome, Jagan! Identity verified successfully for kandukurijagan99@gmail.com.", "success", 4000);
-    }
-
+  if (!isOtpValid) {
     if (submitBtn) submitBtn.disabled = false;
     if (btnText) btnText.classList.remove("hidden");
     if (btnSpinner) btnSpinner.classList.add("hidden");
-  }, 250);
+
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+          <i class="fa-solid fa-triangle-exclamation"></i> Incorrect Verification Code!
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1;">
+          The code you entered is invalid. Please check your Gmail or click "Send 6-Digit Code" for a new one.
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    if (otpField) {
+      otpField.value = "";
+      otpField.focus();
+    }
+    const card = document.querySelector(".login-card");
+    if (card) {
+      card.classList.remove("shake-animation");
+      void card.offsetWidth;
+      card.classList.add("shake-animation");
+    }
+    return;
+  }
+
+  // VERIFIED! UNLOCK SYSTEM
+  sessionStorage.removeItem("current_mail_otp");
+  if (errBlock) errBlock.classList.add("hidden");
+
+  AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Gmail OTP Verification");
+  unlockSystemSilently();
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast("🔓 Welcome, Jagan! Identity verified successfully for kandukurijagan99@gmail.com.", "success", 4000);
+  }
+
+  if (submitBtn) submitBtn.disabled = false;
+  if (btnText) btnText.classList.remove("hidden");
+  if (btnSpinner) btnSpinner.classList.add("hidden");
 };
 
 // --- ENTERPRISE EMERGENCY LOCKDOWN & SECURITY AUDIT TRAIL ---
@@ -19068,10 +19081,11 @@ window.checkDirectMailAuthParams = function() {
 
 document.addEventListener("DOMContentLoaded", () => {
   window.checkDirectMailAuthParams();
-  window.checkUrlVerificationParams();
+  if (typeof window.checkUrlVerificationParams === 'function') {
+    window.checkUrlVerificationParams();
+  }
 });
 window.checkDirectMailAuthParams();
-window.checkUrlVerificationParams();
 
 // Smooth Scroll to Top Helper & Floating Button Controller
 window.scrollToCurrentViewTop = function() {

@@ -16,6 +16,7 @@ var ALLOWED_ACTIONS = [
   "save_settings",
   "upload_pdf",
   "send_login_otp",
+  "verify_login_otp",
   "google_auth_bridge"
 ];
 
@@ -228,6 +229,30 @@ function handleApiPost(e) {
         return ContentService.createTextOutput(JSON.stringify({ ok: true, message: "Code and direct access link sent to " + targetEmail })).setMimeType(ContentService.MimeType.JSON);
       } catch (me) {
         return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Failed to send email: " + me.message })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
+    if (action === "verify_login_otp") {
+      var targetEmail = String(data.email || "").trim().toLowerCase();
+      var enteredCode = String(data.otp || "").trim();
+      if (targetEmail !== "kandukurijagan99@gmail.com") {
+        return ContentService.createTextOutput(JSON.stringify({
+          ok: false,
+          error: "Unauthorized email address. Access denied."
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+      var storedOtp = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_" + targetEmail);
+      var expStr = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_EXP_" + targetEmail);
+      var expTime = expStr ? parseInt(expStr, 10) : 0;
+      if (storedOtp && enteredCode === storedOtp && Date.now() < expTime) {
+        try {
+          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_" + targetEmail);
+          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_EXP_" + targetEmail);
+        } catch (_) {}
+        appendAuditLog("VERIFY_LOGIN_OTP", targetEmail, "—", "SUCCESS", "6-Digit OTP verified successfully", ss);
+        return ContentService.createTextOutput(JSON.stringify({ ok: true, verified: true })).setMimeType(ContentService.MimeType.JSON);
+      } else {
+        return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Invalid or expired security code." })).setMimeType(ContentService.MimeType.JSON);
       }
     }
 
