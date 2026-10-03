@@ -256,6 +256,11 @@
         <p style="font-size: 12.5px; color: #94a3b8; margin: 0;">GST Billing &amp; Aquaculture Management</p>
       </div>
       
+      <!-- REAL-TIME SESSION LOCK CONTEXT BANNER -->
+      <div id="login-session-status-banner" style="display: none; margin: 0 0 14px 0; padding: 10px 14px; border-radius: 10px; font-size: 12px; font-weight: 600; text-align: center; transition: all 0.25s ease;">
+        <span id="login-session-status-text"></span>
+      </div>
+
       <div id="login-error-message" class="login-error hidden">
         <i class="fa-solid fa-triangle-exclamation"></i> Invalid credentials!
       </div>
@@ -386,10 +391,18 @@
               <i class="fa-brands fa-telegram" style="color: #0284c7;"></i>
               <span id="tg-bot-status-text">Telegram</span>
             </div>
-            <!-- ACTIVE USER PROFILE BADGE & ACCESS SHORTCUT -->
+            <!-- ACTIVE USER PROFILE BADGE, LIVE SESSION TIMER & ACCESS SHORTCUTS -->
             <div id="header-user-badge-slot" style="display: inline-flex; align-items: center; margin-left: 4px;"></div>
-            <button type="button" class="btn btn-sm" onclick="triggerManualLock()" title="Lock Screen / Switch User" style="background: rgba(244, 63, 94, 0.12); color: #f43f5e; border: 1px solid rgba(244, 63, 94, 0.3); border-radius: 20px; padding: 4px 10px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+            <div id="live-session-timer-pill" class="session-timer-pill cursor-pointer" onclick="renewUserSession()" title="Active Session Timing (Click to Reset/Extend Inactivity Auto-Lock)" style="margin-left: 4px;">
+              <i class="fa-solid fa-hourglass-start" id="session-timer-icon"></i>
+              <span id="session-timer-text">Session: 30:00</span>
+              <span class="session-extend-chip">+Reset</span>
+            </div>
+            <button type="button" class="btn btn-sm" onclick="triggerManualLock()" title="Lock Screen (Keep Session Active)" style="background: rgba(244, 63, 94, 0.12); color: #f43f5e; border: 1px solid rgba(244, 63, 94, 0.3); border-radius: 20px; padding: 4px 10px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
               <i class="fa-solid fa-lock"></i> <span>Lock</span>
+            </button>
+            <button type="button" class="btn btn-sm" onclick="triggerUserLogout()" title="Sign Out Completely" style="background: rgba(148, 163, 184, 0.12); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 20px; padding: 4px 9px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+              <i class="fa-solid fa-arrow-right-from-bracket"></i> <span>Sign Out</span>
             </button>
           </div>
           <div class="header-tools-group" style="display: none !important;">
@@ -416,15 +429,6 @@
             <div id="live-privacy-shield-pill" class="privacy-shield-pill cursor-pointer" style="display: none !important;" onclick="toggleCounterPrivacyShield()" title="Counter Privacy Shield (Mask Financial Figures from Onlookers) [Alt+P]">
               <i class="fa-solid fa-eye" id="privacy-shield-icon"></i>
               <span id="privacy-shield-text">Privacy Off</span>
-            </div>
-            <div id="live-session-timer-pill" class="session-timer-pill cursor-pointer" style="display: none !important;" onclick="renewUserSession()" title="Active Session Timing (Click to Reset/Extend Auto-Lock)">
-              <i class="fa-solid fa-hourglass-start" id="session-timer-icon"></i>
-              <span id="session-timer-text">Session: 30:00</span>
-              <span class="session-extend-chip">+Extend</span>
-            </div>
-            <div id="live-header-lock-pill" class="lock-pill cursor-pointer" style="display: none !important;" onclick="triggerManualLock()" title="Lock Screen (Admin Security) [Alt+L / Ctrl+Shift+L]">
-              <i class="fa-solid fa-lock"></i>
-              <span>Lock</span>
             </div>
           </div>
           <div class="header-clock-pill" title="Current Date & Time">

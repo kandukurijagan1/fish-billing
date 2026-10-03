@@ -10013,9 +10013,7 @@ section.content-view.hidden {
 #live-data-share-pill,
 #live-calculator-pill,
 #live-audio-fx-pill,
-#live-privacy-shield-pill,
-#live-session-timer-pill,
-#live-header-lock-pill {
+#live-privacy-shield-pill {
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;

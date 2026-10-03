@@ -3825,29 +3825,28 @@ function initializeApp() {
     }
   });
 
-  // Security Enforcement & Session Verification (v421 — strict lock enforcement)
-  const isManuallyLocked = localStorage.getItem("app_locked") === "true";
+  // Real-Time Enterprise Session Lifecycle & Verification (v425)
   const hasSessionAuth = sessionStorage.getItem("session_authenticated") === "true";
-  const savedPwd = localStorage.getItem("saved_password") || "";
-  const lastActive = parseInt(localStorage.getItem("last_active_time") || "0", 10);
-  const lockTimeout = lockTimerSeconds > 0 ? (lockTimerSeconds * 1000) : 0;
-  const isTimedOut = lockTimeout > 0 && lastActive > 0 && (Date.now() - lastActive > lockTimeout);
+  const sessionLastActive = parseInt(sessionStorage.getItem("session_last_active_time") || localStorage.getItem("last_active_time") || "0", 10);
+  const timeoutMs = (lockTimerSeconds > 0 ? lockTimerSeconds : 1800) * 1000;
+  const isSessionTimedOut = (timeoutMs > 0 && sessionLastActive > 0 && (Date.now() - sessionLastActive > timeoutMs));
+  const isManuallyLocked = sessionStorage.getItem("manual_locked") === "true";
+  const lockoutStatus = AppSecurity.isLockedOut();
+
+  // If tab was closed and reopened, sessionStorage was cleared by browser.
+  // Purge any residual localStorage flag so fresh launch strictly demands Google login.
+  if (!hasSessionAuth) {
+    localStorage.removeItem("app_authenticated");
+  }
 
   // Auto-migrate legacy cleartext saved_password to cryptographic SHA-256 token
+  const savedPwd = localStorage.getItem("saved_password") || "";
   if (savedPwd) {
     AppSecurity.purgePlaintextPasswords();
   }
 
-  // Check rate limit lockout state
-  const lockoutStatus = AppSecurity.isLockedOut();
-
-  // v424 ENTERPRISE ZERO-TRUST LOCK POLICY:
-  // Strict Boot Lock is enabled by default — EVERY launch & reload requires password/PIN
-  const sec = globalSettings?.security || {};
-  const isStrictBootLock = sec.strictBootLock !== false; // Default: true (Zero-Trust)
-  const canStayUnlocked = !isStrictBootLock && !isElectronApp && !isManuallyLocked && !lockoutStatus.locked && !isTimedOut && hasSessionAuth;
-
   // Restore Counter Privacy Shield if previously active
+  const sec = globalSettings?.security || {};
   const isPrivacyActive = localStorage.getItem("counter_privacy_mode") === "true" || sec.counterPrivacyMode === true;
   if (isPrivacyActive) {
     document.body.classList.add("counter-privacy-active");
@@ -3859,21 +3858,18 @@ function initializeApp() {
     if (pText) pText.textContent = "Privacy ON";
   }
 
+  // ADVANCED REAL-TIME SESSION RULES:
+  // 1. Page Reload (F5 / Refresh) in active tab -> hasSessionAuth is true, NOT timed out, NOT manually locked -> STAYS UNLOCKED!
+  // 2. Tab/Browser Closed & Reopened -> sessionStorage is empty -> hasSessionAuth is false -> REQUIRES GOOGLE LOGIN!
+  // 3. Inactivity Timeout -> isSessionTimedOut is true -> LOCKS SCREEN WITH TIMEOUT NOTICE!
+  // 4. Manually Locked -> isManuallyLocked is true -> STAYS LOCKED!
+  const canStayUnlocked = hasSessionAuth && !isSessionTimedOut && !isManuallyLocked && !lockoutStatus.locked;
+
   if (canStayUnlocked) {
-    unlockSystemSilently();
+    unlockSystemSilently(false);
   } else {
-    // Lock the system cleanly
-    isLocked = true;
-    localStorage.setItem("app_locked", "true");
-    sessionStorage.removeItem("session_authenticated");
-    document.body.classList.add("app-is-locked");
-
-    const overlay = document.getElementById("lock-screen-overlay");
-    if (overlay) overlay.classList.remove("hidden");
-    const wrapper = document.querySelector('.dashboard-wrapper');
-    if (wrapper) wrapper.classList.add("blur-dashboard-wrapper");
-
-    // Setup login form credentials & check lockout
+    const lockReason = isSessionTimedOut ? "inactivity_timeout" : (isManuallyLocked ? "manual" : "initial");
+    triggerLockOverlay(lockReason, false);
     autofillRememberedCredentials();
   }
 
@@ -3882,24 +3878,27 @@ function initializeApp() {
   if (typeof startSessionTimerTick === 'function') {
     startSessionTimerTick();
   }
-  ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel'].forEach(evt => {
+  ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel', 'click'].forEach(evt => {
     document.addEventListener(evt, resetAutolockTimer, { passive: true, capture: true });
   });
 
   // Background Tab Inactivity Auto-Lock (visibilitychange listener)
   document.addEventListener("visibilitychange", function() {
     if (document.hidden) {
-      localStorage.setItem("tab_hidden_timestamp", Date.now().toString());
+      sessionStorage.setItem("tab_hidden_timestamp", Date.now().toString());
     } else {
-      const hiddenTimeStr = localStorage.getItem("tab_hidden_timestamp");
+      const hiddenTimeStr = sessionStorage.getItem("tab_hidden_timestamp") || localStorage.getItem("tab_hidden_timestamp");
       if (hiddenTimeStr) {
         const hiddenTime = parseInt(hiddenTimeStr, 10);
         const elapsedSec = (Date.now() - hiddenTime) / 1000;
-        const lockThreshold = (typeof lockTimerSeconds !== "undefined" && lockTimerSeconds > 0) ? lockTimerSeconds : 120;
+        const lockThreshold = (typeof lockTimerSeconds !== "undefined" && lockTimerSeconds > 0) ? lockTimerSeconds : 1800;
         if (lockThreshold > 0 && elapsedSec >= lockThreshold && !isLocked) {
           AppSecurity.logEvent("BACKGROUND_AUTOLOCK", `App locked after ${Math.round(elapsedSec)}s inactive in background tab`, "INFO");
-          triggerLockOverlay();
+          triggerLockOverlay("inactivity_timeout", true);
+        } else if (!isLocked) {
+          resetAutolockTimer();
         }
+        sessionStorage.removeItem("tab_hidden_timestamp");
         localStorage.removeItem("tab_hidden_timestamp");
       }
     }
@@ -15147,11 +15146,17 @@ function updateSessionTimerUI() {
   const remainingSec = Math.max(0, lockTimerSeconds - elapsedSec);
 
   const timeStr = formatSessionDuration(remainingSec);
-  textEl.innerHTML = `<span class="session-label">Session: </span><span class="session-val">${timeStr}</span>`;
+  textEl.innerHTML = `<span class="session-label">Idle Lock: </span><span class="session-val">${timeStr}</span>`;
 
   if (remainingSec <= 30) {
     pill.className = "session-timer-pill critical";
     if (iconEl) iconEl.className = "fa-solid fa-hourglass-end text-rose fa-shake";
+    if (!window._inactivityWarningToastShown && remainingSec > 5) {
+      window._inactivityWarningToastShown = true;
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast(`⚠️ Inactivity Warning: Screen will lock in ${remainingSec}s unless active.`, "warning", 4000);
+      }
+    }
   } else if (remainingSec <= 120) {
     pill.className = "session-timer-pill warning";
     if (iconEl) iconEl.className = "fa-solid fa-hourglass-half text-amber";
@@ -15162,7 +15167,7 @@ function updateSessionTimerUI() {
 
   // Trigger auto-lock strictly if session timing exhausted
   if (remainingSec <= 0 && !isLocked) {
-    triggerLockOverlay();
+    triggerLockOverlay("inactivity_timeout", true);
   }
 }
 
@@ -15175,6 +15180,7 @@ function startSessionTimerTick() {
 window.renewUserSession = function() {
   if (isLocked) return;
   lastActivityRecordTime = Date.now();
+  sessionStorage.setItem("session_last_active_time", lastActivityRecordTime.toString());
   resetAutolockTimer();
   updateSessionTimerUI();
   const durationLabel = lockTimerSeconds > 0 ? `${Math.round(lockTimerSeconds / 60)} min` : "unlimited";
@@ -15191,6 +15197,7 @@ window.onAutoLockSettingChange = function(newVal) {
   if (!Number.isNaN(parsed)) {
     lockTimerSeconds = parsed;
     lastActivityRecordTime = Date.now();
+    sessionStorage.setItem("session_last_active_time", lastActivityRecordTime.toString());
     resetAutolockTimer();
     updateSessionTimerUI();
     const label = parsed > 0 ? `${Math.round(parsed / 60)} min` : "disabled";
@@ -15204,9 +15211,12 @@ function resetAutolockTimer() {
   if (isLocked) return;
 
   const now = Date.now();
-  if (!lastActivityRecordTime || now - lastActivityRecordTime > 3000) {
+  window._inactivityWarningToastShown = false; // Reset warning toast flag on interaction
+
+  if (!lastActivityRecordTime || now - lastActivityRecordTime > 2000) {
     lastActivityRecordTime = now;
     try {
+      sessionStorage.setItem("session_last_active_time", now.toString());
       localStorage.setItem("last_active_time", now);
       localStorage.setItem("app_locked", "false");
     } catch (_) {}
@@ -15219,15 +15229,19 @@ function resetAutolockTimer() {
     return;
   }
 
-  autolockInterval = setTimeout(triggerLockOverlay, lockTimerSeconds * 1000);
+  autolockInterval = setTimeout(() => {
+    triggerLockOverlay("inactivity_timeout", true);
+  }, lockTimerSeconds * 1000);
 }
 
-function unlockSystemSilently() {
+function unlockSystemSilently(shouldBroadcast = false) {
   isLocked = false;
   localStorage.setItem("app_locked", "false");
   localStorage.setItem("app_authenticated", "true");
   sessionStorage.setItem("session_authenticated", "true");
+  sessionStorage.setItem("manual_locked", "false");
   lastActivityRecordTime = Date.now();
+  sessionStorage.setItem("session_last_active_time", lastActivityRecordTime.toString());
   localStorage.setItem("last_active_time", lastActivityRecordTime);
   document.body.classList.remove("app-is-locked");
   
@@ -15253,6 +15267,13 @@ function unlockSystemSilently() {
   // Apply user role permissions and update profile badge
   if (typeof window.applyRolePermissions === 'function') {
     window.applyRolePermissions();
+  }
+
+  if (shouldBroadcast) {
+    const email = sessionStorage.getItem("current_user_email") || "";
+    const name = sessionStorage.getItem("current_user_name") || "";
+    const role = sessionStorage.getItem("current_user_role") || "operator";
+    broadcastAuthEvent("LOGIN", { email, name, role });
   }
 }
 window.unlockSystemSilently = unlockSystemSilently;
@@ -15293,15 +15314,47 @@ window.handleLockPasswordInput = function(inputEl) {
   return false;
 };
 
-window.triggerManualLock = function() {
-  triggerLockOverlay();
+window.triggerManualLock = function(shouldBroadcast = true) {
+  sessionStorage.setItem("manual_locked", "true");
+  triggerLockOverlay("manual", shouldBroadcast);
   AppSecurity.logEvent("MANUAL_LOCK", "Screen locked manually by user", "INFO");
   if (typeof showFloatingToast === 'function') {
     showFloatingToast("🔒 Screen locked securely.", 2500);
   }
 };
 
-function triggerLockOverlay() {
+window.triggerUserLogout = function(shouldBroadcast = true) {
+  sessionStorage.clear();
+  localStorage.setItem("app_locked", "true");
+  localStorage.removeItem("app_authenticated");
+  isLocked = true;
+  document.body.classList.add("app-is-locked");
+
+  const overlay = document.getElementById("lock-screen-overlay");
+  if (overlay) overlay.classList.remove("hidden");
+  const wrapper = document.querySelector('.dashboard-wrapper');
+  if (wrapper) wrapper.classList.add("blur-dashboard-wrapper");
+
+  const sessionStatusBanner = document.getElementById("login-session-status-banner");
+  const sessionStatusText = document.getElementById("login-session-status-text");
+  if (sessionStatusBanner && sessionStatusText) {
+    sessionStatusBanner.style.display = "block";
+    sessionStatusBanner.style.background = "rgba(168, 85, 247, 0.15)";
+    sessionStatusBanner.style.border = "1px solid rgba(168, 85, 247, 0.35)";
+    sessionStatusBanner.style.color = "#c084fc";
+    sessionStatusText.innerHTML = '<i class="fa-solid fa-arrow-right-from-bracket"></i> You have signed out successfully.';
+  }
+
+  if (shouldBroadcast) {
+    broadcastAuthEvent("LOGOUT");
+  }
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast("👋 You have been logged out.", 3000);
+  }
+};
+
+function triggerLockOverlay(reason = "manual", shouldBroadcast = true) {
   isLocked = true;
   if (typeof lockWhatsAppSession === 'function') {
     lockWhatsAppSession(false);
@@ -15309,6 +15362,9 @@ function triggerLockOverlay() {
   localStorage.setItem("app_locked", "true");
   sessionStorage.removeItem("session_authenticated");
   localStorage.removeItem("app_authenticated");
+  if (reason === "manual") {
+    sessionStorage.setItem("manual_locked", "true");
+  }
   document.body.classList.add("app-is-locked");
 
   const errBlock = document.getElementById("login-error-message");
@@ -15322,29 +15378,43 @@ function triggerLockOverlay() {
 
   // Autofill authorized email
   const userField = document.getElementById("login-username");
-  const rememberBox = document.getElementById("login-remember-me");
   let savedUser = localStorage.getItem("saved_username") || localStorage.getItem("saved_email") || "kandukurijagan99@gmail.com";
   if (!savedUser || savedUser.toLowerCase() === "aaryanaqua" || savedUser.toLowerCase() === "admin") {
     savedUser = "kandukurijagan99@gmail.com";
   }
   if (userField) userField.value = savedUser;
-  if (rememberBox) rememberBox.checked = (remembered !== false);
 
   const wrapper = document.querySelector('.dashboard-wrapper');
   if (wrapper) wrapper.classList.add("blur-dashboard-wrapper");
   const overlay = document.getElementById("lock-screen-overlay");
   if (overlay) overlay.classList.remove("hidden");
 
-  // Update lock screen session timing indicator
+  // Update lock screen session timing indicator / banner
+  const sessionStatusBanner = document.getElementById("login-session-status-banner");
   const sessionStatusText = document.getElementById("login-session-status-text");
-  if (sessionStatusText) {
-    sessionStatusText.textContent = "Session Locked • Authorized Email Verification Required";
+  if (sessionStatusBanner && sessionStatusText) {
+    sessionStatusBanner.style.display = "block";
+    if (reason === "inactivity_timeout") {
+      sessionStatusBanner.style.background = "rgba(245, 158, 11, 0.15)";
+      sessionStatusBanner.style.border = "1px solid rgba(245, 158, 11, 0.35)";
+      sessionStatusBanner.style.color = "#fbbf24";
+      const mins = Math.max(1, Math.round((lockTimerSeconds || 1800) / 60));
+      sessionStatusText.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Session Expired: Inactive for ${mins} min. Sign in to resume.`;
+    } else if (reason === "manual") {
+      sessionStatusBanner.style.background = "rgba(56, 189, 248, 0.15)";
+      sessionStatusBanner.style.border = "1px solid rgba(56, 189, 248, 0.35)";
+      sessionStatusBanner.style.color = "#38bdf8";
+      sessionStatusText.innerHTML = '<i class="fa-solid fa-lock"></i> Screen Locked: Sign in with Google to resume.';
+    } else if (reason === "logout") {
+      sessionStatusBanner.style.background = "rgba(168, 85, 247, 0.15)";
+      sessionStatusBanner.style.border = "1px solid rgba(168, 85, 247, 0.35)";
+      sessionStatusBanner.style.color = "#c084fc";
+      sessionStatusText.innerHTML = '<i class="fa-solid fa-arrow-right-from-bracket"></i> You have signed out successfully.';
+    } else {
+      sessionStatusBanner.style.display = "none";
+    }
   }
-  const sessionLockSubtext = document.getElementById("login-session-lock-subtext");
-  if (sessionLockSubtext) {
-    const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    sessionLockSubtext.textContent = `Auto-locked at ${timeStr} • Zero-Trust Mode Active`;
-  }
+
   if (typeof updateSessionTimerUI === 'function') {
     updateSessionTimerUI();
   }
@@ -15355,7 +15425,82 @@ function triggerLockOverlay() {
     const submitBtn = document.querySelector(".btn-login-submit");
     AppSecurity.startLockoutCountdown(submitBtn, errBlock);
   }
+
+  if (shouldBroadcast) {
+    broadcastAuthEvent("LOCK", { reason });
+  }
 }
+
+// REALTIME MULTI-TAB AUTH SYNCHRONIZATION (Enterprise BroadcastChannel Engine)
+let authBroadcastChannel = null;
+try {
+  if (typeof BroadcastChannel !== "undefined") {
+    authBroadcastChannel = new BroadcastChannel("aaryan_auth_channel");
+    authBroadcastChannel.onmessage = function(event) {
+      const data = event.data;
+      if (!data) return;
+      if (data.type === "LOCK") {
+        if (!isLocked) {
+          triggerLockOverlay(data.reason || "manual", false);
+        }
+      } else if (data.type === "LOGOUT") {
+        if (!isLocked) {
+          triggerUserLogout(false);
+        }
+      } else if (data.type === "LOGIN") {
+        if (isLocked && data.email) {
+          sessionStorage.setItem("session_authenticated", "true");
+          sessionStorage.setItem("current_user_email", data.email);
+          sessionStorage.setItem("current_user_name", data.name || "");
+          sessionStorage.setItem("current_user_role", data.role || "operator");
+          sessionStorage.setItem("manual_locked", "false");
+          sessionStorage.setItem("session_last_active_time", Date.now().toString());
+          unlockSystemSilently(false);
+          if (typeof window.applyRolePermissions === "function") {
+            window.applyRolePermissions(data.role);
+          }
+        }
+      }
+    };
+  }
+} catch (e) {
+  console.warn("Auth broadcast channel note:", e);
+}
+
+function broadcastAuthEvent(type, payload = {}) {
+  try {
+    if (authBroadcastChannel) {
+      authBroadcastChannel.postMessage({ type, ...payload, timestamp: Date.now() });
+    }
+    localStorage.setItem("auth_broadcast_sync", JSON.stringify({ type, ...payload, timestamp: Date.now() }));
+  } catch (e) {}
+}
+
+window.addEventListener("storage", (e) => {
+  if (e.key === "auth_broadcast_sync" && e.newValue) {
+    try {
+      const msg = JSON.parse(e.newValue);
+      if (Date.now() - (msg.timestamp || 0) < 5000) {
+        if (msg.type === "LOCK" && !isLocked) {
+          triggerLockOverlay(msg.reason || "manual", false);
+        } else if (msg.type === "LOGOUT" && !isLocked) {
+          triggerUserLogout(false);
+        } else if (msg.type === "LOGIN" && isLocked && msg.email) {
+          sessionStorage.setItem("session_authenticated", "true");
+          sessionStorage.setItem("current_user_email", msg.email);
+          sessionStorage.setItem("current_user_name", msg.name || "");
+          sessionStorage.setItem("current_user_role", msg.role || "operator");
+          sessionStorage.setItem("manual_locked", "false");
+          sessionStorage.setItem("session_last_active_time", Date.now().toString());
+          unlockSystemSilently(false);
+          if (typeof window.applyRolePermissions === "function") {
+            window.applyRolePermissions(msg.role);
+          }
+        }
+      }
+    } catch (_) {}
+  }
+});
 
 window.toggleLoginPasswordVisibility = function() {
   // Disabled in passwordless mode
@@ -15542,7 +15687,7 @@ window.verifyAndAuthorizeUser = function(email, displayName) {
 
     window.updateUserLastLogin(normEmail);
 
-    unlockSystemSilently();
+    unlockSystemSilently(true);
     AppSecurity.recordSuccessfulLogin(normEmail, `Google Identity (${role})`);
     window.applyRolePermissions(role);
 
@@ -19001,7 +19146,7 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
 
 
   // Differentiate between Public Visitors vs Authenticated Admin inside Website
-  const isAdminLoggedIn = (sessionStorage.getItem("session_authenticated") === "true" || localStorage.getItem("app_authenticated") === "true") && (typeof isLocked === "undefined" || !isLocked);
+  const isAdminLoggedIn = (sessionStorage.getItem("session_authenticated") === "true") && (typeof isLocked === "undefined" || !isLocked);
   const adminSettleControls = document.getElementById("verify-admin-settle-controls");
   const adminGatePrompt = document.getElementById("verify-admin-gate-prompt");
   const adminUnlockForm = document.getElementById("verify-admin-unlock-form");
@@ -19176,7 +19321,7 @@ window.toggleVerifyCustomAmount = function(status) {
 
 window.submitInvoicePaymentSettlement = function() {
   // Strict Security: Allowed ONLY when authenticated inside the admin dashboard
-  const isAdminLoggedIn = (sessionStorage.getItem("session_authenticated") === "true" || localStorage.getItem("app_authenticated") === "true") && (typeof isLocked === "undefined" || !isLocked);
+  const isAdminLoggedIn = (sessionStorage.getItem("session_authenticated") === "true") && (typeof isLocked === "undefined" || !isLocked);
   if (!isAdminLoggedIn) {
     if (typeof showFloatingToast === "function") showFloatingToast("🔒 Access Denied: Admin authentication required to settle bills.", "warning");
     return;
