@@ -3876,28 +3876,45 @@ function initializeApp() {
     }
   });
 
-  // REAL-WORLD ENTERPRISE SESSION PERSISTENCE (30-Day Remembered Login)
+  // REAL-WORLD ENTERPRISE SESSION PERSISTENCE (Strict Main Admin Authorization)
+  if (typeof window.cleanStorageOfUnauthorizedUsers === 'function') {
+    window.cleanStorageOfUnauthorizedUsers();
+  }
+
   const savedSession = (typeof window.getPersistentAuthSession === 'function') ? window.getPersistentAuthSession() : null;
-  const hasSessionAuth = sessionStorage.getItem("session_authenticated") === "true";
   const isManuallyLocked = sessionStorage.getItem("manual_locked") === "true";
   const lockoutStatus = AppSecurity.isLockedOut();
 
   let canStayUnlocked = false;
+  let candidateEmail = (savedSession?.email || sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
 
-  if (savedSession && !isManuallyLocked && !lockoutStatus.locked) {
+  // STRICT AUDIT: If currently stored email is not authorized by Main Admin, purge immediately!
+  if (candidateEmail && typeof window.isUserAuthorizedByAdmin === 'function' && !window.isUserAuthorizedByAdmin(candidateEmail)) {
+    console.warn("Purging unauthorized session on boot for:", candidateEmail);
+    if (typeof window.clearPersistentAuthSession === 'function') {
+      window.clearPersistentAuthSession();
+    }
+    sessionStorage.clear();
+    localStorage.removeItem("aaryan_auth_session");
+    localStorage.removeItem("app_authenticated");
+    localStorage.setItem("app_locked", "true");
+    candidateEmail = "";
+  }
+
+  if (candidateEmail && typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(candidateEmail) && !isManuallyLocked && !lockoutStatus.locked) {
+    const isMainAdmin = (candidateEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
     const usersList = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
-    const isMainAdmin = (savedSession.email === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
     const matchedUser = isMainAdmin
-      ? { status: "active", role: "super_admin" }
-      : usersList.find(u => (u.email || "").toLowerCase().trim() === savedSession.email);
+      ? { status: "active", role: "super_admin", name: "Jagan (Main Admin)" }
+      : usersList.find(u => (u.email || "").toLowerCase().trim() === candidateEmail && u.status === "active");
 
-    if (matchedUser && matchedUser.status === "active") {
-      // User is verified and active! Restore session immediately without asking to login again!
+    if (matchedUser) {
       canStayUnlocked = true;
-      const role = matchedUser.role || savedSession.role || "customer";
+      const role = matchedUser.role || "customer";
+      const name = matchedUser.name || (isMainAdmin ? "Jagan (Main Admin)" : candidateEmail.split("@")[0]);
       sessionStorage.setItem("session_authenticated", "true");
-      sessionStorage.setItem("current_user_email", savedSession.email);
-      sessionStorage.setItem("current_user_name", savedSession.name);
+      sessionStorage.setItem("current_user_email", candidateEmail);
+      sessionStorage.setItem("current_user_name", name);
       sessionStorage.setItem("current_user_role", role);
       sessionStorage.setItem("is_main_admin", isMainAdmin ? "true" : "false");
       sessionStorage.setItem("manual_locked", "false");
@@ -3905,13 +3922,14 @@ function initializeApp() {
       localStorage.setItem("app_authenticated", "true");
       localStorage.setItem("app_locked", "false");
     } else {
-      // User suspended by admin -> revoke persistent session
       if (typeof window.clearPersistentAuthSession === 'function') {
         window.clearPersistentAuthSession();
       }
+      sessionStorage.clear();
+      localStorage.removeItem("aaryan_auth_session");
+      localStorage.removeItem("app_authenticated");
+      localStorage.setItem("app_locked", "true");
     }
-  } else if (hasSessionAuth && !isManuallyLocked && !lockoutStatus.locked) {
-    canStayUnlocked = true;
   }
 
   // Auto-migrate legacy cleartext saved_password to cryptographic SHA-256 token
@@ -3940,9 +3958,15 @@ function initializeApp() {
       window.applyRolePermissions(roleToApply);
     }
   } else {
-    // Only locked if never signed in before or explicitly logged out
+    // STRICT LOCKOUT: System must remain securely locked behind authentication overlay!
     const lockReason = isManuallyLocked ? "manual" : "initial";
     triggerLockOverlay(lockReason, false);
+    document.body.classList.add("app-is-locked");
+    const overlay = document.getElementById("lock-screen-overlay");
+    if (overlay) {
+      overlay.classList.remove("hidden");
+      overlay.style.setProperty("display", "flex", "important");
+    }
     autofillRememberedCredentials();
   }
 
@@ -4530,6 +4554,17 @@ window.closeMobileSidebar = function() {
 
 window.switchTab = function(tabName) {
   if (isLocked) return;
+
+  const currentEmail = (sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
+  const isSuperAdmin = (currentEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
+  const currentRole = isSuperAdmin ? "super_admin" : (sessionStorage.getItem("current_user_role") || "customer");
+  if (currentRole === "customer" && ["billing", "products", "parties", "reports", "settings"].includes(tabName)) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts can only view Dashboard & Invoices.", "warning", 3500);
+    }
+    tabName = "dashboard";
+  }
+
   if (typeof window.triggerHapticFeedback === 'function') {
     window.triggerHapticFeedback(10);
   }
@@ -5154,8 +5189,11 @@ function updateDashboardOverview() {
         if (status === 'Partial') badgeClass = 'badge-partial';
         if (status === 'Unpaid') badgeClass = 'badge-unpaid';
 
+        const currentRole = sessionStorage.getItem("current_user_role") || "customer";
+        const isCustomerRole = (currentRole === 'customer');
+
         let balanceQrDropdownItem = "";
-        if (!isEstimate && !isPaid && balance > 0) {
+        if (!isEstimate && !isPaid && balance > 0 && !isCustomerRole) {
           balanceQrDropdownItem = `
             <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openBalanceQrModal('${inv.id}')"><i class="fa-solid fa-qrcode" style="color: #06b6d4;"></i> Scan &amp; Settle Balance (₹ ${formatCurrency(balance)})</a>
           `;
@@ -5175,22 +5213,22 @@ function updateDashboardOverview() {
           <td class="text-center" style="white-space: nowrap;">${itemsCount}</td>
           <td style="text-align: right; font-weight: 700; white-space: nowrap;">₹ ${formatCurrency(invTotal)}</td>
           <td class="text-center" style="white-space: nowrap;">
-            ${(!isPaid && balance > 0)
+            ${(!isPaid && balance > 0 && !isCustomerRole)
               ? `<span class="badge-status ${badgeClass}" onclick="openBalanceQrModal('${inv.id}')" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode" style="font-size: 11px;"></i>${status}</span><div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>`
-              : `<span class="badge-status ${badgeClass}">${status}</span>`}
+              : `<span class="badge-status ${badgeClass}">${status}</span>${(!isPaid && balance > 0 ? `<div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>` : '')}`}
           </td>
           <td class="actions-cell">
-            ${(!isEstimate && !isPaid && balance > 0) ? `<button class="action-btn share action-btn-qr" onclick="openBalanceQrModal('${inv.id}')" title="Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode"></i></button>` : ''}
+            ${(!isEstimate && !isPaid && balance > 0 && !isCustomerRole) ? `<button class="action-btn share action-btn-qr" onclick="openBalanceQrModal('${inv.id}')" title="Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode"></i></button>` : ''}
             <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${inv.id}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
             <button class="action-btn print action-btn-thermal" onclick="openInvoicePrintPreview('${inv.id}', 'thermal')" title="Preview &amp; Print POS Thermal"><i class="fa-solid fa-receipt"></i></button>
             <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Share PDF via WhatsApp (1-Click)"><i class="fa-brands fa-whatsapp"></i></button>
-            <button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Invoice"><i class="fa-solid fa-pen-to-square"></i></button>
-            <button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Invoice"><i class="fa-solid fa-trash"></i></button>
+            ${!isCustomerRole ? `<button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Invoice"><i class="fa-solid fa-pen-to-square"></i></button>` : ''}
+            ${!isCustomerRole ? `<button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Invoice"><i class="fa-solid fa-trash"></i></button>` : ''}
             <div class="action-dropdown-wrapper">
               <button class="action-btn more-btn" onclick="toggleActionDropdown('${inv.id}', event)" title="More Options"><i class="fa-solid fa-ellipsis-vertical"></i></button>
               <div id="action-dropdown-${inv.id}" class="action-dropdown-menu hidden" onclick="event.stopPropagation();">
                 <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); downloadSavedInvoicePdf('${inv.id}', this)"><i class="fa-solid fa-file-pdf text-rose"></i> Download PDF</a>
-                <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatInvoice('${inv.id}')"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i> Clone / Repeat Bill</a>
+                ${!isCustomerRole ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatInvoice('${inv.id}')"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i> Clone / Repeat Bill</a>` : ''}
                 ${balanceQrDropdownItem}
                 <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openUniversalInvoiceShareModal('${inv.id}')"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i> Universal Share Link</a>
                 <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openInvoiceVerificationModal('${inv.id || inv.invoiceNo}')"><i class="fa-solid fa-shield-check" style="color: #10b981;"></i> Verify &amp; Digital Receipt</a>
@@ -8603,6 +8641,14 @@ function prepareInvoiceItemsBeforeSave() {
 
 // --- UNIFIED INVOICE SAVE ENGINE ---
 window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl = null) {
+  const currentRole = sessionStorage.getItem("current_user_role") || "customer";
+  if (currentRole === "customer") {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot create or modify invoices.", "error", 4000);
+    }
+    return null;
+  }
+
   if (isSavingInvoice) return null;
   isSavingInvoice = true;
 
@@ -11802,6 +11848,13 @@ window.openBalanceQrModal = function(id) {
   const customControls = document.getElementById("bal-partial-payment-controls");
   if (customControls) customControls.style.display = "none";
 
+  const curRole = sessionStorage.getItem("current_user_role") || "customer";
+  const isCust = (curRole === "customer");
+  const markBtn = document.getElementById("bal-mark-paid-btn");
+  const partialToggleBtn = document.getElementById("bal-partial-toggle-btn");
+  if (markBtn) markBtn.style.display = isCust ? "none" : "";
+  if (partialToggleBtn) partialToggleBtn.style.display = isCust ? "none" : "";
+
   const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
   const upiIdEl = document.getElementById("bal-qr-upi-id");
   if (upiIdEl) upiIdEl.textContent = realUpiId;
@@ -11882,6 +11935,14 @@ window.togglePartialPaymentSection = function() {
 };
 
 window.submitCustomPartialPayment = function() {
+  const curRole = sessionStorage.getItem("current_user_role") || "customer";
+  if (curRole === "customer") {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot record payments.", "error", 4500);
+    }
+    return;
+  }
+
   if (!currentBalanceQrInv || !currentBalanceQrInv.inv) {
     if (typeof showFloatingToast === 'function') showFloatingToast("⚠️ No active invoice selected.", "warning");
     return;
@@ -12011,6 +12072,14 @@ window.shareBalanceQrWhatsApp = function() {
 };
 
 window.markBalanceQrPaidAndSendWhatsApp = function() {
+  const curRole = sessionStorage.getItem("current_user_role") || "customer";
+  if (curRole === "customer") {
+    if (typeof showFloatingToast === "function") {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot mark invoices as paid.", "error", 4500);
+    }
+    return;
+  }
+
   if (!currentBalanceQrInv || !currentBalanceQrInv.inv) {
     if (typeof showFloatingToast === "function") showFloatingToast("No active invoice selected.", "warning");
     return;
@@ -12473,19 +12542,22 @@ function renderHistoryTableRows(records) {
     const isPaid = payInfo.isPaid;
     const balance = payInfo.balance;
 
+    const currentRole = sessionStorage.getItem("current_user_role") || "customer";
+    const isCustomerRole = (currentRole === 'customer');
+
     let badgeClass = 'badge-paid';
     if (status === 'Partial') badgeClass = 'badge-partial';
     if (status === 'Unpaid') badgeClass = 'badge-unpaid';
 
     let balanceQrBtn = "";
-    if (!isEstimate && !isPaid && balance > 0) {
+    if (!isEstimate && !isPaid && balance > 0 && !isCustomerRole) {
       balanceQrBtn = `
         <button class="action-btn share action-btn-qr" onclick="openBalanceQrModal('${inv.id}')" title="Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode"></i></button>
       `;
     }
 
     let balanceQrDropdownItem = "";
-    if (!isEstimate && !isPaid && balance > 0) {
+    if (!isEstimate && !isPaid && balance > 0 && !isCustomerRole) {
       balanceQrDropdownItem = `
         <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openBalanceQrModal('${inv.id}')"><i class="fa-solid fa-qrcode" style="color: #06b6d4;"></i> Scan UPI QR &amp; Settle (₹ ${formatCurrency(balance)})</a>
         <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); sendWhatsAppPaymentReminder('${inv.id}', this)"><i class="fa-solid fa-bell" style="color: #d97706;"></i> WhatsApp Payment Reminder</a>
@@ -12493,7 +12565,7 @@ function renderHistoryTableRows(records) {
     }
 
     let convertEstimateDropdownItem = "";
-    if (isEstimate) {
+    if (isEstimate && !isCustomerRole) {
       convertEstimateDropdownItem = `
         <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); convertEstimateToInvoice('${inv.id}')"><i class="fa-solid fa-file-circle-check" style="color: #0891b2;"></i> Convert to Official GST Invoice</a>
       `;
@@ -12521,22 +12593,22 @@ function renderHistoryTableRows(records) {
         <td class="text-center">
           ${isEstimate 
             ? `<span class="badge-status" style="background: rgba(245, 158, 11, 0.15); color: #d97706; font-weight: 700; border: 1px solid rgba(245, 158, 11, 0.3);">Quotation</span>` 
-            : (!isPaid && balance > 0
+            : (!isPaid && balance > 0 && !isCustomerRole
                 ? `<span class="badge-status ${badgeClass}" onclick="openBalanceQrModal('${inv.id}')" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode" style="font-size: 11px;"></i>${status}</span><div style="font-size: 10.5px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>`
-                : `<span class="badge-status ${badgeClass}">${status}</span>`)}
+                : `<span class="badge-status ${badgeClass}">${status}</span>${(!isPaid && balance > 0 ? `<div style="font-size: 10.5px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>` : '')}`)}
         </td>
         <td class="actions-cell">
           ${balanceQrBtn}
           <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${inv.id}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
           <button class="action-btn print action-btn-thermal" onclick="openInvoicePrintPreview('${inv.id}', 'thermal')" title="Preview &amp; Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
           <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Send Invoice &amp; PDF via WhatsApp (1-Click)" style="background: #16a34a !important; color: #ffffff !important; font-weight: 700; width: 30px; height: 30px; border-radius: 6px; box-shadow: 0 1px 3px rgba(22, 163, 74, 0.35);"><i class="fa-brands fa-whatsapp" style="font-size: 15px; color: #ffffff !important;"></i></button>
-          <button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Bill"><i class="fa-solid fa-pen-to-square"></i></button>
-          <button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Bill"><i class="fa-solid fa-trash"></i></button>
+          ${!isCustomerRole ? `<button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Bill"><i class="fa-solid fa-pen-to-square"></i></button>` : ''}
+          ${!isCustomerRole ? `<button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Bill"><i class="fa-solid fa-trash"></i></button>` : ''}
           <div class="action-dropdown-wrapper">
             <button class="action-btn more-btn" onclick="toggleActionDropdown('${inv.id}', event)" title="More Options"><i class="fa-solid fa-ellipsis-vertical"></i></button>
             <div id="action-dropdown-${inv.id}" class="action-dropdown-menu hidden" onclick="event.stopPropagation();">
               <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); downloadSavedInvoicePdf('${inv.id}', this)"><i class="fa-solid fa-file-pdf text-rose"></i> Download PDF</a>
-              <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatInvoice('${inv.id}')"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i> Clone / Repeat Bill</a>
+              ${!isCustomerRole ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatInvoice('${inv.id}')"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i> Clone / Repeat Bill</a>` : ''}
               ${balanceQrDropdownItem}
               ${convertEstimateDropdownItem}
               <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); shareInvoiceToTelegram('${inv.id}', this)"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i> Share via Telegram</a>
@@ -12560,6 +12632,14 @@ elements.searchHistoryInput.addEventListener("input", () => {
 });
 
 window.editSavedInvoice = function(id) {
+  const curRole = sessionStorage.getItem("current_user_role") || "customer";
+  if (curRole === "customer") {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot edit invoices.", "error", 4000);
+    }
+    return;
+  }
+
   const inv = invoicesDb.find(i => i.id === id);
   if (inv) {
     currentInvoice = JSON.parse(JSON.stringify(inv.details));
@@ -12618,6 +12698,14 @@ window.editSavedInvoice = function(id) {
 };
 
 window.repeatInvoice = function(id) {
+  const curRole = sessionStorage.getItem("current_user_role") || "customer";
+  if (curRole === "customer") {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot create bills.", "error", 4000);
+    }
+    return;
+  }
+
   const inv = (invoicesDb || []).find(i => i && (i.id === id || i.invoiceNo === id));
   if (!inv) {
     if (typeof showFloatingToast === 'function') showFloatingToast("Invoice not found to repeat", "error");
@@ -13002,6 +13090,14 @@ window.executeConfirmedDelete = function() {
 };
 
 window.deleteSavedInvoice = function(identifier, skipConfirm = false) {
+  const curRole = sessionStorage.getItem("current_user_role") || "customer";
+  if (curRole === "customer") {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot delete invoices.", "error", 4000);
+    }
+    return;
+  }
+
   if (!identifier) return;
 
   const idStr = String(identifier).trim();
@@ -15494,11 +15590,11 @@ try {
           triggerUserLogout(false);
         }
       } else if (data.type === "LOGIN") {
-        if (isLocked && data.email) {
+        if (isLocked && data.email && typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(data.email)) {
           sessionStorage.setItem("session_authenticated", "true");
           sessionStorage.setItem("current_user_email", data.email);
           sessionStorage.setItem("current_user_name", data.name || "");
-          sessionStorage.setItem("current_user_role", data.role || "operator");
+          sessionStorage.setItem("current_user_role", data.role || "customer");
           sessionStorage.setItem("manual_locked", "false");
           sessionStorage.setItem("session_last_active_time", Date.now().toString());
           unlockSystemSilently(false);
@@ -15531,11 +15627,11 @@ window.addEventListener("storage", (e) => {
           triggerLockOverlay(msg.reason || "manual", false);
         } else if (msg.type === "LOGOUT" && !isLocked) {
           triggerUserLogout(false);
-        } else if (msg.type === "LOGIN" && isLocked && msg.email) {
+        } else if (msg.type === "LOGIN" && isLocked && msg.email && typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(msg.email)) {
           sessionStorage.setItem("session_authenticated", "true");
           sessionStorage.setItem("current_user_email", msg.email);
           sessionStorage.setItem("current_user_name", msg.name || "");
-          sessionStorage.setItem("current_user_role", msg.role || "operator");
+          sessionStorage.setItem("current_user_role", msg.role || "customer");
           sessionStorage.setItem("manual_locked", "false");
           sessionStorage.setItem("session_last_active_time", Date.now().toString());
           unlockSystemSilently(false);
@@ -15625,25 +15721,53 @@ window.getAuthorizedUsersList = function() {
   if (!Array.isArray(list)) list = [];
 
   const mainAdminNorm = window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
-  const adminIndex = list.findIndex(u => (u.email || "").toLowerCase().trim() === mainAdminNorm);
 
-  if (adminIndex === -1) {
-    list.unshift({
-      email: window.AUTHORIZED_LOGIN_EMAIL,
-      name: "Jagan Kandukuri (Main Admin)",
-      role: "super_admin",
-      status: "active",
-      addedAt: "2026-09-01T00:00:00.000Z",
-      lastLogin: new Date().toISOString(),
-      isMainAdmin: true
-    });
-  } else {
-    list[adminIndex].isMainAdmin = true;
-    list[adminIndex].role = "super_admin";
-    list[adminIndex].status = "active";
-    if (!list[adminIndex].name) list[adminIndex].name = "Jagan Kandukuri (Main Admin)";
-  }
+  // STRICT AUDIT & PURGE: Keep ONLY users explicitly authorized by Main Admin!
+  // Any legacy auto-created test account (e.g. endukuniku35@gmail.com) is completely discarded.
+  list = list.filter(u => {
+    if (!u || !u.email) return false;
+    const email = (u.email || "").toLowerCase().trim();
+    if (email === mainAdminNorm) return false; // Handled below as permanent master
+    if (email === "endukuniku35@gmail.com") return false; // Hard blocked test account
+    return (u.addedBy === mainAdminNorm || u.isMainAdminApproved === true);
+  });
+
+  // Main Admin is ALWAYS permanent index 0
+  list.unshift({
+    email: window.AUTHORIZED_LOGIN_EMAIL,
+    name: "Jagan Kandukuri (Main Admin)",
+    role: "super_admin",
+    status: "active",
+    addedAt: "2026-09-01T00:00:00.000Z",
+    lastLogin: new Date().toISOString(),
+    isMainAdmin: true
+  });
+
   return list;
+};
+
+// Clean local & global storage of any rogue or unapproved emails
+window.cleanStorageOfUnauthorizedUsers = function() {
+  try {
+    const cleanList = window.getAuthorizedUsersList();
+    localStorage.setItem("authorized_users", JSON.stringify(cleanList));
+    if (typeof globalSettings !== 'undefined') {
+      globalSettings.authorizedUsers = cleanList;
+      try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch (_) {}
+    }
+  } catch (_) {}
+};
+
+// Check if an email is genuinely authorized by Main Admin
+window.isUserAuthorizedByAdmin = function(email) {
+  const norm = (email || "").toLowerCase().trim();
+  if (!norm) return false;
+  const mainAdminNorm = window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
+  if (norm === mainAdminNorm) return true;
+  if (norm === "endukuniku35@gmail.com") return false;
+  const list = window.getAuthorizedUsersList();
+  const matched = list.find(u => (u.email || "").toLowerCase().trim() === norm && (u.addedBy === mainAdminNorm || u.isMainAdminApproved === true));
+  return Boolean(matched && matched.status === "active");
 };
 
 // 2. Persist user access list locally and to Google Sheets Cloud
@@ -15690,6 +15814,8 @@ window.updateUserLastLogin = function(email) {
 window.verifyAndAuthorizeUser = function(email, displayName) {
   const normEmail = (email || "").toLowerCase().trim();
   const errBlock = document.getElementById("login-error-message");
+  const mainAdminNorm = window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
+  const isMainAdmin = (normEmail === mainAdminNorm);
 
   if (!normEmail) {
     if (errBlock) {
@@ -15699,84 +15825,102 @@ window.verifyAndAuthorizeUser = function(email, displayName) {
     return false;
   }
 
-  const usersList = window.getAuthorizedUsersList();
-  const isMainAdmin = (normEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
-  let matchedUser = isMainAdmin
-    ? { email: window.AUTHORIZED_LOGIN_EMAIL, name: displayName || "Jagan (Main Admin)", role: "super_admin", status: "active" }
-    : usersList.find(u => (u.email || "").toLowerCase().trim() === normEmail);
+  // STRICT ACCESS CONTROL: ONLY Main Admin or users explicitly added by Main Admin can open the system!
+  const isAuthorized = window.isUserAuthorizedByAdmin(normEmail);
 
-  // STRICT ACCESS CONTROL: Only users explicitly granted access by Main Admin can log in!
-  if (!matchedUser) {
+  if (!isAuthorized) {
+    console.warn("BLOCKED: Unauthorized login attempt by:", normEmail);
+
+    // PURGE ANY ACTIVE SESSION & REMAIN 100% LOCKED
+    if (typeof window.clearPersistentAuthSession === 'function') {
+      window.clearPersistentAuthSession();
+    }
+    sessionStorage.clear();
+    localStorage.removeItem("aaryan_auth_session");
+    localStorage.removeItem("app_authenticated");
+    localStorage.setItem("app_locked", "true");
+    document.body.classList.add("app-is-locked");
+
+    const lockOverlay = document.getElementById("lock-screen-overlay");
+    if (lockOverlay) {
+      lockOverlay.classList.remove("hidden");
+      lockOverlay.style.setProperty("display", "flex", "important");
+    }
+
     if (errBlock) {
       errBlock.innerHTML = `
-        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 4px; font-size: 13.5px;">
-          <i class="fa-solid fa-ban"></i> Access Denied
-        </div>
-        <div style="font-size: 12px; color: #cbd5e1; line-height: 1.5;">
-          <strong>${escapeHtml(normEmail)}</strong> is not authorized to access this billing system.<br>
-          Please contact Main Admin (<strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong>) to request access.
+        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left; margin-bottom: 6px;">
+          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 6px; font-size: 13.5px; display: flex; align-items: center; gap: 7px;">
+            <i class="fa-solid fa-circle-xmark" style="font-size: 16px;"></i> Access Denied: Unauthorized Email
+          </div>
+          <div style="font-size: 12px; color: #f1f5f9; line-height: 1.5;">
+            The email <strong style="color: #fca5a5; font-family: monospace;">${escapeHtml(normEmail)}</strong> has NOT been granted access.<br><br>
+            <span style="color: #cbd5e1;">Only the Main Admin (<strong style="color: #38bdf8;">${window.AUTHORIZED_LOGIN_EMAIL}</strong>) can grant access from Settings.</span>
+          </div>
         </div>
       `;
       errBlock.classList.remove("hidden");
     }
+
     const card = document.querySelector(".login-card");
     if (card) {
       card.classList.remove("shake-animation");
       void card.offsetWidth;
       card.classList.add("shake-animation");
     }
+
     if (typeof showFloatingToast === 'function') {
-      showFloatingToast(`⛔ Access Denied: ${normEmail} has not been authorized by Main Admin.`, "warning", 5000);
+      showFloatingToast(`⛔ Access Denied: ${normEmail} is NOT authorized to open this software.`, "error", 6000);
     }
+
     return false;
   }
 
-  if (matchedUser && matchedUser.status === "active") {
-    const role = matchedUser.role || (isMainAdmin ? "super_admin" : "customer");
-    const name = displayName || matchedUser.name || normEmail.split("@")[0];
+  const usersList = window.getAuthorizedUsersList();
+  const matchedUser = isMainAdmin
+    ? { email: window.AUTHORIZED_LOGIN_EMAIL, name: displayName || "Jagan (Main Admin)", role: "super_admin", status: "active" }
+    : usersList.find(u => (u.email || "").toLowerCase().trim() === normEmail && u.status === "active");
 
-    // Store PERSISTENT real-world session (30-day remembered login)
-    if (typeof window.savePersistentAuthSession === 'function') {
-      window.savePersistentAuthSession({
-        email: normEmail,
-        name: name,
-        role: role,
-        isMainAdmin: isMainAdmin
-      });
-    }
-
-    window.updateUserLastLogin(normEmail);
-
-    unlockSystemSilently(true);
-    AppSecurity.recordSuccessfulLogin(normEmail, `Google Identity (${role})`);
-    window.applyRolePermissions(role);
-
-    if (errBlock) errBlock.classList.add("hidden");
-
-    const roleName = role === 'super_admin' ? 'Main Admin' : (role === 'admin' ? 'Administrator' : (role === 'customer' ? 'Customer' : 'Billing Staff'));
-    showFloatingToast(`🔓 Welcome, ${name}! (${roleName})`, "success", 4500);
-    return true;
-  } else if (matchedUser && matchedUser.status === "suspended") {
+  if (!matchedUser || matchedUser.status !== "active") {
     if (errBlock) {
       errBlock.innerHTML = `
-        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
-          <i class="fa-solid fa-user-lock"></i> Access Suspended!
-        </div>
-        <div style="font-size: 11.5px; color: #cbd5e1;">
-          Your account (<strong>${escapeHtml(normEmail)}</strong>) has been paused by the Main Admin.
+        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+            <i class="fa-solid fa-user-lock"></i> Account Suspended
+          </div>
+          <div style="font-size: 11.5px; color: #cbd5e1;">
+            Your account (<strong style="color: #fca5a5;">${escapeHtml(normEmail)}</strong>) has been paused by the Main Admin.
+          </div>
         </div>
       `;
       errBlock.classList.remove("hidden");
     }
-    const card = document.querySelector(".login-card");
-    if (card) {
-      card.classList.remove("shake-animation");
-      void card.offsetWidth;
-      card.classList.add("shake-animation");
-    }
     return false;
   }
-  return false;
+
+  const role = matchedUser.role || (isMainAdmin ? "super_admin" : "customer");
+  const name = displayName || matchedUser.name || normEmail.split("@")[0];
+
+  // Store PERSISTENT real-world session
+  if (typeof window.savePersistentAuthSession === 'function') {
+    window.savePersistentAuthSession({
+      email: normEmail,
+      name: name,
+      role: role,
+      isMainAdmin: isMainAdmin
+    });
+  }
+
+  window.updateUserLastLogin(normEmail);
+
+  unlockSystemSilently(true);
+  AppSecurity.recordSuccessfulLogin(normEmail, `Google Identity (${role})`);
+  window.applyRolePermissions(role);
+
+  if (errBlock) errBlock.classList.add("hidden");
+
+  const roleName = role === 'super_admin' ? 'Main Admin' : (role === 'admin' ? 'Administrator' : (role === 'customer' ? 'Customer' : 'Billing Staff'));
+  return true;
 };
 
 window.handleGoogleCredentialResponse = function(response) {
@@ -15995,12 +16139,16 @@ window.saveUserAccessSubmit = function(e) {
   const targetEmail = origEmail || email;
   const existingIdx = list.findIndex(u => (u.email || "").toLowerCase().trim() === targetEmail);
 
+  const mainAdminNorm = window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
+
   if (existingIdx !== -1) {
     // Edit existing user
     list[existingIdx].name = name;
     list[existingIdx].role = role;
     list[existingIdx].status = status;
     list[existingIdx].updatedAt = new Date().toISOString();
+    list[existingIdx].addedBy = mainAdminNorm;
+    list[existingIdx].isMainAdminApproved = true;
     showFloatingToast(`✅ User access updated for ${email}`, "success", 4000);
   } else {
     // Add new user
@@ -16010,7 +16158,9 @@ window.saveUserAccessSubmit = function(e) {
       role,
       status,
       addedAt: new Date().toISOString(),
-      lastLogin: null
+      lastLogin: null,
+      addedBy: mainAdminNorm,
+      isMainAdminApproved: true
     });
     showFloatingToast(`✅ Access granted for ${email}! They can now log in via Google.`, "success", 5000);
   }
@@ -16105,33 +16255,75 @@ window.applyRolePermissions = function(role) {
   }
 
   // 4. Role Navigation Restrictions
-  // Settings Tab (Super Admin and Admin only)
-  const settingsTabBtn = document.querySelector('.nav-item[data-tab="settings"]');
-  if (settingsTabBtn) {
-    settingsTabBtn.style.display = isCustomer ? "none" : "";
-  }
+  const navBilling = document.querySelector('.nav-item[data-tab="billing"]');
+  const navProducts = document.querySelector('.nav-item[data-tab="products"]');
+  const navParties = document.querySelector('.nav-item[data-tab="parties"]');
+  const navReports = document.querySelector('.nav-item[data-tab="reports"]');
+  const navSettings = document.querySelector('.nav-item[data-tab="settings"]');
 
-  // Reports Tab (Super Admin, Admin, and Staff only - NOT Customer)
-  const reportsTabBtn = document.querySelector('.nav-item[data-tab="reports"]');
-  if (reportsTabBtn) {
-    reportsTabBtn.style.display = isCustomer ? "none" : "";
-  }
+  if (navBilling) navBilling.style.display = isCustomer ? "none" : "";
+  if (navProducts) navProducts.style.display = isCustomer ? "none" : "";
+  if (navParties) navParties.style.display = isCustomer ? "none" : "";
+  if (navReports) navReports.style.display = isCustomer ? "none" : "";
+  if (navSettings) navSettings.style.display = isCustomer ? "none" : "";
 
-  // User Management Panel in Settings (Main Admin only)
+  // Mobile bottom navigation items
+  const mobBilling = document.querySelector('[data-bottom-tab="billing"]');
+  const mobProducts = document.querySelector('[data-bottom-tab="products"]');
+  const mobReports = document.querySelector('[data-bottom-tab="reports"]');
+  const mobSettings = document.querySelector('[data-bottom-tab="settings"]');
+  if (mobBilling) mobBilling.style.display = isCustomer ? "none" : "";
+  if (mobProducts) mobProducts.style.display = isCustomer ? "none" : "";
+  if (mobReports) mobReports.style.display = isCustomer ? "none" : "";
+  if (mobSettings) mobSettings.style.display = isCustomer ? "none" : "";
+
+  // 5. Hero Action Buttons on Dashboard (Create Bill, Scan QR, Products, Reports)
+  const heroBillingBtn = document.querySelector('.hero-actions button[onclick="switchTab(\'billing\')"]');
+  const heroScanBtn = document.querySelector('.hero-actions button[onclick="openBarcodeScannerModal()"]');
+  const heroProductBtn = document.querySelector('.hero-actions button[onclick="switchTab(\'products\')"]');
+  const heroReportsBtn = document.querySelector('.hero-actions button[onclick="switchTab(\'reports\')"]');
+  if (heroBillingBtn) heroBillingBtn.style.display = isCustomer ? "none" : "";
+  if (heroScanBtn) heroScanBtn.style.display = isCustomer ? "none" : "";
+  if (heroProductBtn) heroProductBtn.style.display = isCustomer ? "none" : "";
+  if (heroReportsBtn) heroReportsBtn.style.display = isCustomer ? "none" : "";
+
+  // 6. Recent Invoices Header "+ New Bill" button
+  const recentNewBillBtn = document.querySelector('.card-box button[onclick="switchTab(\'billing\')"]');
+  if (recentNewBillBtn) recentNewBillBtn.style.display = isCustomer ? "none" : "";
+
+  // 7. Confidential Financial & Internal Metrics (Gross Profit, Products, Parties, Charts)
+  const statProfitCard = document.getElementById("stat-total-profit")?.closest('.stat-card');
+  const statProductsCard = document.getElementById("stat-total-products")?.closest('.stat-card');
+  const statPartiesCard = document.getElementById("stat-total-parties")?.closest('.stat-card');
+  const chartsGrid = document.querySelector('.analytics-charts-grid') || document.querySelector('.dashboard-charts-grid');
+
+  if (statProfitCard) statProfitCard.style.display = isCustomer ? "none" : "";
+  if (statProductsCard) statProductsCard.style.display = isCustomer ? "none" : "";
+  if (statPartiesCard) statPartiesCard.style.display = isCustomer ? "none" : "";
+  if (chartsGrid) chartsGrid.style.display = isCustomer ? "none" : "";
+
+  // 8. User Management Panel in Settings (Main Admin only)
   const userMgrPanel = document.getElementById("user-management-panel");
   if (userMgrPanel) {
     userMgrPanel.style.display = isSuperAdmin ? "" : "none";
   }
 
-  // 5. Customer Privacy Shield on Sensitive Financial Metrics
-  const grossProfitCards = document.querySelectorAll('.stat-card');
-  const chartsGrid = document.querySelector('.dashboard-charts-grid');
+  // 9. Redirect customer away from restricted tabs
   if (isCustomer) {
-    if (grossProfitCards && grossProfitCards[3]) grossProfitCards[3].style.display = "none";
-    if (chartsGrid) chartsGrid.style.display = "none";
-  } else {
-    if (grossProfitCards && grossProfitCards[3]) grossProfitCards[3].style.display = "";
-    if (chartsGrid) chartsGrid.style.display = "";
+    const activeView = document.querySelector('.content-view:not(.hidden)');
+    if (activeView && ['view-billing', 'view-products', 'view-parties', 'view-reports', 'view-settings'].includes(activeView.id)) {
+      if (typeof window.switchTab === 'function') {
+        window.switchTab('dashboard');
+      }
+    }
+  }
+
+  // 10. Refresh table action buttons according to role
+  if (typeof renderInvoicesTable === 'function') {
+    renderInvoicesTable();
+  }
+  if (typeof loadInvoicesHistoryTable === 'function') {
+    loadInvoicesHistoryTable();
   }
 
   if (isSuperAdmin && typeof window.renderUserManagerTable === 'function') {
@@ -20222,6 +20414,14 @@ window.toggleDynamicUpiPartialPayment = function() {
 };
 
 window.confirmDynamicUpiPaymentCompleted = function() {
+  const curRole = sessionStorage.getItem("current_user_role") || "customer";
+  if (curRole === "customer") {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot mark invoices as paid.", "error", 4500);
+    }
+    return;
+  }
+
   if (!currentActiveUpiInvoice) {
     if (typeof showFloatingToast === 'function') showFloatingToast("⚠️ No active invoice selected.", "warning");
     return;
@@ -20328,6 +20528,14 @@ window.confirmDynamicUpiPaymentCompleted = function() {
 };
 
 window.confirmDynamicUpiPartialPayment = function() {
+  const curRole = sessionStorage.getItem("current_user_role") || "customer";
+  if (curRole === "customer") {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot record payments.", "error", 4500);
+    }
+    return;
+  }
+
   if (!currentActiveUpiInvoice) return;
   const input = document.getElementById("dynamic-upi-partial-amt");
   const partialAmt = parseFloat(input?.value) || 0;
