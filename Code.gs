@@ -1114,6 +1114,7 @@ function handleApiGet(e) {
       ok: true, pong: true, t: Date.now()
     })).setMimeType(ContentService.MimeType.JSON);
   }
+}
 
 function computeSyncDataHash(invs, prods, parts) {
   var str = (invs ? invs.length : 0) + '|' + (prods ? prods.length : 0) + '|' + (parts ? parts.length : 0);
