@@ -15720,7 +15720,7 @@ window.getAuthorizedUsersList = function() {
   }
   if (!Array.isArray(list)) list = [];
 
-  const mainAdminNorm = window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
+  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
 
   // STRICT AUDIT & PURGE: Keep ONLY users explicitly authorized by Main Admin!
   // Any legacy auto-created test account (e.g. endukuniku35@gmail.com) is completely discarded.
@@ -15729,12 +15729,12 @@ window.getAuthorizedUsersList = function() {
     const email = (u.email || "").toLowerCase().trim();
     if (email === mainAdminNorm) return false; // Handled below as permanent master
     if (email === "endukuniku35@gmail.com") return false; // Hard blocked test account
-    return (u.addedBy === mainAdminNorm || u.isMainAdminApproved === true);
+    return (u.addedBy === mainAdminNorm || u.isMainAdminApproved === true || String(u.isMainAdminApproved) === "true");
   });
 
   // Main Admin is ALWAYS permanent index 0
   list.unshift({
-    email: window.AUTHORIZED_LOGIN_EMAIL,
+    email: mainAdminNorm,
     name: "Jagan Kandukuri (Main Admin)",
     role: "super_admin",
     status: "active",
@@ -15762,12 +15762,16 @@ window.cleanStorageOfUnauthorizedUsers = function() {
 window.isUserAuthorizedByAdmin = function(email) {
   const norm = (email || "").toLowerCase().trim();
   if (!norm) return false;
-  const mainAdminNorm = window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
+  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
   if (norm === mainAdminNorm) return true;
   if (norm === "endukuniku35@gmail.com") return false;
+  
   const list = window.getAuthorizedUsersList();
-  const matched = list.find(u => (u.email || "").toLowerCase().trim() === norm && (u.addedBy === mainAdminNorm || u.isMainAdminApproved === true));
-  return Boolean(matched && matched.status === "active");
+  const matched = list.find(u => (u.email || "").toLowerCase().trim() === norm);
+  if (!matched) return false;
+  
+  const status = String(matched.status || "active").toLowerCase().trim();
+  return status === "active";
 };
 
 // 2. Persist user access list locally and to Google Sheets Cloud
@@ -15811,7 +15815,7 @@ window.updateUserLastLogin = function(email) {
 };
 
 // 4. Central Authenticator for Google Identity
-window.verifyAndAuthorizeUser = function(email, displayName) {
+window.verifyAndAuthorizeUser = async function(email, displayName) {
   const normEmail = (email || "").toLowerCase().trim();
   const errBlock = document.getElementById("login-error-message");
   const mainAdminNorm = window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
@@ -15826,7 +15830,28 @@ window.verifyAndAuthorizeUser = function(email, displayName) {
   }
 
   // STRICT ACCESS CONTROL: ONLY Main Admin or users explicitly added by Main Admin can open the system!
-  const isAuthorized = window.isUserAuthorizedByAdmin(normEmail);
+  let isAuthorized = window.isUserAuthorizedByAdmin(normEmail);
+
+  // If local check fails (e.g. on a new device with empty localStorage), fallback to Cloud Sync verify
+  if (!isAuthorized && typeof GOOGLE_SCRIPT_URL !== 'undefined') {
+    try {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast(`🔄 Checking cloud access for ${normEmail}...`, "info", 2000);
+      }
+      const syncUrl = `${GOOGLE_SCRIPT_URL}?action=sync&auth=${encodeURIComponent(typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : '')}&token=${encodeURIComponent(typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : '')}&_t=${Date.now()}`;
+      const res = await fetch(syncUrl, { redirect: 'follow', cache: 'no-store' });
+      if (res.ok) {
+        const text = await res.text();
+        const data = JSON.parse(text);
+        if (data && data.settings && data.settings.authorizedUsers) {
+           window.saveAuthorizedUsersList(data.settings.authorizedUsers);
+           isAuthorized = window.isUserAuthorizedByAdmin(normEmail);
+        }
+      }
+    } catch(e) {
+      console.warn("Cloud auth check failed:", e);
+    }
+  }
 
   if (!isAuthorized) {
     console.warn("BLOCKED: Unauthorized login attempt by:", normEmail);
@@ -16337,14 +16362,35 @@ window.sendMailOtpToJagan = async function(mode = 'code') {
   const enteredEmail = rawEmail.toLowerCase();
   const errBlock = document.getElementById("login-error-message");
 
-  if (!enteredEmail || enteredEmail !== window.AUTHORIZED_LOGIN_EMAIL) {
+  let isAuthorized = window.isUserAuthorizedByAdmin(enteredEmail);
+
+  // If local check fails (e.g. new device), check cloud settings
+  if (enteredEmail && !isAuthorized && typeof GOOGLE_SCRIPT_URL !== 'undefined') {
+    try {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast(`🔄 Checking cloud access for ${enteredEmail}...`, "info", 2000);
+      }
+      const syncUrl = `${GOOGLE_SCRIPT_URL}?action=sync&auth=${encodeURIComponent(typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : '')}&token=${encodeURIComponent(typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : '')}&_t=${Date.now()}`;
+      const res = await fetch(syncUrl, { redirect: 'follow', cache: 'no-store' });
+      if (res.ok) {
+        const text = await res.text();
+        const data = JSON.parse(text);
+        if (data && data.settings && data.settings.authorizedUsers) {
+           window.saveAuthorizedUsersList(data.settings.authorizedUsers);
+           isAuthorized = window.isUserAuthorizedByAdmin(enteredEmail);
+        }
+      }
+    } catch(e) {}
+  }
+
+  if (!enteredEmail || !isAuthorized) {
     if (errBlock) {
       errBlock.innerHTML = `
         <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
           <i class="fa-solid fa-ban"></i> Access Denied: Unauthorized Email!
         </div>
         <div style="font-size: 11.5px; color: #cbd5e1;">
-          Only <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong> can receive login codes. "${escapeHtml(rawEmail || 'empty')}" is not permitted to access this application.
+          Only authorized users can receive login codes. "${escapeHtml(rawEmail || 'empty')}" is not permitted to access this application.
         </div>
       `;
       errBlock.classList.remove("hidden");
@@ -16360,7 +16406,7 @@ window.sendMailOtpToJagan = async function(mode = 'code') {
 
   const isLinkMode = (mode === 'link');
   const actionDescription = isLinkMode ? "direct 1-click Gmail login link" : "6-digit security code";
-  showFloatingToast(`⏳ Sending ${actionDescription} to ${window.AUTHORIZED_LOGIN_EMAIL}...`, "info", 4000);
+  showFloatingToast(`⏳ Sending ${actionDescription} to ${enteredEmail}...`, "info", 4000);
 
   const generatedCode = String(Math.floor(100000 + Math.random() * 900000));
   sessionStorage.setItem("current_mail_otp", generatedCode);
@@ -16377,7 +16423,7 @@ window.sendMailOtpToJagan = async function(mode = 'code') {
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({
         action: "send_login_otp",
-        email: window.AUTHORIZED_LOGIN_EMAIL,
+        email: enteredEmail,
         otp: generatedCode,
         token: API_SECRET_TOKEN
       })
@@ -16385,9 +16431,9 @@ window.sendMailOtpToJagan = async function(mode = 'code') {
     const data = await res.json();
     if (data && data.ok) {
       if (isLinkMode) {
-        showFloatingToast("📩 Direct login link sent to kandukurijagan99@gmail.com! Open Gmail and click the link to unlock.", "success", 7000);
+        showFloatingToast(`📩 Direct login link sent to ${enteredEmail}! Open Gmail and click the link to unlock.`, "success", 7000);
       } else {
-        showFloatingToast("📩 6-Digit code sent to kandukurijagan99@gmail.com! Check your inbox.", "success", 6000);
+        showFloatingToast(`📩 6-Digit code sent to ${enteredEmail}! Check your inbox.`, "success", 6000);
       }
     } else {
       console.warn("GAS send_login_otp error:", data?.error);
@@ -16428,7 +16474,7 @@ window.submitUnlockLogin = async function(e) {
           <i class="fa-solid fa-triangle-exclamation"></i> Email Required!
         </div>
         <div style="font-size: 11.5px; color: #cbd5e1;">
-          Please enter authorized email (<strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong>).
+          Please enter an authorized email address.
         </div>
       `;
       errBlock.classList.remove("hidden");
@@ -16443,8 +16489,8 @@ window.submitUnlockLogin = async function(e) {
     return;
   }
 
-  // 2. STRICT CHECK: Email must strictly match kandukurijagan99@gmail.com
-  if (enteredEmail !== window.AUTHORIZED_LOGIN_EMAIL) {
+  // 2. STRICT CHECK: Email must be authorized by Main Admin
+  if (!window.isUserAuthorizedByAdmin(enteredEmail)) {
     if (errBlock) {
       errBlock.innerHTML = `
         <div style="text-align: left; padding: 4px 2px;">
@@ -16455,7 +16501,7 @@ window.submitUnlockLogin = async function(e) {
             The email <strong>${escapeHtml(rawEmail)}</strong> is NOT authorized to open this application.
           </div>
           <div style="font-size: 11px; color: #38bdf8; margin-top: 5px; font-weight: 600; display: flex; align-items: center; gap: 4px;">
-            <i class="fa-solid fa-shield-halved"></i> Access is strictly restricted to <strong>${window.AUTHORIZED_LOGIN_EMAIL}</strong>.
+            <i class="fa-solid fa-shield-halved"></i> Only authorized users can log in.
           </div>
         </div>
       `;
@@ -16512,7 +16558,7 @@ window.submitUnlockLogin = async function(e) {
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
           action: "verify_login_otp",
-          email: window.AUTHORIZED_LOGIN_EMAIL,
+          email: enteredEmail,
           otp: enteredOtp,
           token: API_SECRET_TOKEN
         })
@@ -16557,7 +16603,7 @@ window.submitUnlockLogin = async function(e) {
   sessionStorage.removeItem("current_mail_otp");
   if (errBlock) errBlock.classList.add("hidden");
 
-  AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Gmail OTP Verification");
+  AppSecurity.recordSuccessfulLogin(enteredEmail, "Gmail OTP Verification");
   unlockSystemSilently();
 
   if (typeof showFloatingToast === 'function') {
@@ -19858,21 +19904,23 @@ window.checkDirectMailAuthParams = function() {
     const isDirectAuth = (urlParams.has("direct_google_auth") || urlParams.has("google_login") || Boolean(directOtp)) && Boolean(directEmail);
 
     if (isDirectAuth) {
-      if (directEmail !== window.AUTHORIZED_LOGIN_EMAIL.toLowerCase()) {
+      if (!window.isUserAuthorizedByAdmin(directEmail)) {
         if (typeof showFloatingToast === 'function') {
-          showFloatingToast("❌ Access Denied: Unauthorized email (" + directEmail + "). Only kandukurijagan99@gmail.com is authorized.", "error", 5000);
+          showFloatingToast("❌ Access Denied: Unauthorized email (" + directEmail + ").", "error", 5000);
         }
         return;
       }
 
       const userField = document.getElementById("login-username") || document.getElementById("login-email");
-      if (userField) userField.value = window.AUTHORIZED_LOGIN_EMAIL;
-
-      unlockSystemSilently();
-      AppSecurity.recordSuccessfulLogin(window.AUTHORIZED_LOGIN_EMAIL, "Direct Google Mail Link");
-
-      if (typeof showFloatingToast === 'function') {
-        showFloatingToast("🔓 Welcome, Jagan! Direct Google Mail Access verified.", "success", 4500);
+      if (userField) userField.value = directEmail;
+      
+      const otpField = document.getElementById("login-otp-code");
+      if (otpField && directOtp) {
+          otpField.value = directOtp;
+          // Trigger the actual secure login form submission instead of silently bypassing
+          if (typeof window.submitUnlockLogin === 'function') {
+              window.submitUnlockLogin();
+          }
       }
 
       try {
