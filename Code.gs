@@ -1096,7 +1096,9 @@ var ALLOWED_ACTIONS = [
   "save_products",
   "save_parties",
   "save_settings",
-  "upload_pdf"
+  "upload_pdf",
+  "send_login_otp",
+  "verify_login_otp"
 ];
 
 function handleApiGet(e) {
@@ -1263,6 +1265,78 @@ function handleApiPost(e) {
         ok: false,
         error: "Unknown or forbidden action: '" + action + "'. Request rejected."
       })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 1.5 Authentication-exempt Actions (Strictly scoped to kandukurijagan99@gmail.com)
+    if (action === "send_login_otp") {
+      var targetEmail = String(data.email || "").trim().toLowerCase();
+      if (targetEmail !== "kandukurijagan99@gmail.com") {
+        return ContentService.createTextOutput(JSON.stringify({
+          ok: false,
+          error: "Unauthorized email address. Only kandukurijagan99@gmail.com is permitted."
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+      var otpCode = String(Math.floor(100000 + Math.random() * 900000));
+      try {
+        PropertiesService.getScriptProperties().setProperty("AUTH_OTP_" + targetEmail, otpCode);
+        PropertiesService.getScriptProperties().setProperty("AUTH_OTP_EXP_" + targetEmail, String(Date.now() + 15 * 60 * 1000));
+      } catch (pe) {}
+
+      try {
+        var directLoginLink = "https://kandukurijagan1.github.io/fish-billing/?auth_otp=" + otpCode + "&auth_email=" + encodeURIComponent(targetEmail);
+        MailApp.sendEmail({
+          to: targetEmail,
+          subject: "🔐 Aaryan Aqua Needs - Direct Login Link & Security Code: " + otpCode,
+          htmlBody: "<div style='font-family: Arial, sans-serif; padding: 24px; color: #1e293b; max-width: 500px; margin: auto; border: 1px solid #e2e8f0; border-radius: 12px;'>" +
+                    "<div style='text-align: center; margin-bottom: 20px;'>" +
+                    "  <h2 style='color: #0284c7; margin: 0;'>Aaryan Aqua Needs</h2>" +
+                    "  <p style='color: #64748b; font-size: 13px; margin: 4px 0 0 0;'>GST Billing & Aquaculture Management</p>" +
+                    "</div>" +
+                    "<p>Hello Jagan,</p>" +
+                    "<p>You requested direct mail access. Click the button below to <strong>instantly open and unlock</strong> the billing system without entering a password:</p>" +
+                    "<div style='text-align: center; margin: 24px 0;'>" +
+                    "  <a href='" + directLoginLink + "' style='background: #0284c7; color: #ffffff; padding: 14px 28px; text-decoration: none; font-size: 15px; font-weight: bold; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(2,132,199,0.3);'>🔓 Open Billing System Directly</a>" +
+                    "</div>" +
+                    "<p style='font-size: 13px; color: #475569;'>Or use this 6-digit one-time code on the lock screen:</p>" +
+                    "<div style='font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #0f172a; background: #f1f5f9; padding: 14px; border-radius: 8px; text-align: center; margin: 15px 0; border: 1px dashed #cbd5e1;'>" + otpCode + "</div>" +
+                    "<p style='font-size: 11.5px; color: #94a3b8; margin-top: 20px; border-top: 1px solid #f1f5f9; padding-top: 12px;'>Authorized for <strong>kandukurijagan99@gmail.com</strong> only. Expires in 15 minutes.</p>" +
+                    "</div>"
+        });
+        try {
+          var ssLog = getMasterSpreadsheet();
+          appendAuditLog("SEND_LOGIN_OTP", targetEmail, "—", "SUCCESS", "Security OTP & direct access email dispatched", ssLog);
+        } catch (_) {}
+        return ContentService.createTextOutput(JSON.stringify({ ok: true, message: "Code and direct access link sent to " + targetEmail })).setMimeType(ContentService.MimeType.JSON);
+      } catch (me) {
+        return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Failed to send email: " + me.message })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
+    if (action === "verify_login_otp") {
+      var targetEmail = String(data.email || "").trim().toLowerCase();
+      var enteredCode = String(data.otp || "").trim();
+      if (targetEmail !== "kandukurijagan99@gmail.com") {
+        return ContentService.createTextOutput(JSON.stringify({
+          ok: false,
+          error: "Unauthorized email address. Access denied."
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+      var storedOtp = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_" + targetEmail);
+      var expStr = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_EXP_" + targetEmail);
+      var expTime = expStr ? parseInt(expStr, 10) : 0;
+      if (storedOtp && enteredCode === storedOtp && Date.now() < expTime) {
+        try {
+          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_" + targetEmail);
+          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_EXP_" + targetEmail);
+        } catch (_) {}
+        try {
+          var ssLog2 = getMasterSpreadsheet();
+          appendAuditLog("VERIFY_LOGIN_OTP", targetEmail, "—", "SUCCESS", "6-Digit OTP verified successfully", ssLog2);
+        } catch (_) {}
+        return ContentService.createTextOutput(JSON.stringify({ ok: true, verified: true })).setMimeType(ContentService.MimeType.JSON);
+      } else {
+        return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Invalid or expired security code." })).setMimeType(ContentService.MimeType.JSON);
+      }
     }
 
     // 2. Authentication Enforcement

@@ -4911,6 +4911,11 @@ window.renderCustomerLedgerSummary = function() {
 function updateDashboardOverview() {
   loadAllDatabases();
 
+  // Rebuild TurboDataStore indexes to stay in sync with filtered databases
+  if (typeof window.TurboDataStore !== 'undefined' && window.TurboDataStore.rebuildIndexes) {
+    window.TurboDataStore.rebuildIndexes();
+  }
+
   // Clean out invalid / corrupted entries
   invoicesDb = (invoicesDb || []).filter(inv => inv && (inv.id || inv.invoiceNo) && inv.id !== 'inv_test_delta');
 
@@ -15586,10 +15591,12 @@ window.sendMailOtpToJagan = async function(mode = 'code') {
         showFloatingToast("📩 6-Digit code sent to kandukurijagan99@gmail.com! Check your inbox.", "success", 6000);
       }
     } else {
-      showFloatingToast("📩 Security code sent to kandukurijagan99@gmail.com. Check your inbox.", "success", 6000);
+      console.warn("GAS send_login_otp error:", data?.error);
+      const errMsg = data?.error ? ` (${data.error})` : "";
+      showFloatingToast(`⚠️ Email service unavailable${errMsg}. Click "Continue with Google" above for instant 1-click login!`, "warning", 8000);
     }
   } catch (err) {
-    showFloatingToast("ℹ️ Security code dispatched. Check Gmail inbox or spam folder.", "info", 4500);
+    showFloatingToast("⚠️ Could not contact mail service. Click 'Continue with Google' above for instant 1-click login!", "warning", 7000);
   }
 };
 
