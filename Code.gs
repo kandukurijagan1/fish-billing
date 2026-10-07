@@ -25,7 +25,7 @@
 
 function getApiSecretKey() {
   var props = PropertiesService.getScriptProperties();
-  return props.getProperty("API_SECRET_KEY");
+  return props.getProperty("API_SECRET_KEY") || "AARYAN_AQUA_SECURE_KEY_2026";
 }
 
 function constantTimeEquals(a, b) {
