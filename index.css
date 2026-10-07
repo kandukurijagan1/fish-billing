@@ -10299,15 +10299,15 @@ section.content-view.hidden {
   }
 
   /* 5. Invoices History Table on Mobile */
-  .history-filter-container {
+  .history-toolbar {
     flex-direction: column !important;
     gap: 8px !important;
     align-items: stretch !important;
   }
 
-  .history-filter-container input,
-  .history-filter-container select,
-  .history-filter-container button {
+  .history-toolbar input,
+  .history-toolbar select,
+  .history-toolbar button {
     width: 100% !important;
     min-height: 42px !important;
   }
