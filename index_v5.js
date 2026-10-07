@@ -16292,7 +16292,7 @@ window.applyRolePermissions = function(role) {
     badgeSlot.innerHTML = `
       <div style="${badgeBg} padding: 4px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; cursor: ${isSuperAdmin ? 'pointer' : 'default'};" ${isSuperAdmin ? 'onclick="window.switchTab(\'settings\'); document.getElementById(\'user-management-panel\')?.scrollIntoView({behavior:\'smooth\'});" title="Main Admin - Click to Manage Users"' : ''}>
         <i class="fa-solid ${roleIcon}"></i>
-        <span>${escapeHtml(name)} (${roleLabel})</span>
+        <span class="user-badge-text">${escapeHtml(name)} (${roleLabel})</span>
       </div>
     `;
   }
