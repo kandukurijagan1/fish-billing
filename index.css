@@ -4286,8 +4286,9 @@ body.app-is-locked #live-session-timer-pill {
   .main-content {
     width: 100%;
     min-width: 0;
-    height: auto;
-    min-height: 100vh;
+    height: 100vh !important;
+    min-height: 0 !important;
+    overflow: hidden;
   }
   .content-header {
     padding: 0 14px;
@@ -5605,13 +5606,19 @@ body.app-is-locked #live-session-timer-pill {
   }
 
   .products-table {
-    min-width: 680px !important;
-    font-size: 12px !important;
+    min-width: 580px !important;
+    font-size: 11.5px !important;
   }
 
   .products-table th,
   .products-table td {
-    padding: 10px 8px !important;
+    padding: 8px 6px !important;
+    font-size: 11.5px !important;
+  }
+
+  .products-table th {
+    font-size: 9.5px !important;
+    letter-spacing: 0.3px !important;
   }
 
   .prod-discount-input {
@@ -6780,48 +6787,52 @@ body.app-is-locked #live-session-timer-pill {
   /* 1. Viewport & Natural Single-Page Scrolling Engine */
   html, body {
     overflow-x: hidden !important;
-    overflow-y: auto !important;
+    overflow-y: hidden !important;
     width: 100% !important;
-    max-width: 100vw !important;
-    height: auto !important;
-    min-height: 100% !important;
+    max-width: 100% !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
     position: relative;
     -webkit-text-size-adjust: 100%;
-    -webkit-overflow-scrolling: touch !important;
   }
 
   .dashboard-wrapper {
-    overflow-x: hidden !important;
-    overflow-y: visible !important;
+    overflow: hidden !important;
     width: 100% !important;
-    max-width: 100vw !important;
-    height: auto !important;
-    min-height: 100% !important;
+    max-width: 100% !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    flex-direction: column !important;
   }
 
-  /* Padding for main content to guarantee bottom nav bar clearance */
+  /* Main content fills available space above bottom nav */
   .main-content {
     width: 100% !important;
-    max-width: 100vw !important;
-    height: auto !important;
-    min-height: 100% !important;
-    overflow-x: hidden !important;
-    overflow-y: visible !important;
-    padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px)) !important;
+    max-width: 100% !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
     min-width: 0 !important;
   }
 
   .content-view {
-    padding: 12px 10px calc(120px + env(safe-area-inset-bottom, 0px)) 10px !important;
+    padding: 12px 10px calc(72px + env(safe-area-inset-bottom, 0px)) 10px !important;
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
+    flex: 1 1 0% !important;
+    min-height: 0 !important;
     height: auto !important;
     max-height: none !important;
-    min-height: calc(100vh - 52px) !important;
-    overflow-y: visible !important;
+    overflow-y: auto !important;
     overflow-x: hidden !important;
-    overscroll-behavior-y: auto !important;
+    overscroll-behavior-y: contain !important;
+    -webkit-overflow-scrolling: touch !important;
   }
 
   /* 2. Top Header & Meta Pills Containment */
@@ -7059,7 +7070,7 @@ body.app-is-locked #live-session-timer-pill {
     -webkit-backdrop-filter: blur(16px) !important;
     border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
     box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25) !important;
-    z-index: 2147483630 !important;
+    z-index: 999 !important;
     align-items: center !important;
     justify-content: space-around !important;
     box-sizing: border-box !important;
