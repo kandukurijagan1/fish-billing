@@ -1055,7 +1055,7 @@ elements.sumIgstRow = elements.sumIgst ? elements.sumIgst.closest('.summary-row'
 window.lastSyncETag = null;
 window.lastSyncTimestamp = parseInt(localStorage.getItem("aaryan_last_sync_time") || "0", 10);
 
-const GOOGLE_SCRIPT_URL = window.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbyD3uqELy57PyQ9AbExOjQZ2Qa59YLojEhxGTva4zY58d1aeZ-8YKXrGsgSQkEqSMMH/exec";
+const GOOGLE_SCRIPT_URL = window.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwW3e8K9Yt4RqUNtRFNV71fzBphKCvZIBJ_IfWNIPGxLA23q3OnImSzxHHyvYXuFC-Neg/exec";
 const API_SECRET_TOKEN = window.API_SECRET_TOKEN || "AARYAN_AQUA_SECURE_KEY_2026";
 const GOOGLE_SCRIPT_FALLBACK_URL = GOOGLE_SCRIPT_URL;
 
