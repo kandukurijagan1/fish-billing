@@ -202,7 +202,7 @@
   <script>
     if ('serviceWorker' in navigator && (window.location.protocol.startsWith('http') || window.location.protocol === 'file:')) {
       window.addEventListener('load', function() {
-        navigator.serviceWorker.register('./sw.js?v=418_enterprise_security_hardened')
+        navigator.serviceWorker.register('./sw.js?v=419_enterprise_security_hardened')
           .then(function(reg) {
             console.log('[PWA] Service Worker active, scope:', reg.scope);
           })
