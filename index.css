@@ -10115,7 +10115,10 @@ section.content-view.hidden {
 
   .header-clock-pill,
   .telegram-sync-pill,
-  .calc-pill {
+  .calc-pill,
+  #btn-header-cloud-sync,
+  #live-session-timer-pill,
+  .app-top-header-meta > button.btn-sm {
     display: none !important;
   }
 
@@ -10202,6 +10205,21 @@ section.content-view.hidden {
     justify-content: center !important;
     gap: 6px !important;
     border-radius: 10px !important;
+  }
+
+  /* Dashboard Hero Buttons Grid */
+  #view-dashboard .hero-actions, .hero-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+  #view-dashboard .btn-hero, .btn-hero {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+  #view-dashboard .btn-hero:first-child, .btn-hero:first-child {
+    grid-column: 1 / -1 !important;
   }
 
   /* 3. Dashboard KPI Cards & Charts on Mobile */
@@ -10295,7 +10313,12 @@ section.content-view.hidden {
   }
 
   #history-invoices-table {
-    min-width: 650px !important;
+    min-width: 480px !important;
+    font-size: 11.5px !important;
+  }
+  #history-invoices-table th,
+  #history-invoices-table td {
+    padding: 8px 6px !important;
   }
 
   /* 6. Products Catalog on Mobile */
