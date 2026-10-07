@@ -8850,6 +8850,9 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       invoicesDb.push(invoiceRecord);
     }
 
+    // CRITICAL FIX: Ensure the new/edited invoice is actually saved to LocalStorage!
+    try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e) { console.warn("Failed to write to localStorage"); }
+
     // Immediately disarm currentInvoice editing state so subsequent bills are brand new
     currentInvoice.id = "";
     currentInvoice.qrToken = "";
