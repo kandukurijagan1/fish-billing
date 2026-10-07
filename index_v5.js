@@ -3817,14 +3817,14 @@ function initializeApp() {
   // ============================================================================
   let multiUserSyncTimer = null;
   let lastCloudSyncPoll = 0;
-  let nextStaggeredPollInterval = 45000 + Math.floor(Math.random() * 30000);
+  let nextStaggeredPollInterval = 2000;
 
   async function performCloudHeartbeat(force = false) {
     const now = Date.now();
-    // Staggered adaptive polling (45s - 75s random jitter) protects Google Apps Script from 50 concurrent users
-    if (force || (now - lastCloudSyncPoll >= nextStaggeredPollInterval)) {
+    // Continuous 2-second polling as explicitly requested
+    if (force || (now - lastCloudSyncPoll >= 2000)) {
       lastCloudSyncPoll = now;
-      nextStaggeredPollInterval = 45000 + Math.floor(Math.random() * 30000);
+      nextStaggeredPollInterval = 2000;
       try {
         if (navigator.onLine && typeof window.triggerDatabaseSync === "function" && !isSyncing) {
           await window.triggerDatabaseSync(false);
