@@ -16140,6 +16140,7 @@ window.openAddUserModal = function() {
   document.getElementById("user-input-email").value = "";
   document.getElementById("user-input-email").readOnly = false;
   document.getElementById("user-input-name").value = "";
+  document.getElementById("user-input-password").value = "";
   document.getElementById("user-input-role").value = "customer";
   document.getElementById("user-input-status").value = "active";
   modal.classList.remove("hidden");
@@ -16160,6 +16161,7 @@ window.openEditUserModal = function(email) {
   document.getElementById("user-input-email").value = user.email;
   document.getElementById("user-input-email").readOnly = true;
   document.getElementById("user-input-name").value = user.name || "";
+  document.getElementById("user-input-password").value = user.password || "";
   document.getElementById("user-input-role").value = user.role || "customer";
   document.getElementById("user-input-status").value = user.status || "active";
   modal.classList.remove("hidden");
@@ -16181,6 +16183,7 @@ window.saveUserAccessSubmit = function(e) {
   const name = (document.getElementById("user-input-name")?.value || "").trim();
   const role = document.getElementById("user-input-role")?.value || "customer";
   const status = document.getElementById("user-input-status")?.value || "active";
+  const password = document.getElementById("user-input-password")?.value || "";
 
   if (!email || !name) {
     showFloatingToast("⚠️ Please enter both Email and Name!", "warning");
@@ -16201,6 +16204,7 @@ window.saveUserAccessSubmit = function(e) {
   if (existingIdx !== -1) {
     // Edit existing user
     list[existingIdx].name = name;
+    list[existingIdx].password = password;
     list[existingIdx].role = role;
     list[existingIdx].status = status;
     list[existingIdx].updatedAt = new Date().toISOString();
@@ -16212,6 +16216,7 @@ window.saveUserAccessSubmit = function(e) {
     list.push({
       email,
       name,
+      password,
       role,
       status,
       addedAt: new Date().toISOString(),
@@ -16219,7 +16224,7 @@ window.saveUserAccessSubmit = function(e) {
       addedBy: mainAdminNorm,
       isMainAdminApproved: true
     });
-    showFloatingToast(`✅ Access granted for ${email}! They can now log in via Google.`, "success", 5000);
+    showFloatingToast(`✅ Access granted for ${email}! They can now log in via Google or Password.`, "success", 5000);
   }
 
   window.saveAuthorizedUsersList(list);
@@ -16577,15 +16582,15 @@ window.handleTraditionalLoginSubmit = async function(e) {
     return;
   }
 
-  // Not master password, check OTP length
-  if (!enteredPass || enteredPass.length !== 6) {
+  // Check if password was entered at all
+  if (!enteredPass) {
     if (errBlock) {
       errBlock.innerHTML = `
         <div style="font-weight: 700; color: #f59e0b; margin-bottom: 2px;">
-          <i class="fa-solid fa-key"></i> 6-Digit Verification Code Required!
+          <i class="fa-solid fa-key"></i> Password or Verification Code Required!
         </div>
         <div style="font-size: 11.5px; color: #cbd5e1; line-height: 1.4;">
-          Please click <strong>"Send 6-Digit Code"</strong> above, then enter the code sent to your Gmail inbox.
+          Please enter your assigned password or a 6-Digit OTP.
         </div>
       `;
       errBlock.classList.remove("hidden");
@@ -16600,9 +16605,18 @@ window.handleTraditionalLoginSubmit = async function(e) {
     return;
   }
 
-  // 4. VERIFY CODE AGAINST LOCAL SESSION OR CLOUD BACKEND:
+  // 4. VERIFY CODE AGAINST LOCAL SESSION OR CLOUD BACKEND OR USER SPECIFIC PASSWORD:
   const activeMailOtp = sessionStorage.getItem("current_mail_otp");
   let isOtpValid = (activeMailOtp && enteredPass === activeMailOtp);
+  
+  if (!isOtpValid) {
+    // Check if enteredPass matches the user's specific password assigned by the Main Admin
+    const userList = window.getAuthorizedUsersList();
+    const matchedUser = userList.find(u => (u.email || "").toLowerCase().trim() === enteredEmail);
+    if (matchedUser && matchedUser.password && matchedUser.password === enteredPass) {
+      isOtpValid = true;
+    }
+  }
 
   if (!isOtpValid) {
     if (submitBtn) submitBtn.disabled = true;
@@ -16661,7 +16675,34 @@ window.handleTraditionalLoginSubmit = async function(e) {
   if (errBlock) errBlock.classList.add("hidden");
 
   AppSecurity.recordSuccessfulLogin(enteredEmail, "Traditional / OTP Login");
-  unlockSystemSilently();
+
+  const usersList = window.getAuthorizedUsersList();
+  const isMainAdmin = (enteredEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
+  const matchedUser = isMainAdmin
+    ? { email: window.AUTHORIZED_LOGIN_EMAIL, name: "Jagan (Main Admin)", role: "super_admin", status: "active" }
+    : usersList.find(u => (u.email || "").toLowerCase().trim() === enteredEmail && u.status === "active");
+
+  const role = matchedUser ? matchedUser.role : "customer";
+  const name = matchedUser ? matchedUser.name : enteredEmail.split("@")[0];
+
+  if (typeof window.savePersistentAuthSession === 'function') {
+    window.savePersistentAuthSession({
+      email: enteredEmail,
+      name: name,
+      role: role,
+      isMainAdmin: isMainAdmin
+    });
+  }
+
+  if (typeof window.updateUserLastLogin === 'function') {
+    window.updateUserLastLogin(enteredEmail);
+  }
+
+  unlockSystemSilently(true);
+
+  if (typeof window.applyRolePermissions === 'function') {
+    window.applyRolePermissions(role);
+  }
 
   if (typeof showFloatingToast === 'function') {
     showFloatingToast(`🔓 Welcome back! Identity verified successfully for ${enteredEmail}.`, "success", 4000);
