@@ -19314,10 +19314,14 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
 
       const syncUrl = `${GOOGLE_SCRIPT_URL}?action=sync&auth=${encodeURIComponent(API_SECRET_TOKEN)}&token=${encodeURIComponent(API_SECRET_TOKEN)}&_t=${Date.now()}`;
       const directGetUrl = `${GOOGLE_SCRIPT_URL}?action=get_invoice&invoiceNo=${encodeURIComponent(cleanNo)}&id=${encodeURIComponent(qId || cleanNo)}&auth=${encodeURIComponent(API_SECRET_TOKEN)}&token=${encodeURIComponent(API_SECRET_TOKEN)}&_t=${Date.now()}`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 second max wait
 
-      fetch(directGetUrl)
+      fetch(directGetUrl, { signal: controller.signal })
         .then(r => r.json())
         .then(singleRes => {
+          clearTimeout(timeoutId);
           if (singleRes && singleRes.ok && singleRes.found && singleRes.invoice) {
             window._isVerifyingCloudSync = false;
             const fetchedInv = singleRes.invoice;
@@ -19330,26 +19334,16 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
             window.openInvoiceVerificationModal(cleanNo, rawUrl);
             return;
           }
-
-          // Fallback to full bundle sync
-          return fetch(syncUrl)
-            .then(r => r.json())
-            .then(syncData => {
-              window._isVerifyingCloudSync = false;
-              if (syncData && Array.isArray(syncData.invoices) && syncData.invoices.length > 0) {
-                invoicesDb = syncData.invoices;
-                try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
-                window.invoicesDb = invoicesDb;
-                window.openInvoiceVerificationModal(cleanNo, rawUrl);
-                return;
-              }
-              renderInvalidState();
-            });
+          // If not found online
+          window._isVerifyingCloudSync = false;
+          renderInvalidState();
         })
         .catch(err => {
+          clearTimeout(timeoutId);
           window._isVerifyingCloudSync = false;
-          console.warn("Live online verification query failed:", err);
-          renderInvalidState();
+          console.warn("Live online verification query failed or timed out:", err);
+          if (subtitleEl) subtitleEl.textContent = "Offline/Timeout: Could not verify against Cloud DB.";
+          setTimeout(() => renderInvalidState(), 1000);
         });
       return;
     }
