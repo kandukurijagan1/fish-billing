@@ -7245,10 +7245,14 @@ body.app-is-locked #live-session-timer-pill {
 
   .actions-cell {
     white-space: nowrap !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 4px !important;
-    justify-content: flex-start !important;
+    /* Removed display: flex !important which shattered the table layout */
+  }
+  
+  .dashboard-table th:last-child,
+  .dashboard-table td:last-child {
+    position: relative !important; /* UN-STICK right side on mobile to prevent overlapping */
+    right: auto !important;
+    box-shadow: none !important;
   }
 
   .action-btn {
@@ -7261,6 +7265,10 @@ body.app-is-locked #live-session-timer-pill {
     font-size: 13px !important;
     border-radius: 6px !important;
     touch-action: manipulation !important;
+    margin-right: 4px !important;
+  }
+  .action-btn:last-child {
+    margin-right: 0 !important;
   }
 
   /* Summary Card full-width on mobile */
@@ -10118,7 +10126,8 @@ section.content-view.hidden {
   .calc-pill,
   #btn-header-cloud-sync,
   #live-session-timer-pill,
-  .app-top-header-meta > button.btn-sm {
+  .app-top-header-meta .btn-sm,
+  .header-meta-group .btn-sm {
     display: none !important;
   }
 
