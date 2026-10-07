@@ -2878,7 +2878,26 @@ window.triggerDatabaseSync = async function(forceReload = false) {
     // 1. Authoritative Products directly from Google Database Master (Union Merge)
     if (Array.isArray(data.products)) {
       const serverProdMap = new Map();
-      data.products.forEach(p => { if (p && p.id) serverProdMap.set(p.id, p); });
+      const recentMut = {};
+      try { Object.assign(recentMut, JSON.parse(localStorage.getItem("recent_product_mutations") || "{}")); } catch(e){}
+      if (window.recentProductMutations) Object.assign(recentMut, window.recentProductMutations);
+      const nowMs = Date.now();
+
+      data.products.forEach(p => { 
+        if (p && p.id) {
+          const descKey = p.description ? p.description.trim().toLowerCase() : '';
+          const mutTime = recentMut[p.id] || recentMut[p.description] || recentMut[descKey] || 0;
+          if (nowMs - mutTime < 15000) {
+            // Local mutation happened recently, DO NOT override with old server data!
+            const localP = (productsDb || []).find(lp => lp.id === p.id);
+            if (localP) {
+              serverProdMap.set(p.id, localP);
+              return;
+            }
+          }
+          serverProdMap.set(p.id, p); 
+        }
+      });
       (productsDb || []).forEach(p => {
         if (p && p.id && !serverProdMap.has(p.id)) {
           serverProdMap.set(p.id, p);
@@ -20777,6 +20796,28 @@ window.confirmDynamicUpiPartialPayment = function() {
     closeDynamicUpiModal();
     if (typeof showFloatingToast === 'function') {
       showFloatingToast(`✅ Recorded ₹ ${formatCurrency(settledAmt)} payment! New balance: ₹ ${formatCurrency(newBal)} (${finalStatus}).`, "success", 4000);
+    }
+
+    // Auto-dispatch WhatsApp confirmation for the payment
+    if (globalSettings && globalSettings.whatsappAutoSend !== false) {
+      const d = dbInv.details || dbInv;
+      const buyer = d.buyer || {};
+      const phone = buyer.phone || dbInv.phone || '';
+      
+      let isBotReady = window.whatsappBotStatus && (window.whatsappBotStatus.isReady || window.whatsappBotStatus.status === 'CONNECTED');
+      if (phone && phone.toString().replace(/\D/g, '').length >= 10 && (isBotReady || typeof dispatchWhatsAppBotMessage === 'function')) {
+        const invNo = dbInv.invoiceNo || d.invoiceNo || '';
+        const msg = `✅ *PAYMENT RECEIVED*\n\n🏛️ *AARYAN AQUA NEEDS*\n\n📄 *Invoice #:* ${invNo}\n💰 *Amount Paid:* ₹ ${formatCurrency(settledAmt)}\n🔴 *Remaining Due:* ₹ ${formatCurrency(newBal)}\n\nThank you for your payment! 🙏`;
+        try {
+          dispatchWhatsAppBotMessage({ phone, text: msg }).then(ok => {
+            if (ok && typeof showFloatingToast === 'function') {
+              showFloatingToast("📲 Payment confirmation sent via WhatsApp Bot!", "success");
+            }
+          });
+        } catch (err) {
+          console.warn("Failed to dispatch WA payment confirmation:", err);
+        }
+      }
     }
   }
 };
