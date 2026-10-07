@@ -884,8 +884,8 @@ function processSaveInvoice(invoiceData, user, ss) {
     // Auto-Generate Next Sequential Invoice Number if empty OR if collided with concurrent user
     if (!computed.invoiceNo || (existingIdx === -1 && isNumberCollision)) {
       var maxNo = 0;
-      for (var idx = 0; idx < existingInvoices.length; idx++) {
-        var n = parseInt(String(existingInvoices[idx].invoiceNo).replace(/\D/g, ""), 10);
+      for (var k = 0; k < existingInvoices.length; k++) {
+        var n = parseInt(String(existingInvoices[k].invoiceNo).replace(/\D/g, ""), 10);
         if (!isNaN(n) && n > maxNo) maxNo = n;
       }
       computed.invoiceNo = String(maxNo + 1).padStart(4, "0");
@@ -1049,8 +1049,8 @@ function processDeleteRecord(type, id, user, ss) {
       return { ok: true, deletedId: id, type: "invoice" };
 
     } else if (type === "product") {
-      var inventoryProduct = readInventoryFromSheet(ss);
-      var filtered = inventoryProduct.filter(function(p) { return p.id !== id; });
+      var inventory = readInventoryFromSheet(ss);
+      var filtered = inventory.filter(function(p) { return p.id !== id; });
       writeInventoryToSheet(filtered, ss);
       try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (e) {}
       appendAuditLog("DELETE_PRODUCT", user || "Admin", id, "SUCCESS", "Product removed from inventory", ss);
@@ -1087,9 +1087,6 @@ var ALLOWED_ACTIONS = [
   "ping",
   "sync",
   "pull",
-  "get_invoice",
-  "verify",
-  "verify_invoice",
   "save_invoice",
   "delete_record",
   "save_products",
@@ -1099,6 +1096,25 @@ var ALLOWED_ACTIONS = [
   "send_login_otp",
   "verify_login_otp"
 ];
+
+function handleApiGet(e) {
+  var action = (e && e.parameter && e.parameter.action) ? String(e.parameter.action).trim() : "status";
+
+  // Check allowlist
+  if (ALLOWED_ACTIONS.indexOf(action) === -1) {
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: false,
+      error: "Unknown or unauthorized action: " + action
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0. Ultra-Fast Ping — keeps V8 container warm, zero sheet access (<50ms)
+  if (action === "ping") {
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: true, pong: true, t: Date.now()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
 
 function computeSyncDataHash(invs, prods, parts) {
   var str = (invs ? invs.length : 0) + '|' + (prods ? prods.length : 0) + '|' + (parts ? parts.length : 0);
@@ -1119,21 +1135,6 @@ function computeSyncDataHash(invs, prods, parts) {
 
 function handleApiGet(e) {
   var action = (e && e.parameter && e.parameter.action) ? String(e.parameter.action).trim() : "status";
-
-  // Check allowlist
-  if (ALLOWED_ACTIONS.indexOf(action) === -1) {
-    return ContentService.createTextOutput(JSON.stringify({
-      ok: false,
-      error: "Unknown or unauthorized action: " + action
-    })).setMimeType(ContentService.MimeType.JSON);
-  }
-
-  // 0. Ultra-Fast Ping — keeps V8 container warm, zero sheet access (<50ms)
-  if (action === "ping") {
-    return ContentService.createTextOutput(JSON.stringify({
-      ok: true, pong: true, t: Date.now()
-    })).setMimeType(ContentService.MimeType.JSON);
-  }
 
   // 1. Status Health Check
   if (action === "status") {
@@ -1229,8 +1230,8 @@ function handleApiGet(e) {
   // 3. Fast Single Invoice Lookup / Public QR Verification (No Full Download Needed)
   if (action === "get_invoice" || action === "verify" || action === "verify_invoice") {
     var queryNo = e && e.parameter ? (e.parameter.invoiceNo || e.parameter.id || e.parameter.inv || e.parameter.token || e.parameter.q || "") : "";
-    var ssMasterGet = getMasterSpreadsheet();
-    var allInvs = readInvoicesFromSheet(ssMasterGet);
+    var ssMaster = getMasterSpreadsheet();
+    var allInvs = readInvoicesFromSheet(ssMaster);
     var found = null;
     if (queryNo) {
       var cleanQ = String(queryNo).trim().toLowerCase().replace(/^#/, '');
@@ -1277,13 +1278,13 @@ function handleApiPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 1.5 Authentication-exempt Actions
+    // 1.5 Authentication-exempt Actions (Strictly scoped to kandukurijagan99@gmail.com)
     if (action === "send_login_otp") {
       var targetEmail = String(data.email || "").trim().toLowerCase();
-      if (!targetEmail) {
+      if (targetEmail !== "kandukurijagan99@gmail.com") {
         return ContentService.createTextOutput(JSON.stringify({
           ok: false,
-          error: "Valid email address is required."
+          error: "Unauthorized email address. Only kandukurijagan99@gmail.com is permitted."
         })).setMimeType(ContentService.MimeType.JSON);
       }
       var otpCode = String(Math.floor(100000 + Math.random() * 900000));
@@ -1309,7 +1310,7 @@ function handleApiPost(e) {
                     "</div>" +
                     "<p style='font-size: 13px; color: #475569;'>Or use this 6-digit one-time code on the lock screen:</p>" +
                     "<div style='font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #0f172a; background: #f1f5f9; padding: 14px; border-radius: 8px; text-align: center; margin: 15px 0; border: 1px dashed #cbd5e1;'>" + otpCode + "</div>" +
-                    "<p style='font-size: 11.5px; color: #94a3b8; margin-top: 20px; border-top: 1px solid #f1f5f9; padding-top: 12px;'>Authorized login access. Expires in 15 minutes.</p>" +
+                    "<p style='font-size: 11.5px; color: #94a3b8; margin-top: 20px; border-top: 1px solid #f1f5f9; padding-top: 12px;'>Authorized for <strong>kandukurijagan99@gmail.com</strong> only. Expires in 15 minutes.</p>" +
                     "</div>"
         });
         try {
@@ -1323,25 +1324,25 @@ function handleApiPost(e) {
     }
 
     if (action === "verify_login_otp") {
-      var targetEmailVerify = String(data.email || "").trim().toLowerCase();
+      var targetEmail = String(data.email || "").trim().toLowerCase();
       var enteredCode = String(data.otp || "").trim();
-      if (!targetEmailVerify) {
+      if (targetEmail !== "kandukurijagan99@gmail.com") {
         return ContentService.createTextOutput(JSON.stringify({
           ok: false,
-          error: "Valid email address is required."
+          error: "Unauthorized email address. Access denied."
         })).setMimeType(ContentService.MimeType.JSON);
       }
-      var storedOtp = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_" + targetEmailVerify);
-      var expStr = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_EXP_" + targetEmailVerify);
+      var storedOtp = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_" + targetEmail);
+      var expStr = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_EXP_" + targetEmail);
       var expTime = expStr ? parseInt(expStr, 10) : 0;
       if (storedOtp && enteredCode === storedOtp && Date.now() < expTime) {
         try {
-          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_" + targetEmailVerify);
-          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_EXP_" + targetEmailVerify);
+          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_" + targetEmail);
+          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_EXP_" + targetEmail);
         } catch (_) {}
         try {
           var ssLog2 = getMasterSpreadsheet();
-          appendAuditLog("VERIFY_LOGIN_OTP", targetEmailVerify, "—", "SUCCESS", "6-Digit OTP verified successfully", ssLog2);
+          appendAuditLog("VERIFY_LOGIN_OTP", targetEmail, "—", "SUCCESS", "6-Digit OTP verified successfully", ssLog2);
         } catch (_) {}
         return ContentService.createTextOutput(JSON.stringify({ ok: true, verified: true })).setMimeType(ContentService.MimeType.JSON);
       } else {
@@ -1363,7 +1364,6 @@ function handleApiPost(e) {
       var invs = readInvoicesFromSheet(ss);
       var prods = readInventoryFromSheet(ss);
       var parts = readCustomersFromSheet(ss);
-      var sets = readSettingsFromSheet(ss);
       var sHash = computeSyncDataHash(invs, prods, parts);
 
       if (data.hash && data.hash === sHash) {
@@ -1371,7 +1371,6 @@ function handleApiPost(e) {
           ok: true,
           notModified: true,
           hash: sHash,
-          settings: sets,
           serverTime: Date.now()
         })).setMimeType(ContentService.MimeType.JSON);
       }
@@ -1382,7 +1381,6 @@ function handleApiPost(e) {
         invoices: invs,
         products: prods,
         parties: parts,
-        settings: sets,
         serverTime: Date.now(),
         timestamp: new Date().toISOString()
       })).setMimeType(ContentService.MimeType.JSON);
@@ -1502,9 +1500,7 @@ function writeSettingsToSheet(settingsObj, ss) {
     if (!settingsObj || typeof settingsObj !== "object") return;
     if (!ss) ss = getMasterSpreadsheet();
     var sheet = ss.getSheetByName("Settings");
-    if (!sheet) {
-      sheet = ensureSheetWithHeaders(ss, "Settings", ["Setting Key", "Setting Value JSON", "Last Updated"], "#ea580c");
-    }
+    if (!sheet) return;
 
     var jsonStr = JSON.stringify(settingsObj);
     var nowIso = new Date().toISOString();
@@ -1536,3 +1532,4 @@ function doGet(e) {
 function doPost(e) {
   return handleApiPost(e);
 }
+

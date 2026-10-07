@@ -268,30 +268,8 @@
         <i class="fa-solid fa-triangle-exclamation"></i> Invalid credentials!
       </div>
       
-      <!-- TRADITIONAL EMAIL & PASSWORD LOGIN (Electron Compatible) -->
-      <form id="traditional-login-form" onsubmit="window.handleTraditionalLoginSubmit(event)" style="display: flex; flex-direction: column; gap: 14px; margin-top: 16px;">
-        <div style="text-align: left;">
-          <label for="login-email" style="font-size: 11px; font-weight: 700; color: #94a3b8; display: block; margin-bottom: 6px;"><i class="fa-solid fa-envelope"></i> AUTHORIZED EMAIL</label>
-          <input type="email" id="login-email" required placeholder="Enter your email address" style="width: 100%; padding: 12px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(15,23,42,0.8); color: #fff; font-size: 14px; outline: none; transition: border-color 0.2s;">
-        </div>
-        <div style="text-align: left;">
-          <label for="login-password" style="font-size: 11px; font-weight: 700; color: #94a3b8; display: block; margin-bottom: 6px;"><i class="fa-solid fa-lock"></i> MASTER PASSWORD / OTP</label>
-          <input type="password" id="login-password" required placeholder="Enter password or OTP code" style="width: 100%; padding: 12px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(15,23,42,0.8); color: #fff; font-size: 14px; outline: none; transition: border-color 0.2s;">
-        </div>
-        <button type="submit" class="btn-login-submit" style="width: 100%; padding: 13px; border-radius: 8px; background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); color: #fff; font-weight: 700; font-size: 14.5px; border: none; cursor: pointer; margin-top: 4px; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3); display: flex; align-items: center; justify-content: center; gap: 8px;">
-          <i class="fa-solid fa-right-to-bracket"></i> <span id="login-btn-text">Sign In Securely</span>
-          <i id="login-btn-spinner" class="fa-solid fa-circle-notch fa-spin hidden"></i>
-        </button>
-      </form>
-
-      <div style="display: flex; align-items: center; gap: 10px; margin: 20px 0;">
-        <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.1);"></div>
-        <span style="font-size: 11px; font-weight: 600; color: #64748b; letter-spacing: 0.5px;">OR</span>
-        <div style="flex: 1; height: 1px; background: rgba(255,255,255,0.1);"></div>
-      </div>
-
       <!-- GOOGLE SIGN-IN (PRIMARY ACTION) -->
-      <div class="google-auth-container" style="display: flex; flex-direction: column; align-items: center; width: 100%;">
+      <div class="google-auth-container" style="margin: 16px 0 8px 0; display: flex; flex-direction: column; align-items: center; width: 100%;">
         <div id="google-signin-btn-slot" style="width: 100%; display: flex; justify-content: center; min-height: 44px;">
           <!-- Fallback button while Google SDK loads or if offline -->
           <button type="button" class="btn-google-direct-auth" onclick="triggerDirectGoogleAuth()" id="btn-google-direct" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 12px 18px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; color: #1e293b; font-size: 14.5px; font-weight: 700; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.15);">
@@ -1996,7 +1974,7 @@
 
                 <div class="form-group col-12" style="margin: 0;">
                   <label for="set-google-script-url" style="font-size: 11.5px; color: #64748b;">Google Apps Script Web App Endpoint URL</label>
-                  <input type="text" id="set-google-script-url" value="https://script.google.com/macros/s/AKfycbzfqLngWe61R8GLiXcxBkl6t-SlLP5NXsnMlv_ocuYu-5J7jIeiGcXnNgpi5oAE32nDww/exec" readonly style="font-size: 11.5px; background: #f8fafc; color: #334155;">
+                  <input type="text" id="set-google-script-url" value="https://script.google.com/macros/s/AKfycbwkegJvhM42cPIROIKg5Dlx6py8OnS5NXuIJeyf1Zb3V3Oc_2jyXPS_aDN7uW0t874d/exec" readonly style="font-size: 11.5px; background: #f8fafc; color: #334155;">
                 </div>
               </div>
             </div>
@@ -2056,16 +2034,16 @@
                   </div>
                   <div class="form-group col-4">
                     <label for="set-login-username"><i class="fa-solid fa-envelope text-cyan"></i> Authorized Email Address</label>
-                    <input type="email" id="set-login-username" required placeholder="Enter admin email address" style="background: #ffffff; color: #0f172a; font-weight: 500;">
-                    <span class="info-lbl">Note: This email will be authorized to access the system</span>
+                    <input type="email" id="set-login-username" required placeholder="kandukurijagan99@gmail.com" value="kandukurijagan99@gmail.com" readonly style="background: #f8fafc; color: #0284c7; font-weight: 700;">
+                    <span class="info-lbl">Strict Policy: Only kandukurijagan99@gmail.com is authorized to open</span>
                   </div>
                   <div class="form-group col-4">
                     <label for="set-login-password"><i class="fa-solid fa-lock text-cyan"></i> Master Password</label>
-                    <input type="password" id="set-login-password" required placeholder="Enter new master password" autocomplete="new-password">
+                    <input type="password" id="set-login-password" required placeholder="Enter new master password">
                   </div>
                   <div class="form-group col-4">
                     <label for="set-security-pin"><i class="fa-solid fa-key text-teal"></i> Cashier PIN (4 Digits)</label>
-                    <input type="password" id="set-security-pin" maxlength="6" placeholder="Enter 4-digit PIN" autocomplete="new-password">
+                    <input type="password" id="set-security-pin" maxlength="6" placeholder="Enter 4-digit PIN">
                     <span class="info-lbl">Quick unlock PIN for cashier desk</span>
                   </div>
 
@@ -2103,7 +2081,7 @@
 
                   <div class="form-group col-6">
                     <label for="set-wa-pin"><i class="fa-solid fa-key text-teal"></i> WhatsApp Security PIN (4 Digits)</label>
-                    <input type="password" id="set-wa-pin" maxlength="12" placeholder="Enter 4-digit PIN" autocomplete="new-password">
+                    <input type="password" id="set-wa-pin" maxlength="12" placeholder="Enter 4-digit PIN">
                     <span class="info-lbl">Master password also accepted as fallback</span>
                   </div>
 
@@ -3602,12 +3580,12 @@
               <span style="display: flex; align-items: center; gap: 6px;"><i class="fa-solid fa-shield-halved text-green"></i> Enter Admin Password or PIN:</span>
               <button type="button" onclick="hideModalAdminUnlockForm()" style="background: none; border: none; font-size: 14px; color: #64748b; cursor: pointer; padding: 0 4px;">✕</button>
             </div>
-            <form onsubmit="event.preventDefault(); submitModalAdminUnlock();" style="display: flex; gap: 8px; align-items: center; margin: 0;">
-              <input type="password" id="modal-admin-pwd-input" class="form-control" placeholder="Enter admin password or PIN" style="font-size: 12.5px; padding: 8px 10px; border-radius: 8px; flex: 1; border: 1.5px solid #86efac; background: #ffffff;" autocomplete="current-password">
-              <button type="submit" class="btn btn-success" style="padding: 8px 14px; font-size: 12px; font-weight: 800; border-radius: 8px; white-space: nowrap; background: #16a34a; color: white; border: none; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="password" id="modal-admin-pwd-input" class="form-control" placeholder="Enter admin password or PIN" style="font-size: 12.5px; padding: 8px 10px; border-radius: 8px; flex: 1; border: 1.5px solid #86efac; background: #ffffff;" onkeydown="if(event.key==='Enter') submitModalAdminUnlock();">
+              <button type="button" class="btn btn-success" onclick="submitModalAdminUnlock()" style="padding: 8px 14px; font-size: 12px; font-weight: 800; border-radius: 8px; white-space: nowrap; background: #16a34a; color: white; border: none; cursor: pointer; display: flex; align-items: center; gap: 5px;">
                 <i class="fa-solid fa-unlock"></i> Unlock &amp; Settle
               </button>
-            </form>
+            </div>
             <div id="modal-admin-pwd-error" style="display: none; color: #dc2626; font-size: 11px; margin-top: 6px; font-weight: 600;"></div>
           </div>
 
@@ -5195,7 +5173,7 @@
     <i class="fa-solid fa-wifi" id="network-banner-icon"></i> <span id="network-banner-text">Working Offline</span>
   </div>
 
-  <script src="index_v5.js?v=607_fix_settings_cloud_tab"></script>
+  <script src="index_v5.js?v=601_strict_admin_access_control"></script>
 </body>
 </html>
 

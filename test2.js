@@ -1,0 +1,692 @@
+ Could not acquire concurrency lock. Another transaction is in progress. Please retry."
+    };
+  }
+
+  try {
+    // 2. Read Authoritative State from Sheets
+    var existingInvoices = readInvoicesFromSheet(ss);
+    var inventory = readInventoryFromSheet(ss);
+
+    // 3. Strict Server-Side Validation & Recalculation
+    var valResult = validateAndComputeInvoice(invoiceData, existingInvoices);
+    if (!valResult.valid) {
+      return { ok: false, error: valResult.error };
+    }
+
+    var computed = valResult.computed;
+
+    // 4. Concurrency Guard: Check if editing existing invoice strictly by ID
+    var existingIdx = -1;
+    if (computed.id) {
+      for (var i = 0; i < existingInvoices.length; i++) {
+        if (existingInvoices[i].id === computed.id) {
+          existingIdx = i;
+          break;
+        }
+      }
+    }
+
+    // Check if suggested invoiceNo is already occupied by a DIFFERENT invoice
+    var isNumberCollision = false;
+    if (computed.invoiceNo) {
+      for (var k = 0; k < existingInvoices.length; k++) {
+        if (String(existingInvoices[k].invoiceNo).trim() === String(computed.invoiceNo).trim()) {
+          if (existingIdx === -1 || existingInvoices[k].id !== computed.id) {
+            isNumberCollision = true;
+            break;
+          }
+        }
+      }
+    }
+
+    // Auto-Generate Next Sequential Invoice Number if empty OR if collided with concurrent user
+    if (!computed.invoiceNo || (existingIdx === -1 && isNumberCollision)) {
+      var maxNo = 0;
+      for (var k = 0; k < existingInvoices.length; k++) {
+        var n = parseInt(String(existingInvoices[k].invoiceNo).replace(/\D/g, ""), 10);
+        if (!isNaN(n) && n > maxNo) maxNo = n;
+      }
+      computed.invoiceNo = String(maxNo + 1).padStart(4, "0");
+    }
+
+    // 5. Atomic Inventory Stock Adjustment
+    // If editing existing invoice, first restore previous items
+
+    if (existingIdx > -1) {
+      var oldInv = existingInvoices[existingIdx];
+      var oldItems = (oldInv.details && oldInv.details.items) || oldInv.items || [];
+      for (var oi = 0; oi < oldItems.length; oi++) {
+        var oldItm = oldItems[oi];
+        var oldDesc = String(oldItm.description || oldItm.name || "").trim().toLowerCase();
+        for (var p = 0; p < inventory.length; p++) {
+          var prod = inventory[p];
+          if ((prod.id && prod.id === oldItm.productId) || (prod.description && prod.description.trim().toLowerCase() === oldDesc)) {
+            prod.stock = roundToTwo(Number(prod.stock || 0) + Number(oldItm.quantity || 0));
+            break;
+          }
+        }
+      }
+    }
+
+    // Deduct new items from inventory
+    var updatedInventory = JSON.parse(JSON.stringify(inventory));
+    for (var ni = 0; ni < computed.items.length; ni++) {
+      var newItm = computed.items[ni];
+      var newDesc = String(newItm.description || "").trim().toLowerCase();
+      var foundProduct = null;
+
+      for (var pi = 0; pi < updatedInventory.length; pi++) {
+        var pr = updatedInventory[pi];
+        if ((pr.id && pr.id === newItm.productId) || (pr.description && pr.description.trim().toLowerCase() === newDesc)) {
+          foundProduct = pr;
+          break;
+        }
+      }
+
+      if (foundProduct) {
+        var currentStock = Number(foundProduct.stock || 0);
+        if (currentStock < newItm.quantity) {
+          return {
+            ok: false,
+            error: "Insufficient stock for '" + foundProduct.description + "'. Available: " + currentStock + ", Requested: " + newItm.quantity
+          };
+        }
+        foundProduct.stock = roundToTwo(currentStock - newItm.quantity);
+        foundProduct.status = foundProduct.stock <= 0 ? "Out of Stock" : (foundProduct.stock <= 5 ? "Low Stock" : "In Stock");
+      }
+    }
+
+    // 6. Build Consolidated Full Invoice Record
+    var fullInvoice = Object.assign({}, invoiceData, {
+      id: computed.id,
+      invoiceNo: computed.invoiceNo,
+      invoiceDate: computed.invoiceDate,
+      customerName: computed.customerName,
+      itemsCount: computed.items.length,
+      total: computed.total,
+      paidAmount: computed.paidAmount,
+      balanceDue: computed.balanceDue,
+      paymentStatus: computed.paymentStatus,
+      items: computed.items,
+      taxableSubtotal: computed.taxableSubtotal,
+      cgst: computed.cgst,
+      sgst: computed.sgst,
+      igst: computed.igst,
+      totalTax: computed.totalTax,
+      roundOff: computed.roundOff,
+      updatedAt: Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Kolkata", "yyyy-MM-dd HH:mm:ss")
+    });
+
+    fullInvoice.details = Object.assign({}, fullInvoice);
+
+    // 7. Write Authoritative Data to Sheets in Batches
+    writeInvoiceToSheet(fullInvoice, ss);
+    writeInventoryToSheet(updatedInventory, ss);
+
+    // 8. Invalidate High-Speed Cache Bundle & Generate New Global Sync Hash
+    var newHash = Utilities.getUuid().substr(0, 8) + "_" + Date.now();
+    try {
+      var scriptCache = CacheService.getScriptCache();
+      scriptCache.put("latest_sync_hash", newHash, 21600);
+      scriptCache.remove("cache_sync_bundle");
+    } catch (e) {}
+
+    // 9. Audit Logging
+    appendAuditLog("SAVE_INVOICE", user || "Admin", computed.invoiceNo, "SUCCESS", "Total: ₹" + computed.total + " | Paid: ₹" + computed.paidAmount + " | Items: " + computed.items.length, ss);
+
+    return {
+      ok: true,
+      hash: newHash,
+      invoice: fullInvoice,
+      record: fullInvoice,
+      serverTime: Date.now()
+    };
+
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+function processDeleteRecord(type, id, user, ss) {
+  if (!ss) ss = getMasterSpreadsheet();
+
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (lockErr) {
+    return { ok: false, error: "Server busy: Could not acquire lock for deletion." };
+  }
+
+  try {
+    if (type === "invoice") {
+      var existingInvoices = readInvoicesFromSheet(ss);
+      var targetInv = null;
+      for (var i = 0; i < existingInvoices.length; i++) {
+        if (existingInvoices[i].id === id || existingInvoices[i].invoiceNo === id) {
+          targetInv = existingInvoices[i];
+          break;
+        }
+      }
+
+      // Restore inventory stock for deleted invoice
+      if (targetInv) {
+        var items = (targetInv.details && targetInv.details.items) || targetInv.items || [];
+        var inventory = readInventoryFromSheet(ss);
+        for (var j = 0; j < items.length; j++) {
+          var itm = items[j];
+          var desc = String(itm.description || itm.name || "").trim().toLowerCase();
+          for (var p = 0; p < inventory.length; p++) {
+            var prod = inventory[p];
+            if ((prod.id && prod.id === itm.productId) || (prod.description && prod.description.trim().toLowerCase() === desc)) {
+              prod.stock = roundToTwo(Number(prod.stock || 0) + Number(itm.quantity || 0));
+              prod.status = prod.stock <= 0 ? "Out of Stock" : (prod.stock <= 5 ? "Low Stock" : "In Stock");
+              break;
+            }
+          }
+        }
+        writeInventoryToSheet(inventory, ss);
+      }
+
+      var targetNo = targetInv ? (targetInv.invoiceNo || id) : id;
+      deleteInvoiceFromSheet(targetNo, ss);
+      deleteInvoiceFromSheet(id, ss);
+      if (targetNo) {
+        deleteInvoiceFromSheet(String(targetNo).replace(/^#/, ''), ss);
+        var tNum = parseInt(String(targetNo).replace(/^#/, ''), 10);
+        if (!isNaN(tNum)) deleteInvoiceFromSheet(String(tNum), ss);
+      }
+      if (id) {
+        deleteInvoiceFromSheet(String(id).replace(/^inv_/, ''), ss);
+        var idNum = parseInt(String(id).replace(/^inv_/, ''), 10);
+        if (!isNaN(idNum)) deleteInvoiceFromSheet(String(idNum), ss);
+      }
+
+      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (e) {}
+
+      appendAuditLog("DELETE_INVOICE", user || "Admin", id, "SUCCESS", "Invoice deleted and inventory stock restored", ss);
+      return { ok: true, deletedId: id, type: "invoice" };
+
+    } else if (type === "product") {
+      var inventory = readInventoryFromSheet(ss);
+      var filtered = inventory.filter(function(p) { return p.id !== id; });
+      writeInventoryToSheet(filtered, ss);
+      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (e) {}
+      appendAuditLog("DELETE_PRODUCT", user || "Admin", id, "SUCCESS", "Product removed from inventory", ss);
+      return { ok: true, deletedId: id, type: "product" };
+
+    } else if (type === "party" || type === "customer") {
+      var customers = readCustomersFromSheet(ss);
+      var filteredC = customers.filter(function(c) { return c && c.id !== id && c.name !== id; });
+      writeCustomersToSheet(filteredC, ss);
+      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (e) {}
+      appendAuditLog("DELETE_CUSTOMER", user || "Admin", id, "SUCCESS", "Customer removed from parties database", ss);
+      return { ok: true, deletedId: id, type: "party" };
+    }
+
+    return { ok: false, error: "Invalid record type: " + type };
+
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+
+// ============================================================================
+// MODULE 6: API ROUTER & WEB APP ENTRY POINTS (doGet / doPost)
+// ============================================================================
+/**
+ * ============================================================================
+ * ApiRouter.gs - Action Allowlist, Security Filter & HTTP Dispatcher
+ * ============================================================================
+ */
+
+var ALLOWED_ACTIONS = [
+  "status",
+  "ping",
+  "sync",
+  "pull",
+  "save_invoice",
+  "delete_record",
+  "save_products",
+  "save_parties",
+  "save_settings",
+  "upload_pdf",
+  "send_login_otp",
+  "verify_login_otp"
+];
+
+function handleApiGet(e) {
+  var action = (e && e.parameter && e.parameter.action) ? String(e.parameter.action).trim() : "status";
+
+  // Check allowlist
+  if (ALLOWED_ACTIONS.indexOf(action) === -1) {
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: false,
+      error: "Unknown or unauthorized action: " + action
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0. Ultra-Fast Ping — keeps V8 container warm, zero sheet access (<50ms)
+  if (action === "ping") {
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: true, pong: true, t: Date.now()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+function computeSyncDataHash(invs, prods, parts) {
+  var str = (invs ? invs.length : 0) + '|' + (prods ? prods.length : 0) + '|' + (parts ? parts.length : 0);
+  if (invs && invs.length > 0) {
+    var lastInv = invs[invs.length - 1];
+    str += '|' + (lastInv.id || lastInv.invoiceNo || '') + '|' + (lastInv.updatedAt || lastInv.invoiceDate || '');
+  }
+  if (prods && prods.length > 0) {
+    str += '|' + (prods[0].stock || 0) + '|' + (prods[prods.length - 1].stock || 0);
+  }
+  var hash = 0x811c9dc5;
+  for (var i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function handleApiGet(e) {
+  var action = (e && e.parameter && e.parameter.action) ? String(e.parameter.action).trim() : "status";
+
+  // 1. Status Health Check
+  if (action === "status") {
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: true,
+      status: "healthy",
+      serverTime: Date.now(),
+      timestamp: new Date().toISOString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 2. Authoritative Sync / Pull from Google Sheets with Fast RAM Cache & Delta Validation
+  if (action === "sync" || action === "pull") {
+    var auth = authenticateRequest(e, null);
+    if (!auth.ok) {
+      return ContentService.createTextOutput(JSON.stringify(auth)).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var clientHash = e && e.parameter && e.parameter.hash ? String(e.parameter.hash).trim() : "";
+
+    // ⚡ Ultra-Fast RAM Cache Check (<20ms)
+    var cache = CacheService.getScriptCache();
+    var latestSyncHash = cache.get("latest_sync_hash");
+    if (clientHash && latestSyncHash && clientHash === latestSyncHash) {
+      return ContentService.createTextOutput(JSON.stringify({
+        ok: true,
+        notModified: true,
+        hash: latestSyncHash,
+        serverTime: Date.now()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var cachedBundleJson = cache.get("cache_sync_bundle");
+    if (cachedBundleJson) {
+      try {
+        var cachedObj = JSON.parse(cachedBundleJson);
+        if (clientHash && clientHash === cachedObj.hash) {
+          return ContentService.createTextOutput(JSON.stringify({
+            ok: true,
+            notModified: true,
+            hash: cachedObj.hash,
+            serverTime: Date.now()
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+        return ContentService.createTextOutput(cachedBundleJson).setMimeType(ContentService.MimeType.JSON);
+      } catch (ce) {}
+    }
+
+    // Read Authoritative Data directly from Google Sheets
+    var ssMaster = getMasterSpreadsheet();
+    var invs = readInvoicesFromSheet(ssMaster);
+    var prods = readInventoryFromSheet(ssMaster);
+    var parts = readCustomersFromSheet(ssMaster);
+
+    var serverHash = computeSyncDataHash(invs, prods, parts);
+    try {
+      cache.put("latest_sync_hash", serverHash, 21600);
+    } catch (_) {}
+
+    // If client data matches server hash, return ultra-lightweight notModified response (< 50 bytes)
+    if (clientHash && clientHash === serverHash) {
+      return ContentService.createTextOutput(JSON.stringify({
+        ok: true,
+        notModified: true,
+        hash: serverHash,
+        serverTime: Date.now()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var settingsData = readSettingsFromSheet(ssMaster || ss);
+    var fullBundle = {
+      ok: true,
+      hash: serverHash,
+      invoices: invs,
+      products: prods,
+      parties: parts,
+      settings: settingsData,
+      globalSettings: settingsData,
+      serverTime: Date.now(),
+      timestamp: new Date().toISOString()
+    };
+
+    var fullBundleStr = JSON.stringify(fullBundle);
+    try {
+      if (fullBundleStr.length < 100000) {
+        cache.put("cache_sync_bundle", fullBundleStr, 600); // 10-minute ultra-fast RAM cache
+      }
+    } catch (ce) {}
+
+    return ContentService.createTextOutput(fullBundleStr).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 3. Fast Single Invoice Lookup / Public QR Verification (No Full Download Needed)
+  if (action === "get_invoice" || action === "verify" || action === "verify_invoice") {
+    var queryNo = e && e.parameter ? (e.parameter.invoiceNo || e.parameter.id || e.parameter.inv || e.parameter.token || e.parameter.q || "") : "";
+    var ssMaster = getMasterSpreadsheet();
+    var allInvs = readInvoicesFromSheet(ssMaster);
+    var found = null;
+    if (queryNo) {
+      var cleanQ = String(queryNo).trim().toLowerCase().replace(/^#/, '');
+      for (var k = 0; k < allInvs.length; k++) {
+        var invItem = allInvs[k];
+        if (!invItem) continue;
+        var iNo = String(invItem.invoiceNo || "").trim().toLowerCase().replace(/^#/, '');
+        var iId = String(invItem.id || "").trim().toLowerCase();
+        var iTok = String(invItem.qrToken || (invItem.details && invItem.details.qrToken) || "").trim().toLowerCase();
+        if (iNo === cleanQ || iId === cleanQ || iId.replace(/^inv_/, '') === cleanQ || (iTok && iTok === cleanQ)) {
+          found = invItem;
+          break;
+        }
+      }
+    }
+    if (found) {
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, found: true, invoice: found })).setMimeType(ContentService.MimeType.JSON);
+    } else {
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, found: false, error: "Invoice record not found in master database" })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Unknown GET action: " + action })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function handleApiPost(e) {
+  if (!e || !e.postData || !e.postData.contents) {
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: false,
+      error: "Missing POST request payload"
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  try {
+    var rawBody = e.postData.contents;
+    var data = JSON.parse(rawBody || "{}");
+    var action = String(data.action || "").trim();
+
+    // 1. Action Allowlist Enforcement
+    if (!action || ALLOWED_ACTIONS.indexOf(action) === -1) {
+      return ContentService.createTextOutput(JSON.stringify({
+        ok: false,
+        error: "Unknown or forbidden action: '" + action + "'. Request rejected."
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 1.5 Authentication-exempt Actions (Strictly scoped to kandukurijagan99@gmail.com)
+    if (action === "send_login_otp") {
+      var targetEmail = String(data.email || "").trim().toLowerCase();
+      if (targetEmail !== "kandukurijagan99@gmail.com") {
+        return ContentService.createTextOutput(JSON.stringify({
+          ok: false,
+          error: "Unauthorized email address. Only kandukurijagan99@gmail.com is permitted."
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+      var otpCode = String(Math.floor(100000 + Math.random() * 900000));
+      try {
+        PropertiesService.getScriptProperties().setProperty("AUTH_OTP_" + targetEmail, otpCode);
+        PropertiesService.getScriptProperties().setProperty("AUTH_OTP_EXP_" + targetEmail, String(Date.now() + 15 * 60 * 1000));
+      } catch (pe) {}
+
+      try {
+        var directLoginLink = "https://kandukurijagan1.github.io/fish-billing/?auth_otp=" + otpCode + "&auth_email=" + encodeURIComponent(targetEmail);
+        MailApp.sendEmail({
+          to: targetEmail,
+          subject: "🔐 Aaryan Aqua Needs - Direct Login Link & Security Code: " + otpCode,
+          htmlBody: "<div style='font-family: Arial, sans-serif; padding: 24px; color: #1e293b; max-width: 500px; margin: auto; border: 1px solid #e2e8f0; border-radius: 12px;'>" +
+                    "<div style='text-align: center; margin-bottom: 20px;'>" +
+                    "  <h2 style='color: #0284c7; margin: 0;'>Aaryan Aqua Needs</h2>" +
+                    "  <p style='color: #64748b; font-size: 13px; margin: 4px 0 0 0;'>GST Billing & Aquaculture Management</p>" +
+                    "</div>" +
+                    "<p>Hello Jagan,</p>" +
+                    "<p>You requested direct mail access. Click the button below to <strong>instantly open and unlock</strong> the billing system without entering a password:</p>" +
+                    "<div style='text-align: center; margin: 24px 0;'>" +
+                    "  <a href='" + directLoginLink + "' style='background: #0284c7; color: #ffffff; padding: 14px 28px; text-decoration: none; font-size: 15px; font-weight: bold; border-radius: 8px; display: inline-block; box-shadow: 0 4px 12px rgba(2,132,199,0.3);'>🔓 Open Billing System Directly</a>" +
+                    "</div>" +
+                    "<p style='font-size: 13px; color: #475569;'>Or use this 6-digit one-time code on the lock screen:</p>" +
+                    "<div style='font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #0f172a; background: #f1f5f9; padding: 14px; border-radius: 8px; text-align: center; margin: 15px 0; border: 1px dashed #cbd5e1;'>" + otpCode + "</div>" +
+                    "<p style='font-size: 11.5px; color: #94a3b8; margin-top: 20px; border-top: 1px solid #f1f5f9; padding-top: 12px;'>Authorized for <strong>kandukurijagan99@gmail.com</strong> only. Expires in 15 minutes.</p>" +
+                    "</div>"
+        });
+        try {
+          var ssLog = getMasterSpreadsheet();
+          appendAuditLog("SEND_LOGIN_OTP", targetEmail, "—", "SUCCESS", "Security OTP & direct access email dispatched", ssLog);
+        } catch (_) {}
+        return ContentService.createTextOutput(JSON.stringify({ ok: true, message: "Code and direct access link sent to " + targetEmail })).setMimeType(ContentService.MimeType.JSON);
+      } catch (me) {
+        return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Failed to send email: " + me.message })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
+    if (action === "verify_login_otp") {
+      var targetEmail = String(data.email || "").trim().toLowerCase();
+      var enteredCode = String(data.otp || "").trim();
+      if (targetEmail !== "kandukurijagan99@gmail.com") {
+        return ContentService.createTextOutput(JSON.stringify({
+          ok: false,
+          error: "Unauthorized email address. Access denied."
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+      var storedOtp = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_" + targetEmail);
+      var expStr = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_EXP_" + targetEmail);
+      var expTime = expStr ? parseInt(expStr, 10) : 0;
+      if (storedOtp && enteredCode === storedOtp && Date.now() < expTime) {
+        try {
+          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_" + targetEmail);
+          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_EXP_" + targetEmail);
+        } catch (_) {}
+        try {
+          var ssLog2 = getMasterSpreadsheet();
+          appendAuditLog("VERIFY_LOGIN_OTP", targetEmail, "—", "SUCCESS", "6-Digit OTP verified successfully", ssLog2);
+        } catch (_) {}
+        return ContentService.createTextOutput(JSON.stringify({ ok: true, verified: true })).setMimeType(ContentService.MimeType.JSON);
+      } else {
+        return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Invalid or expired security code." })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
+    // 2. Authentication Enforcement
+    var auth = authenticateRequest(e, data);
+    if (!auth.ok) {
+      return ContentService.createTextOutput(JSON.stringify(auth)).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var user = auth.user;
+    var ss = getMasterSpreadsheet();
+
+    // 3. Dispatch to Specialized Service Handlers
+    if (action === "sync" || action === "pull") {
+      var invs = readInvoicesFromSheet(ss);
+      var prods = readInventoryFromSheet(ss);
+      var parts = readCustomersFromSheet(ss);
+      var sHash = computeSyncDataHash(invs, prods, parts);
+
+      if (data.hash && data.hash === sHash) {
+        return ContentService.createTextOutput(JSON.stringify({
+          ok: true,
+          notModified: true,
+          hash: sHash,
+          serverTime: Date.now()
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+
+      return ContentService.createTextOutput(JSON.stringify({
+        ok: true,
+        hash: sHash,
+        invoices: invs,
+        products: prods,
+        parties: parts,
+        serverTime: Date.now(),
+        timestamp: new Date().toISOString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === "save_invoice") {
+      var invoicePayload = data.invoice || data.data || data;
+      var saveRes = processSaveInvoice(invoicePayload, user, ss);
+      return ContentService.createTextOutput(JSON.stringify(saveRes)).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === "delete_record") {
+      var delType = data.type || data.recordType;
+      var delId = data.id || data.recordId;
+      var delNo = data.invoiceNo || data.no;
+      if (delNo && delType === "invoice") {
+        deleteInvoiceFromSheet(delNo, ss);
+        deleteInvoiceFromSheet(String(delNo).replace(/^#/, ''), ss);
+      }
+      var delRes = processDeleteRecord(delType, delId, user, ss);
+      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (ce) {}
+      return ContentService.createTextOutput(JSON.stringify(delRes)).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === "save_products") {
+      var prodList = data.products || [];
+      if (!Array.isArray(prodList)) {
+        return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Products must be an array" })).setMimeType(ContentService.MimeType.JSON);
+      }
+      writeInventoryToSheet(prodList, ss);
+      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (ce) {}
+      appendAuditLog("SAVE_PRODUCTS", user, "—", "SUCCESS", "Saved " + prodList.length + " products", ss);
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, count: prodList.length })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === "save_parties") {
+      var partyList = data.parties || [];
+      if (!Array.isArray(partyList)) {
+        return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Parties must be an array" })).setMimeType(ContentService.MimeType.JSON);
+      }
+      writeCustomersToSheet(partyList, ss);
+      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (ce) {}
+      appendAuditLog("SAVE_PARTIES", user, "—", "SUCCESS", "Saved " + partyList.length + " customers", ss);
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, count: partyList.length })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === "save_settings") {
+      var settingsObj = data.settings || {};
+      writeSettingsToSheet(settingsObj, ss);
+      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (ce) {}
+      appendAuditLog("SAVE_SETTINGS", user, "—", "SUCCESS", "System settings updated", ss);
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, settings: settingsObj })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === "upload_pdf") {
+      var uploadRes = saveInvoicePdfSecure(data);
+      if (uploadRes && uploadRes.ok && uploadRes.invoiceNo) {
+        var invSheet = ss.getSheetByName("Invoices");
+        if (invSheet && invSheet.getLastRow() >= 2) {
+          var idVals = invSheet.getRange(2, 1, invSheet.getLastRow() - 1, 1).getValues();
+          for (var r = 0; r < idVals.length; r++) {
+            if (String(idVals[r][0]).trim() === String(uploadRes.invoiceNo).trim()) {
+              invSheet.getRange(r + 2, 13).setValue(uploadRes.pdfUrl);
+              break;
+            }
+          }
+        }
+      }
+      appendAuditLog("UPLOAD_PDF", user, uploadRes.invoiceNo || "—", uploadRes.ok ? "SUCCESS" : "FAILED", uploadRes.safeFilename || "Invoice PDF", ss);
+      return ContentService.createTextOutput(JSON.stringify(uploadRes)).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Unhandled action" })).setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
+    Logger.log("API Handler error: " + err.message);
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: false,
+      error: "Server-side error: " + err.message
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ============================================================================
+// Global Web App Entry Points
+// ============================================================================
+
+
+// --- SETTINGS STORAGE IN AUTHORITATIVE GOOGLE SHEET ---
+
+function readSettingsFromSheet(ss) {
+  try {
+    if (!ss) ss = getMasterSpreadsheet();
+    var sheet = ss.getSheetByName("Settings");
+    if (!sheet) return {};
+
+    var data = sheet.getDataRange().getValues();
+    if (!data || data.length < 2) return {};
+
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0] || "").trim() === "GLOBAL_SETTINGS") {
+        var rawJson = String(data[i][1] || "");
+        if (rawJson) {
+          return JSON.parse(rawJson);
+        }
+      }
+    }
+    return {};
+  } catch (e) {
+    Logger.log("Failed to read settings from sheet: " + e.message);
+    return {};
+  }
+}
+
+function writeSettingsToSheet(settingsObj, ss) {
+  try {
+    if (!settingsObj || typeof settingsObj !== "object") return;
+    if (!ss) ss = getMasterSpreadsheet();
+    var sheet = ss.getSheetByName("Settings");
+    if (!sheet) return;
+
+    var jsonStr = JSON.stringify(settingsObj);
+    var nowIso = new Date().toISOString();
+    var data = sheet.getDataRange().getValues();
+    var rowIdx = -1;
+
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0] || "").trim() === "GLOBAL_SETTINGS") {
+        rowIdx = i + 1;
+        break;
+      }
+    }
+
+    if (rowIdx !== -1) {
+      sheet.getRange(rowIdx, 2).setValue(jsonStr);
+      sheet.getRange(rowIdx, 3).setValue(nowIso);
+    } else {
+      sheet.appendRow(["GLOBAL_SETTINGS", jsonStr, nowIso]);
+    }
+  } catch (e) {
+    Logger.log("Failed to write settings to sheet: " + e.message);
+  }
+}
+
+function doGet(e) {
+  return handleApiGet(e);
+}
+
+function doPost(e) {
+  return handleApiPost(e);
+}
+

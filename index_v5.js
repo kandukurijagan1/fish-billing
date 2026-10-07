@@ -15796,7 +15796,7 @@ window.isUserAuthorizedByAdmin = function(email) {
 };
 
 // 2. Persist user access list locally and to Google Sheets Cloud
-window.saveAuthorizedUsersList = function(list) {
+window.saveAuthorizedUsersList = function(list, skipSync = false) {
   if (!Array.isArray(list)) return;
   try {
     localStorage.setItem("authorized_users", JSON.stringify(list));
@@ -15807,7 +15807,7 @@ window.saveAuthorizedUsersList = function(list) {
     try {
       localStorage.setItem("settings", JSON.stringify(globalSettings));
     } catch (e) {}
-    if (typeof syncDatabaseToServer === 'function') {
+    if (!skipSync && typeof syncDatabaseToServer === 'function') {
       syncDatabaseToServer("settings", globalSettings);
     }
   }
@@ -15869,9 +15869,13 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
           try { cloudSettings = JSON.parse(cloudSettings); } catch(_) {}
         }
         if (cloudSettings && typeof cloudSettings === 'object') {
+          if (typeof globalSettings !== 'undefined') {
+             globalSettings = cloudSettings;
+             try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(_) {}
+          }
           const authList = cloudSettings.authorizedUsers || cloudSettings.authorized_users;
           if (authList) {
-            window.saveAuthorizedUsersList(authList);
+            window.saveAuthorizedUsersList(authList, true);
             isAuthorized = window.isUserAuthorizedByAdmin(normEmail);
           }
         }
@@ -16475,14 +16479,15 @@ window.sendMailOtpToJagan = async function(mode = 'code') {
   }
 };
 
-window.submitUnlockLogin = async function(e) {
+window.handleTraditionalLoginSubmit = async function(e) {
   if (e && e.preventDefault) e.preventDefault();
-
-  const userField = document.getElementById("login-username") || document.getElementById("login-email");
+  
+  const userField = document.getElementById("login-email");
   const rawEmail = (userField?.value || "").trim();
   const enteredEmail = rawEmail.toLowerCase();
-  const otpField = document.getElementById("login-otp-code");
-  const enteredOtp = (otpField?.value || "").trim();
+  
+  const passField = document.getElementById("login-password");
+  const enteredPass = (passField?.value || "").trim();
 
   const btnText = document.getElementById("login-btn-text");
   const btnSpinner = document.getElementById("login-btn-spinner");
@@ -16520,7 +16525,14 @@ window.submitUnlockLogin = async function(e) {
   }
 
   // 2. STRICT CHECK: Email must be authorized by Main Admin
-  if (!window.isUserAuthorizedByAdmin(enteredEmail)) {
+  let isAuth = false;
+  if (typeof window.verifyAndAuthorizeUser === 'function') {
+    isAuth = await window.verifyAndAuthorizeUser(enteredEmail, enteredEmail);
+  } else {
+    isAuth = window.isUserAuthorizedByAdmin(enteredEmail);
+  }
+
+  if (!isAuth) {
     if (errBlock) {
       errBlock.innerHTML = `
         <div style="text-align: left; padding: 4px 2px;">
@@ -16550,8 +16562,23 @@ window.submitUnlockLogin = async function(e) {
     return;
   }
 
-  // 3. MANDATORY 6-DIGIT VERIFICATION CODE CHECK:
-  if (!enteredOtp || enteredOtp.length !== 6) {
+  // 3. MASTER PASSWORD OR 6-DIGIT VERIFICATION CODE CHECK:
+  const masterPass = (typeof globalSettings !== 'undefined' && globalSettings.security?.password) ? globalSettings.security.password : "Aaryan@2024";
+  
+  // Try Master Password First
+  if (enteredPass === masterPass) {
+    if (submitBtn) submitBtn.disabled = true;
+    if (btnText) btnText.classList.add("hidden");
+    if (btnSpinner) btnSpinner.classList.remove("hidden");
+    
+    setTimeout(() => {
+      window.verifyAndAuthorizeUser(enteredEmail, enteredEmail);
+    }, 500);
+    return;
+  }
+
+  // Not master password, check OTP length
+  if (!enteredPass || enteredPass.length !== 6) {
     if (errBlock) {
       errBlock.innerHTML = `
         <div style="font-weight: 700; color: #f59e0b; margin-bottom: 2px;">
@@ -16575,7 +16602,7 @@ window.submitUnlockLogin = async function(e) {
 
   // 4. VERIFY CODE AGAINST LOCAL SESSION OR CLOUD BACKEND:
   const activeMailOtp = sessionStorage.getItem("current_mail_otp");
-  let isOtpValid = (activeMailOtp && enteredOtp === activeMailOtp);
+  let isOtpValid = (activeMailOtp && enteredPass === activeMailOtp);
 
   if (!isOtpValid) {
     if (submitBtn) submitBtn.disabled = true;
@@ -16589,7 +16616,7 @@ window.submitUnlockLogin = async function(e) {
         body: JSON.stringify({
           action: "verify_login_otp",
           email: enteredEmail,
-          otp: enteredOtp,
+          otp: enteredPass,
           token: API_SECRET_TOKEN
         })
       });
@@ -16611,14 +16638,14 @@ window.submitUnlockLogin = async function(e) {
           <i class="fa-solid fa-triangle-exclamation"></i> Incorrect Verification Code!
         </div>
         <div style="font-size: 11.5px; color: #cbd5e1;">
-          The code you entered is invalid. Please check your Gmail or click "Send 6-Digit Code" for a new one.
+          The password or OTP code you entered is invalid.
         </div>
       `;
       errBlock.classList.remove("hidden");
     }
-    if (otpField) {
-      otpField.value = "";
-      otpField.focus();
+    if (passField) {
+      passField.value = "";
+      passField.focus();
     }
     const card = document.querySelector(".login-card");
     if (card) {
@@ -16633,17 +16660,19 @@ window.submitUnlockLogin = async function(e) {
   sessionStorage.removeItem("current_mail_otp");
   if (errBlock) errBlock.classList.add("hidden");
 
-  AppSecurity.recordSuccessfulLogin(enteredEmail, "Gmail OTP Verification");
+  AppSecurity.recordSuccessfulLogin(enteredEmail, "Traditional / OTP Login");
   unlockSystemSilently();
 
   if (typeof showFloatingToast === 'function') {
-    showFloatingToast("🔓 Welcome, Jagan! Identity verified successfully for kandukurijagan99@gmail.com.", "success", 4000);
+    showFloatingToast(`🔓 Welcome back! Identity verified successfully for ${enteredEmail}.`, "success", 4000);
   }
 
   if (submitBtn) submitBtn.disabled = false;
   if (btnText) btnText.classList.remove("hidden");
   if (btnSpinner) btnSpinner.classList.add("hidden");
 };
+
+window.submitUnlockLogin = window.handleTraditionalLoginSubmit;
 
 // --- ENTERPRISE EMERGENCY LOCKDOWN & SECURITY AUDIT TRAIL ---
 window.triggerEmergencyLockdown = function() {
@@ -19926,7 +19955,7 @@ window.shareVerifiedInvoiceWhatsApp = function(btnEl) {
 
 
 // Check for direct Google Mail access / magic link URL parameters on page load
-window.checkDirectMailAuthParams = function() {
+window.checkDirectMailAuthParams = async function() {
   try {
     const urlParams = new URLSearchParams(window.location.search);
     const directOtp = urlParams.get("auth_otp") || urlParams.get("otp") || urlParams.get("magic");
@@ -19934,7 +19963,14 @@ window.checkDirectMailAuthParams = function() {
     const isDirectAuth = (urlParams.has("direct_google_auth") || urlParams.has("google_login") || Boolean(directOtp)) && Boolean(directEmail);
 
     if (isDirectAuth) {
-      if (!window.isUserAuthorizedByAdmin(directEmail)) {
+      let isAuth = false;
+      if (typeof window.verifyAndAuthorizeUser === 'function') {
+        isAuth = await window.verifyAndAuthorizeUser(directEmail, directEmail);
+      } else {
+        isAuth = window.isUserAuthorizedByAdmin(directEmail);
+      }
+
+      if (!isAuth) {
         if (typeof showFloatingToast === 'function') {
           showFloatingToast("❌ Access Denied: Unauthorized email (" + directEmail + ").", "error", 5000);
         }
