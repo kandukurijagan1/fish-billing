@@ -14325,11 +14325,11 @@ function renderPartiesLists(records) {
 }
 
 window.sendPartyPaymentReminderWhatsApp = async function(partyName, phone) {
-  const pBal = TurboDataStore.getPartyBalance(partyName);
-  const totalBilled = pBal.billed;
-  const totalPaid = pBal.paid;
-  const pendingDues = pBal.balance;
-  const invCount = pBal.count;
+  const pBal = TurboDataStore.getPartyLedgerSummary(partyName);
+  const totalBilled = pBal.totalBilled || 0;
+  const totalPaid = pBal.totalPaid || 0;
+  const pendingDues = pBal.totalBalance || 0;
+  const invCount = pBal.invoiceCount || 0;
 
   let text = `🙏 *GENTLE PAYMENT REMINDER*\n`;
   text += `🏛️ *AARYAN AQUA NEEDS*\n`;
@@ -14401,33 +14401,39 @@ window.sendPartyPaymentReminderWhatsApp = async function(partyName, phone) {
 };
 
 function createPartyListCard(p) {
-  const pBal = TurboDataStore.getPartyBalance(p.name);
-  const totalBilled = pBal.billed;
-  const totalPaid = pBal.paid;
-  const pendingDues = pBal.balance;
-  const billCount = pBal.count;
+  const pBal = TurboDataStore.getPartyLedgerSummary(p.name);
+  const totalBilled = pBal.totalBilled || 0;
+  const totalPaid = pBal.totalPaid || 0;
+  const pendingDues = pBal.totalBalance || 0;
+  const billCount = pBal.invoiceCount || 0;
 
   let duesBadge = `<span style="background: rgba(16, 185, 129, 0.12); color: #10b981; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700;">Paid</span>`;
   if (pendingDues > 0) {
     duesBadge = `<span style="background: rgba(239, 68, 68, 0.12); color: #ef4444; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700;">Due: ₹ ${formatCurrency(pendingDues)}</span>`;
   }
 
+  let displayCompany = p.company || '';
+  if (displayCompany && displayCompany.includes('GMT')) {
+    // Clean up dirty data where a date string was saved as company
+    displayCompany = '';
+  }
+
   const card = document.createElement("div");
   card.className = "party-list-card";
   card.innerHTML = `
-    <div class="party-list-card-details" style="flex: 1;">
+    <div class="party-list-card-details" style="flex: 1; min-width: 0;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-        <h4 style="margin: 0;">${p.name}</h4>
+        <h4 style="margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70%;">${p.name}</h4>
         ${duesBadge}
       </div>
-      ${p.company ? `<p style="font-weight:600; color:var(--text-dark); margin: 2px 0;">${p.company}</p>` : ''}
-      <p style="font-size:10.5px; color:#475569; white-space: pre-line; margin-bottom: 4px;">${p.address || ''}</p>
-      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #64748b;">
-        <span>${p.phone ? 'Ph: ' + p.phone : ''}</span>
-        <span style="font-weight: 600;">Billed: ₹ ${formatCurrency(totalBilled)} (${billCount} bills)</span>
+      ${displayCompany ? `<p style="font-weight:600; color:var(--text-dark); margin: 2px 0;">${displayCompany}</p>` : ''}
+      <p style="font-size:10.5px; color:#475569; white-space: pre-wrap; margin-bottom: 6px; word-break: break-word;">${p.address || ''}</p>
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 6px; font-size: 11px; color: #64748b;">
+        <span style="word-break: break-all; max-width: 100%; flex: 1 1 auto; line-height: 1.3;">${p.phone ? 'Ph: ' + p.phone : ''}</span>
+        <span style="font-weight: 600; white-space: nowrap; flex-shrink: 0;">Billed: ₹ ${formatCurrency(totalBilled)} (${billCount} bills)</span>
       </div>
     </div>
-    <div class="actions-cell" style="display: flex; gap: 4px; align-items: center;">
+    <div class="actions-cell" style="display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; padding-left: 8px;">
       ${pendingDues > 0 ? `<button class="action-btn share btn-whatsapp" onclick="sendPartyPaymentReminderWhatsApp('${p.name.replace(/'/g, "\\'")}', '${p.phone || ''}')" title="Send WhatsApp Payment Reminder"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
       <button class="action-btn edit" onclick="openPartyModal('${p.type}', '${String(p.id || p.name || '').replace(/'/g, "\\'")}')" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
     </div>

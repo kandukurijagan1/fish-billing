@@ -5838,6 +5838,17 @@ body.app-is-locked #live-session-timer-pill {
   #view-history .search-box {
     width: 100% !important;
   }
+  
+  #view-parties .card-box-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+  #view-parties .card-box-header .flex-row {
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+    gap: 6px !important;
+  }
 
   #view-history .search-box input {
     width: 100% !important;
