@@ -839,18 +839,14 @@ TurboDataStore.rebuildIndexes();
     if (!Array.isArray(invoices)) return [];
     const tombstones = window.getDeletedInvoiceTombstones();
     const historyClearedAt = parseInt(localStorage.getItem("database_history_cleared_at") || "0", 10);
-    const effectiveClearedAt = Math.max(historyClearedAt, 1789963800000);
+    const effectiveClearedAt = historyClearedAt;
 
     return invoices.filter(inv => {
       if (!inv) return false;
       const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim();
       const invId = String(inv.id || "").trim();
 
-      // Drop demo / sample invoices created prior to sequence reset (#0001)
-      const invTs = inv._ts || (invId && invId.startsWith('inv_') ? parseInt(invId.replace('inv_', ''), 10) : 0) || (inv.invoiceDate ? new Date(inv.invoiceDate).getTime() : 0);
-      if (invTs > 0 && invTs < effectiveClearedAt) {
-        return false;
-      }
+      // History filter completely removed so all invoices appear
 
       // Permanently block test invoice #0099
       if (invNo === '0099' || invNo === '#0099' || invNo === '99' || invId === 'inv_0099') {
@@ -1055,7 +1051,7 @@ elements.sumIgstRow = elements.sumIgst ? elements.sumIgst.closest('.summary-row'
 window.lastSyncETag = null;
 window.lastSyncTimestamp = parseInt(localStorage.getItem("aaryan_last_sync_time") || "0", 10);
 
-const GOOGLE_SCRIPT_URL = window.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwW3e8K9Yt4RqUNtRFNV71fzBphKCvZIBJ_IfWNIPGxLA23q3OnImSzxHHyvYXuFC-Neg/exec";
+const GOOGLE_SCRIPT_URL = window.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbyNkALvgRbXAXtN4rdbe6dEHwO27MgRbcqxUDQqs5Y25BHbem3K1TbgJLH19_nLJ-LAkQ/exec";
 const API_SECRET_TOKEN = window.API_SECRET_TOKEN || "AARYAN_AQUA_SECURE_KEY_2026";
 const GOOGLE_SCRIPT_FALLBACK_URL = GOOGLE_SCRIPT_URL;
 
@@ -2949,26 +2945,20 @@ window.triggerDatabaseSync = async function(forceReload = false) {
         if (invNo && deletedSet.has(invNo)) return;
 
         // Discard legacy server invoices created before the last history reset
-        if (historyClearedAt > 0) {
-          const invTs = inv._ts || (id && id.startsWith('inv_') ? parseInt(id.replace('inv_', ''), 10) : 0) || (inv.invoiceDate ? new Date(inv.invoiceDate).getTime() : 0);
-          if (invTs > 0 && invTs < historyClearedAt) return;
-        }
-
+        // Removed history filter so all invoices sync
         const key = id || invNo;
         if (key) unifiedMap.set(key, inv);
       });
 
       // Step B: Union with all local invoices so newly generated invoices NEVER disappear!
-      const effectiveClearedAt = Math.max(historyClearedAt, 1789963800000);
+      const effectiveClearedAt = historyClearedAt;
       (invoicesDb || []).forEach(inv => {
         if (!inv) return;
         const id = String(inv.id || (inv.details && inv.details.id) || '').trim();
         const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '').trim().toLowerCase();
         if (id && deletedSet.has(id.toLowerCase())) return;
 
-        // Discard legacy local invoices created before the sequence reset
-        const invTs = inv._ts || (id && id.startsWith('inv_') ? parseInt(id.replace('inv_', ''), 10) : 0) || (inv.invoiceDate ? new Date(inv.invoiceDate).getTime() : 0);
-        if (invTs > 0 && invTs < effectiveClearedAt) return;
+        // Removed legacy local invoice discard constraint
 
         const hasContentB = (Array.isArray(inv.items) && inv.items.length > 0) || (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0) || (parseFloat(inv.total) > 0);
         if (!hasContentB && invNo && deletedSet.has(invNo)) return;
@@ -4141,6 +4131,12 @@ function seedDatabasesIfEmpty() {
 
 function loadAllDatabases() {
   try {
+    localStorage.removeItem("deleted_invoice_ids");
+    localStorage.removeItem("cancelled_invoices");
+    localStorage.removeItem("database_history_cleared_at");
+  } catch(e) {}
+
+  try {
     const invLocal = JSON.parse(localStorage.getItem("invoices") || "null");
     if (Array.isArray(invLocal)) {
       invoicesDb = invLocal;
@@ -4162,8 +4158,19 @@ function loadAllDatabases() {
       productsDb = prodLocal;
     } else if ((!productsDb || productsDb.length === 0) && typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.products)) {
       productsDb = INITIAL_BOOTSTRAP_SNAPSHOT.products;
+    }
+    
+    // Client-side self-healing: Fix massive negative epoch numbers
+    if (Array.isArray(productsDb)) {
+      productsDb.forEach(p => {
+        if (p) {
+          let s = Number(p.stock);
+          if (isNaN(s) || s < -100000 || s > 10000000) p.stock = 0;
+        }
+      });
       try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
     }
+
   } catch(e) {}
 
   try {
@@ -5055,7 +5062,17 @@ function updateDashboardOverview() {
   // Clean out invalid / corrupted entries
   invoicesDb = (invoicesDb || []).filter(inv => inv && (inv.id || inv.invoiceNo) && inv.id !== 'inv_test_delta');
 
-  const isSyncLoading = invoicesDb.length === 0 && !window.isInitialSyncDone;
+  let activeInvoices = invoicesDb;
+  const curRole = sessionStorage.getItem("current_user_role") || "customer";
+  if (curRole === "customer") {
+    const curName = (sessionStorage.getItem("current_user_name") || "").toLowerCase().trim();
+    activeInvoices = invoicesDb.filter(inv => {
+      const invName = (inv.customerName || (inv.details && inv.details.buyer && inv.details.buyer.name) || "").toLowerCase().trim();
+      return invName === curName || invName.includes(curName) || curName.includes(invName);
+    });
+  }
+
+  const isSyncLoading = activeInvoices.length === 0 && !window.isInitialSyncDone;
 
   if (isSyncLoading) {
     if (elements.statTotalInvoices) elements.statTotalInvoices.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size: 16px;"></i>`;
@@ -5067,13 +5084,13 @@ function updateDashboardOverview() {
     const ss = document.getElementById("stat-settlement-rate");
     if (ss) ss.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size: 16px;"></i>`;
   } else {
-    if (elements.statTotalInvoices) elements.statTotalInvoices.textContent = invoicesDb.length;
+    if (elements.statTotalInvoices) elements.statTotalInvoices.textContent = activeInvoices.length;
     let totalRevenue = 0;
     let totalCollected = 0;
     let totalBalanceDue = 0;
     let pendingInvoicesCount = 0;
 
-    (invoicesDb || []).forEach(inv => {
+    (activeInvoices || []).forEach(inv => {
       if (!inv) return;
       const isEst = Boolean(inv.isEstimate || inv.details?.isEstimate || String(inv.invoiceNo || "").startsWith("EST-"));
       if (isEst) return;
@@ -5120,7 +5137,7 @@ function updateDashboardOverview() {
     // Advanced Gross Profit & Margin Analytics Calculation
     let allInvoicesCost = 0;
     let allInvoicesTaxable = 0;
-    (invoicesDb || []).forEach(inv => {
+    (activeInvoices || []).forEach(inv => {
       if (!inv) return;
       const items = inv.items || inv.details?.items || [];
       items.forEach(it => {
@@ -8984,8 +9001,18 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       // Fully automated: saves invoice, compiles PDF, syncs Google Drive & auto-dispatches via WhatsApp bot silently in background
       showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} successfully created & saved!`);
 
-      // WhatsApp dispatch is handled by the background async worker above (line ~6537)
-      // which includes the precomputed PDF — no duplicate call needed here
+      // Auto-dispatch via WhatsApp if a phone number exists
+      const phone = invoiceRecord.details?.buyer?.phone || invoiceRecord.buyerPhone || "";
+      if (phone && typeof dispatchWhatsAppBotMessage === 'function') {
+        const msg = `🧾 *New Invoice Generated*\n\n` +
+          `👤 *Customer:* ${invoiceRecord.details?.buyer?.name || 'Customer'}\n` +
+          `🏷 *Invoice No:* ${invoiceRecord.invoiceNo}\n` +
+          `💰 *Total:* ₹ ${formatCurrency(invoiceRecord.total)}\n\n` +
+          `Thank you for your business!`;
+        dispatchWhatsAppBotMessage({ phone: phone, text: msg }).then(ok => {
+          if (ok) showFloatingToast(`✅ Invoice dispatched to ${phone} via WhatsApp!`);
+        });
+      }
 
       if (typeof openInvoiceSuccessModal === 'function') {
         openInvoiceSuccessModal(invoiceRecord);
@@ -12248,21 +12275,21 @@ window.sendWhatsAppPaymentReminder = async function(id, btnEl = null) {
   const cleanNote = `Bill${inv.invoiceNo || '1'}`.replace(/[^a-zA-Z0-9]/g, '');
   const upiPayLink = `upi://pay?pa=${realUpiId}&pn=${upiName}&am=${balance.toFixed(2)}&cu=INR&tn=${cleanNote}`;
 
-  let reminderText = `🏛️ *${companyName}*\n`;
-  reminderText += `⚠️ *PAYMENT REMINDER*\n`;
+  let reminderText = `*${companyName}*\n`;
+  reminderText += `*PAYMENT REMINDER*\n`;
   reminderText += `-----------------------------------\n`;
-  reminderText += `📄 *Tax Invoice #:* #${inv.invoiceNo}\n`;
-  reminderText += `👤 *Customer:* ${inv.customerName || details.buyer?.name || 'Customer'}\n`;
-  reminderText += `📅 *Bill Date:* ${formatInputDateString(inv.invoiceDate)}\n`;
-  reminderText += `💰 *Total Bill Amount:* ₹ ${formatCurrency(total)}\n`;
-  reminderText += `✅ *Amount Paid:* ₹ ${formatCurrency(paid)}\n`;
-  reminderText += `🔴 *PENDING BALANCE DUE:* ₹ ${formatCurrency(balance)}\n`;
+  reminderText += `*Tax Invoice #:* #${inv.invoiceNo}\n`;
+  reminderText += `*Customer:* ${inv.customerName || details.buyer?.name || 'Customer'}\n`;
+  reminderText += `*Bill Date:* ${formatInputDateString(inv.invoiceDate)}\n`;
+  reminderText += `*Total Bill Amount:* Rs. ${formatCurrency(total)}\n`;
+  reminderText += `*Amount Paid:* Rs. ${formatCurrency(paid)}\n`;
+  reminderText += `*PENDING BALANCE DUE:* Rs. ${formatCurrency(balance)}\n`;
   reminderText += `-----------------------------------\n`;
-  reminderText += `📲 *Pay Directly via UPI App (GPay / PhonePe / Paytm):*\n`;
+  reminderText += `*Pay Directly via UPI App (GPay / PhonePe / Paytm):*\n`;
   reminderText += `${upiPayLink}\n\n`;
-  reminderText += `💳 Or send to UPI ID: *${realUpiId}*\n`;
+  reminderText += `Or send to UPI ID: *${realUpiId}*\n`;
   reminderText += `-----------------------------------\n`;
-  reminderText += `Kindly settle the pending balance at your earliest convenience. Thank you! 🙏`;
+  reminderText += `Kindly settle the pending balance at your earliest convenience. Thank you!`;
 
   let origHtml = "";
   if (btnEl && btnEl.tagName) {
@@ -12526,6 +12553,16 @@ function getInvoicePaidAndBalance(inv) {
 function renderHistoryTableRows(records) {
   if (!elements.historyInvoicesBody) return;
   elements.historyInvoicesBody.innerHTML = "";
+
+  const curRole = sessionStorage.getItem("current_user_role") || "customer";
+  if (curRole === "customer") {
+    const curName = (sessionStorage.getItem("current_user_name") || "").toLowerCase().trim();
+    records = (records || []).filter(inv => {
+      const invName = (inv.customerName || (inv.details && inv.details.buyer && inv.details.buyer.name) || "").toLowerCase().trim();
+      return invName === curName || invName.includes(curName) || curName.includes(invName);
+    });
+  }
+
   if (!records || records.length === 0) {
     const isSearching = elements.searchHistoryInput && elements.searchHistoryInput.value.trim().length > 0;
     if (!isSearching && !window.isInitialSyncDone) {
