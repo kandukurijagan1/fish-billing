@@ -837,22 +837,22 @@ TurboDataStore.rebuildIndexes();
 
   window.filterOutDeletedInvoices = function(invoices) {
     if (!Array.isArray(invoices)) return [];
-    return invoices; // Completely disabled filtering to prevent Ultra-Fast Mesh sync conflicts with old tabs
-  };
+    const tombstones = typeof window.getDeletedInvoiceTombstones === 'function' ? window.getDeletedInvoiceTombstones() : [];
+    
+    return invoices.filter(inv => {
+      if (!inv) return false;
+      const invId = String(inv.id || "").trim().toLowerCase();
+      const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim().toLowerCase();
+      const cleanNo = invNo.replace(/^#/, '');
 
-  // Pre-seed phantom deleted IDs into tombstones
-  try {
-    let curTombstones = window.getDeletedInvoiceTombstones();
-    curTombstones = curTombstones.filter(t => {
-      const str = String(t).trim().toLowerCase();
-      return str !== '0035' && str !== '35' && str !== '#0035' && str !== 'inv_0035' && str !== 'inv_35';
+      if (invId && tombstones.includes(invId)) return false;
+      if (invNo && tombstones.includes(invNo)) return false;
+      if (cleanNo && tombstones.includes(cleanNo)) return false;
+      if (invId && tombstones.includes(invId.replace(/^inv_/, ''))) return false;
+
+      return true;
     });
-    // Only seed commonly tested phantom IDs that don't conflict with legitimate invoices
-    ['0201', '0102', '201', '102', 'inv_201', 'inv_102', '#0201', '#0102'].forEach(phantom => {
-      if (!curTombstones.includes(phantom)) curTombstones.push(phantom);
-    });
-    localStorage.setItem("deleted_invoice_ids", JSON.stringify(curTombstones));
-  } catch (e) {}
+  };
 
   // XSS Defense Helper
 function escapeHtml(str) {
@@ -4107,7 +4107,6 @@ function seedDatabasesIfEmpty() {
 
 function loadAllDatabases() {
   try {
-    localStorage.removeItem("deleted_invoice_ids");
     localStorage.removeItem("cancelled_invoices");
     localStorage.removeItem("database_history_cleared_at");
   } catch(e) {}
