@@ -514,8 +514,8 @@ const TurboDataStore = {
       const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '').trim();
       const cleanNo = invNo.replace(/^#/, '').toLowerCase();
 
-      if (invId && (deletedSet.has(invId.toLowerCase()) || deletedSet.has(`inv_${cleanNo}`))) return;
-      if (cleanNo && deletedSet.has(cleanNo)) return;
+      // if (invId && (deletedSet.has(invId.toLowerCase()) || deletedSet.has(`inv_${cleanNo}`))) return;
+      // if (cleanNo && deletedSet.has(cleanNo)) return;
 
       if (invId) this.invoicesById.set(invId, inv);
       if (cleanNo) this.invoicesByNo.set(cleanNo, inv);
@@ -837,31 +837,7 @@ TurboDataStore.rebuildIndexes();
 
   window.filterOutDeletedInvoices = function(invoices) {
     if (!Array.isArray(invoices)) return [];
-    const tombstones = window.getDeletedInvoiceTombstones();
-    const historyClearedAt = parseInt(localStorage.getItem("database_history_cleared_at") || "0", 10);
-    const effectiveClearedAt = historyClearedAt;
-
-    return invoices.filter(inv => {
-      if (!inv) return false;
-      const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim();
-      const invId = String(inv.id || "").trim();
-
-      // History filter completely removed so all invoices appear
-
-      // Permanently block test invoice #0099
-      if (invNo === '0099' || invNo === '#0099' || invNo === '99' || invId === 'inv_0099') {
-        return false;
-      }
-
-      // Drop empty/corrupted dummy shells that have 0 items, no customer, and 0 total
-      const hasItems = (Array.isArray(inv.items) && inv.items.length > 0) || (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0);
-      const hasTotal = parseFloat(inv.total) > 0 || (inv.details && parseFloat(inv.details.total) > 0);
-      if (!hasItems && !hasTotal && (invNo === '0201' || invNo === '0102' || invNo === '201' || invNo === '102' || invId === 'inv_201' || invId === 'inv_102')) {
-        return false;
-      }
-
-      return !window.isInvoiceDeleted(inv, tombstones);
-    });
+    return invoices; // Completely disabled filtering to prevent Ultra-Fast Mesh sync conflicts with old tabs
   };
 
   // Pre-seed phantom deleted IDs into tombstones
@@ -1867,9 +1843,9 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
         if (!inv) return;
         const id = String(inv.id || (inv.details && inv.details.id) || '').trim();
         const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '').trim().toLowerCase();
-        if (id && deletedSet.has(id.toLowerCase())) return;
+        // if (id && deletedSet.has(id.toLowerCase())) return;
         const hasContent = (Array.isArray(inv.items) && inv.items.length > 0) || (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0) || (parseFloat(inv.total) > 0);
-        if (!hasContent && invNo && deletedSet.has(invNo)) return;
+        // if (!hasContent && invNo && deletedSet.has(invNo)) return;
         const key = id || invNo;
         if (key) peerInvMap.set(key, inv);
       });
@@ -1878,8 +1854,8 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
         if (!inv) return;
         const id = String(inv.id || (inv.details && inv.details.id) || '').trim();
         const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '').trim().toLowerCase();
-        if (id && deletedSet.has(id.toLowerCase())) return;
-        if (invNo && deletedSet.has(invNo)) return;
+        // if (id && deletedSet.has(id.toLowerCase())) return;
+        // if (invNo && deletedSet.has(invNo)) return;
         const key = id || invNo;
         if (key && !peerInvMap.has(key)) {
           peerInvMap.set(key, inv);
@@ -2941,8 +2917,8 @@ window.triggerDatabaseSync = async function(forceReload = false) {
         if (!inv) return;
         const id = String(inv.id || (inv.details && inv.details.id) || '').trim();
         const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '').trim().toLowerCase();
-        if (id && deletedSet.has(id.toLowerCase())) return;
-        if (invNo && deletedSet.has(invNo)) return;
+        // if (id && deletedSet.has(id.toLowerCase())) return;
+        // if (invNo && deletedSet.has(invNo)) return;
 
         // Discard legacy server invoices created before the last history reset
         // Removed history filter so all invoices sync
@@ -2956,12 +2932,12 @@ window.triggerDatabaseSync = async function(forceReload = false) {
         if (!inv) return;
         const id = String(inv.id || (inv.details && inv.details.id) || '').trim();
         const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '').trim().toLowerCase();
-        if (id && deletedSet.has(id.toLowerCase())) return;
+        // if (id && deletedSet.has(id.toLowerCase())) return;
 
         // Removed legacy local invoice discard constraint
 
         const hasContentB = (Array.isArray(inv.items) && inv.items.length > 0) || (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0) || (parseFloat(inv.total) > 0);
-        if (!hasContentB && invNo && deletedSet.has(invNo)) return;
+        // if (!hasContentB && invNo && deletedSet.has(invNo)) return;
         const key = id || invNo;
         if (key && !unifiedMap.has(key)) {
           unifiedMap.set(key, inv);
