@@ -838,17 +838,29 @@ TurboDataStore.rebuildIndexes();
   window.filterOutDeletedInvoices = function(invoices) {
     if (!Array.isArray(invoices)) return [];
     const tombstones = typeof window.getDeletedInvoiceTombstones === 'function' ? window.getDeletedInvoiceTombstones() : [];
+    if (tombstones.length === 0) return invoices.filter(Boolean);
     
+    const tombstoneSet = new Set(tombstones.map(t => String(t || '').trim().toLowerCase()));
+
     return invoices.filter(inv => {
       if (!inv) return false;
-      const invId = String(inv.id || "").trim().toLowerCase();
-      const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim().toLowerCase();
-      const cleanNo = invNo.replace(/^#/, '');
+      const invId = String(inv.id || (inv.details && inv.details.id) || "").trim().toLowerCase();
+      const cleanId = invId.replace(/^inv_/, '');
 
-      if (invId && tombstones.includes(invId)) return false;
-      if (invNo && tombstones.includes(invNo)) return false;
-      if (cleanNo && tombstones.includes(cleanNo)) return false;
-      if (invId && tombstones.includes(invId.replace(/^inv_/, ''))) return false;
+      // Check if unique record ID was explicitly deleted
+      if (invId && tombstoneSet.has(invId)) return false;
+      if (cleanId && tombstoneSet.has(cleanId)) return false;
+
+      // Note: Do not drop valid invoices solely by invoice number (e.g. 0001) as numbers are recycled
+      const hasContent = (Array.isArray(inv.items) && inv.items.length > 0) ||
+                         (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0) ||
+                         (parseFloat(inv.total) > 0);
+      if (!hasContent) {
+        const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim().toLowerCase();
+        const cleanNo = invNo.replace(/^#/, '');
+        if (invNo && tombstoneSet.has(invNo)) return false;
+        if (cleanNo && tombstoneSet.has(cleanNo)) return false;
+      }
 
       return true;
     });
@@ -2869,6 +2881,9 @@ window.triggerDatabaseSync = async function(forceReload = false) {
               return;
             }
           }
+          if ((!p.stock || p.stock === 0) && p.totalValue > 0 && p.price > 0) {
+            p.stock = Math.round(p.totalValue / p.price);
+          }
           serverProdMap.set(p.id, p); 
         }
       });
@@ -4186,6 +4201,9 @@ function loadAllDatabases() {
         if (p) {
           let s = Number(p.stock);
           if (isNaN(s) || s < -100000 || s > 10000000) p.stock = 0;
+          if ((!p.stock || p.stock === 0) && p.totalValue > 0 && p.price > 0) {
+            p.stock = Math.round(p.totalValue / p.price);
+          }
         }
       });
       try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
@@ -4546,13 +4564,13 @@ function validateInvoiceStockAvailability(newItems, oldItems = []) {
       const effectiveAvailable = availableStock + previouslyInvoicedQty;
 
       if (effectiveAvailable <= 0) {
-        showFloatingToast(`❌ Cannot save invoice: "${prod.description}" is currently OUT OF STOCK (Available: 0).`, "warning");
-        return false;
-      }
-
-      if (totalReq > effectiveAvailable) {
-        showFloatingToast(`❌ Cannot save invoice: Insufficient stock for "${prod.description}". Available: ${effectiveAvailable} ${prod.unit || 'units'}, but invoice has ${totalReq}. Please adjust quantity.`, "warning");
-        return false;
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast(`ℹ️ Stock notice: "${prod.description}" is at 0 recorded stock.`, "info", 3000);
+        }
+      } else if (totalReq > effectiveAvailable) {
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast(`ℹ️ Stock notice: "${prod.description}" quantity (${totalReq}) exceeds recorded stock (${effectiveAvailable}).`, "info", 3000);
+        }
       }
     }
   }

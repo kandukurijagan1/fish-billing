@@ -241,6 +241,7 @@ function handleApiPost(e) {
     if (action === "save_invoice") {
       var invoicePayload = data.invoice || data.data || data;
       var saveRes = processSaveInvoice(invoicePayload, user, ss);
+      clearDatabaseCache();
       return ContentService.createTextOutput(JSON.stringify(saveRes)).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -253,7 +254,7 @@ function handleApiPost(e) {
         deleteInvoiceFromSheet(String(delNo).replace(/^#/, ''), ss);
       }
       var delRes = processDeleteRecord(delType, delId, user, ss);
-      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (ce) {}
+      clearDatabaseCache();
       return ContentService.createTextOutput(JSON.stringify(delRes)).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -263,7 +264,7 @@ function handleApiPost(e) {
         return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Products must be an array" })).setMimeType(ContentService.MimeType.JSON);
       }
       writeInventoryToSheet(prodList, ss);
-      /* [CLOUD-ONLY] No server-side cache to invalidate */
+      clearDatabaseCache();
       appendAuditLog("SAVE_PRODUCTS", user, "—", "SUCCESS", "Saved " + prodList.length + " products", ss);
       return ContentService.createTextOutput(JSON.stringify({ ok: true, count: prodList.length })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -274,7 +275,7 @@ function handleApiPost(e) {
         return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Parties must be an array" })).setMimeType(ContentService.MimeType.JSON);
       }
       writeCustomersToSheet(partyList, ss);
-      /* [CLOUD-ONLY] No server-side cache to invalidate */
+      clearDatabaseCache();
       appendAuditLog("SAVE_PARTIES", user, "—", "SUCCESS", "Saved " + partyList.length + " customers", ss);
       return ContentService.createTextOutput(JSON.stringify({ ok: true, count: partyList.length })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -282,7 +283,7 @@ function handleApiPost(e) {
     if (action === "save_settings") {
       var settingsObj = data.settings || {};
       writeSettingsToSheet(settingsObj, ss);
-      /* [CLOUD-ONLY] No server-side cache to invalidate */
+      clearDatabaseCache();
       appendAuditLog("SAVE_SETTINGS", user, "—", "SUCCESS", "System settings updated", ss);
       return ContentService.createTextOutput(JSON.stringify({ ok: true, settings: settingsObj })).setMimeType(ContentService.MimeType.JSON);
     }

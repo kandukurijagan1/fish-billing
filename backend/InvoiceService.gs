@@ -101,13 +101,7 @@ function processSaveInvoice(invoiceData, user, ss) {
 
       if (foundProduct) {
         var currentStock = Number(foundProduct.stock || 0);
-        if (currentStock < newItm.quantity) {
-          return {
-            ok: false,
-            error: "Insufficient stock for '" + foundProduct.description + "'. Available: " + currentStock + ", Requested: " + newItm.quantity
-          };
-        }
-        foundProduct.stock = roundToTwo(currentStock - newItm.quantity);
+        foundProduct.stock = roundToTwo(currentStock - Number(newItm.quantity || 0));
         foundProduct.status = foundProduct.stock <= 0 ? "Out of Stock" : (foundProduct.stock <= 5 ? "Low Stock" : "In Stock");
       }
     }

@@ -6,6 +6,21 @@
 
 var SPREADSHEET_NAME = "Aaryan_Aqua_Live_Master_Sheet";
 
+function clearDatabaseCache() {
+  try {
+    var cache = CacheService.getScriptCache();
+    var count = cache.get("db_chunks_count");
+    var keys = ["latest_sync_hash", "db_chunks_count", "cache_sync_bundle"];
+    if (count) {
+      var n = parseInt(count, 10);
+      for (var i = 0; i < n + 10; i++) {
+        keys.push("db_chunk_" + i);
+      }
+    }
+    cache.removeAll(keys);
+  } catch (e) {}
+}
+
 function getMasterSpreadsheet() {
   var props = PropertiesService.getScriptProperties();
   var ss = null;
@@ -244,18 +259,27 @@ function readInventoryFromSheet(ss) {
       return isNaN(n) ? 0 : n;
     }
 
+    var sVal = safeNum(row[8]);
+    var rVal = safeNum(row[5]);
+    var dVal = safeNum(row[6]);
+    var pVal = safeNum(row[7] || row[5]);
+    var totVal = safeNum(row[9]);
+    if (sVal === 0 && totVal > 0 && pVal > 0) {
+      sVal = Math.round(totVal / pVal);
+    }
+
     products.push({
       id: id || ("prod_" + i),
       description: String(row[1] || ""),
       hsn: String(row[2] || ""),
       packSize: String(row[3] || ""),
       unit: String(row[4] || "NOS"),
-      rate: safeNum(row[5]),
-      discount: safeNum(row[6]),
-      price: safeNum(row[7] || row[5]),
-      stock: safeNum(row[8]),
-      totalValue: safeNum(row[9]),
-      status: String(row[10] || "In Stock"),
+      rate: rVal,
+      discount: dVal,
+      price: pVal,
+      stock: sVal,
+      totalValue: totVal > 0 ? totVal : Math.round(sVal * pVal * 100) / 100,
+      status: sVal <= 0 ? "Out of Stock" : (sVal <= 5 ? "Low Stock" : "In Stock"),
       updatedAt: new Date().toISOString()
     });
   }

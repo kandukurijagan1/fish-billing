@@ -776,18 +776,27 @@ function readInventoryFromSheet(ss) {
       return n;
     }
 
+    var sVal = safeNum(row[8]);
+    var rVal = safeNum(row[5]);
+    var dVal = safeNum(row[6]);
+    var pVal = safeNum(row[7] || row[5]);
+    var totVal = safeNum(row[9]);
+    if (sVal === 0 && totVal > 0 && pVal > 0) {
+      sVal = Math.round(totVal / pVal);
+    }
+
     products.push({
       id: id || ("prod_" + (i + 1)),
       description: String(row[1] || ""),
       hsn: String(row[2] || ""),
       packSize: String(row[3] || ""),
       unit: String(row[4] || "NOS"),
-      rate: safeNum(row[5]),
-      discount: safeNum(row[6]),
-      price: safeNum(row[7] || row[5]),
-      stock: safeNum(row[8]),
-      totalValue: safeNum(row[9]),
-      status: String(row[10] || "In Stock"),
+      rate: rVal,
+      discount: dVal,
+      price: pVal,
+      stock: sVal,
+      totalValue: totVal > 0 ? totVal : Math.round(sVal * pVal * 100) / 100,
+      status: sVal <= 0 ? "Out of Stock" : (sVal <= 5 ? "Low Stock" : "In Stock"),
       updatedAt: new Date().toISOString()
     });
   }
@@ -925,6 +934,21 @@ function appendAuditLog(action, user, recordId, status, details, ss) {
  * ============================================================================
  */
 
+function clearDatabaseCache() {
+  try {
+    var cache = CacheService.getScriptCache();
+    var count = cache.get("db_chunks_count");
+    var keys = ["latest_sync_hash", "db_chunks_count", "cache_sync_bundle"];
+    if (count) {
+      var n = parseInt(count, 10);
+      for (var i = 0; i < n + 10; i++) {
+        keys.push("db_chunk_" + i);
+      }
+    }
+    cache.removeAll(keys);
+  } catch (e) {}
+}
+
 function processSaveInvoice(invoiceData, user, ss) {
   if (!ss) ss = getMasterSpreadsheet();
 
@@ -1022,13 +1046,7 @@ function processSaveInvoice(invoiceData, user, ss) {
 
       if (foundProduct) {
         var currentStock = Number(foundProduct.stock || 0);
-        if (currentStock < newItm.quantity) {
-          return {
-            ok: false,
-            error: "Insufficient stock for '" + foundProduct.description + "'. Available: " + currentStock + ", Requested: " + newItm.quantity
-          };
-        }
-        foundProduct.stock = roundToTwo(currentStock - newItm.quantity);
+        foundProduct.stock = roundToTwo(currentStock - Number(newItm.quantity || 0));
         foundProduct.status = foundProduct.stock <= 0 ? "Out of Stock" : (foundProduct.stock <= 5 ? "Low Stock" : "In Stock");
       }
     }
@@ -1063,9 +1081,7 @@ function processSaveInvoice(invoiceData, user, ss) {
     // 8. Invalidate High-Speed Cache Bundle & Generate New Global Sync Hash
     var newHash = Utilities.getUuid().substr(0, 8) + "_" + Date.now();
     try {
-      var scriptCache = CacheService.getScriptCache();
-      scriptCache.put("latest_sync_hash", newHash, 21600);
-      scriptCache.remove("cache_sync_bundle");
+      clearDatabaseCache();
     } catch (e) {}
 
     // 9. Audit Logging
@@ -1542,7 +1558,7 @@ function handleApiPost(e) {
         deleteInvoiceFromSheet(String(delNo).replace(/^#/, ''), ss);
       }
       var delRes = processDeleteRecord(delType, delId, user, ss);
-      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (ce) {}
+      clearDatabaseCache();
       return ContentService.createTextOutput(JSON.stringify(delRes)).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -1552,7 +1568,7 @@ function handleApiPost(e) {
         return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Products must be an array" })).setMimeType(ContentService.MimeType.JSON);
       }
       writeInventoryToSheet(prodList, ss);
-      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (ce) {}
+      clearDatabaseCache();
       appendAuditLog("SAVE_PRODUCTS", user, "—", "SUCCESS", "Saved " + prodList.length + " products", ss);
       return ContentService.createTextOutput(JSON.stringify({ ok: true, count: prodList.length })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -1563,7 +1579,7 @@ function handleApiPost(e) {
         return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Parties must be an array" })).setMimeType(ContentService.MimeType.JSON);
       }
       writeCustomersToSheet(partyList, ss);
-      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (ce) {}
+      clearDatabaseCache();
       appendAuditLog("SAVE_PARTIES", user, "—", "SUCCESS", "Saved " + partyList.length + " customers", ss);
       return ContentService.createTextOutput(JSON.stringify({ ok: true, count: partyList.length })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -1571,7 +1587,7 @@ function handleApiPost(e) {
     if (action === "save_settings") {
       var settingsObj = data.settings || {};
       writeSettingsToSheet(settingsObj, ss);
-      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (ce) {}
+      clearDatabaseCache();
       appendAuditLog("SAVE_SETTINGS", user, "—", "SUCCESS", "System settings updated", ss);
       return ContentService.createTextOutput(JSON.stringify({ ok: true, settings: settingsObj })).setMimeType(ContentService.MimeType.JSON);
     }

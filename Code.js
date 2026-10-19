@@ -25,9 +25,12 @@
 
 function getApiSecretKey() {
   var props = PropertiesService.getScriptProperties();
+  // Never provide a fallback key: a fallback becomes public when the app ships.
   return props.getProperty("API_SECRET_KEY");
 }
 
+// AUTHORIZED_USERS_JSON: [{"email":"owner@example.com","role":"admin"}]
+// AUTHORIZED_USERS (comma-separated) remains supported during migration.
 function getAuthorizedUsers() {
   var props = PropertiesService.getScriptProperties();
   var raw = String(props.getProperty("AUTHORIZED_USERS_JSON") || "").trim();
@@ -558,7 +561,7 @@ function readInvoicesFromSheet(ss) {
   if (!sheet || sheet.getLastRow() < 2) return [];
 
   var lastRow = sheet.getLastRow();
-  var numCols = Math.min(sheet.getLastColumn(), 15);
+  var numCols = sheet.getLastColumn() || 15;
   var values = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
   var invoices = [];
 
@@ -567,10 +570,21 @@ function readInvoicesFromSheet(ss) {
     var invNo = String(row[0] || "").trim();
     if (!invNo) continue;
 
-    var rawJson = row[14] ? String(row[14]).trim() : "";
+    var rawJson = "";
     var invObj = null;
 
-    if (rawJson && (rawJson.startsWith("{") || rawJson.startsWith("["))) {
+    // Dynamically search for JSON payload from right to left to survive manual column insertions!
+    for (var colIdx = row.length - 1; colIdx >= 0; colIdx--) {
+      var cellVal = String(row[colIdx] || "").trim();
+      if (cellVal.startsWith("{") || cellVal.startsWith("[")) {
+        if (cellVal.indexOf('"id"') !== -1 || cellVal.indexOf('"invoiceNo"') !== -1) {
+          rawJson = cellVal;
+          break;
+        }
+      }
+    }
+
+    if (rawJson) {
       try {
         invObj = JSON.parse(rawJson);
       } catch (e) {}
@@ -627,9 +641,9 @@ function writeInvoiceToSheet(inv, ss) {
   var pdfUrl = inv.pdfUrl || d.pdfUrl || "";
 
   var fullJson = JSON.stringify(inv);
-
-  var lastRow = sheet.getLastRow();
   var targetRow = -1;
+  var lastRow = sheet.getLastRow();
+  var numCols = sheet.getLastColumn() || 15;
 
   if (lastRow >= 2) {
     var idColVals = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
@@ -641,13 +655,41 @@ function writeInvoiceToSheet(inv, ss) {
     }
   }
 
-  var rowData = [
-    invNo, invDate, custName, itemsCount, total,
-    payStatus, payMode, paidAmt, balDue,
-    orderNo, transport, dest, pdfUrl, lastUpdated, fullJson
-  ];
+  var headers = sheet.getRange(1, 1, 1, numCols).getValues()[0];
+  var rowData = new Array(headers.length);
+  for (var i = 0; i < rowData.length; i++) rowData[i] = "";
+
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i]).trim().toLowerCase();
+    if (h === "invoice no") rowData[i] = invNo;
+    else if (h === "date") rowData[i] = invDate;
+    else if (h.indexOf("customer") !== -1) rowData[i] = custName;
+    else if (h.indexOf("items") !== -1) rowData[i] = itemsCount;
+    else if (h.indexOf("taxable") !== -1) rowData[i] = total;
+    else if (h === "total" || h === "total (₹)") rowData[i] = total;
+    else if (h.indexOf("cgst") !== -1) rowData[i] = 0;
+    else if (h.indexOf("sgst") !== -1) rowData[i] = 0;
+    else if (h.indexOf("grand total") !== -1) rowData[i] = total;
+    else if (h.indexOf("paid") !== -1) rowData[i] = paidAmt;
+    else if (h.indexOf("balance") !== -1) rowData[i] = balDue;
+    else if (h.indexOf("status") !== -1) rowData[i] = payStatus;
+    else if (h.indexOf("mode") !== -1) rowData[i] = payMode;
+    else if (h.indexOf("order") !== -1) rowData[i] = orderNo;
+    else if (h.indexOf("transport") !== -1) rowData[i] = transport;
+    else if (h.indexOf("destination") !== -1) rowData[i] = dest;
+    else if (h.indexOf("pdf") !== -1) rowData[i] = pdfUrl;
+    else if (h.indexOf("last updated") !== -1) rowData[i] = lastUpdated;
+    else if (h.indexOf("json") !== -1) rowData[i] = fullJson;
+  }
+
+  if (rowData.indexOf(fullJson) === -1) {
+    rowData.push(fullJson);
+  }
 
   if (targetRow > -1) {
+    if (sheet.getMaxColumns() < rowData.length) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), rowData.length - sheet.getMaxColumns());
+    }
     sheet.getRange(targetRow, 1, 1, rowData.length).setValues([rowData]);
   } else {
     sheet.appendRow(rowData);
@@ -661,7 +703,7 @@ function deleteInvoiceFromSheet(delId, ss) {
   if (!sheet || sheet.getLastRow() < 2) return false;
 
   var lastRow = sheet.getLastRow();
-  var numCols = Math.min(sheet.getLastColumn(), 15);
+  var numCols = sheet.getLastColumn() || 15;
   var values = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
   var targetStr = String(delId).trim().toLowerCase();
   var cleanTarget = targetStr.replace(/^#/, '').replace(/^inv_/, '');
@@ -673,7 +715,18 @@ function deleteInvoiceFromSheet(delId, ss) {
     var cellVal = String(row[0] || "").trim().toLowerCase();
     var cleanCell = cellVal.replace(/^#/, '').replace(/^inv_/, '');
     var numCell = parseInt(cleanCell, 10);
-    var rawJson = row[14] ? String(row[14]).trim() : "";
+    
+    var rawJson = "";
+    for (var colIdx = row.length - 1; colIdx >= 0; colIdx--) {
+      var cv = String(row[colIdx] || "").trim();
+      if (cv.startsWith("{") || cv.startsWith("[")) {
+        if (cv.indexOf('"id"') !== -1 || cv.indexOf('"invoiceNo"') !== -1) {
+          rawJson = cv;
+          break;
+        }
+      }
+    }
+
 
     var match = false;
     if (cellVal === targetStr || cleanCell === cleanTarget) match = true;
@@ -716,18 +769,34 @@ function readInventoryFromSheet(ss) {
     var id = String(row[0] || "").trim();
     if (!id && !row[1]) continue;
 
+    function safeNum(val) {
+      if (val instanceof Date) return 0;
+      var n = Number(val);
+      if (isNaN(n) || n < -100000 || n > 10000000) return 0; // Heal massive epoch timestamp corruptions
+      return n;
+    }
+
+    var sVal = safeNum(row[8]);
+    var rVal = safeNum(row[5]);
+    var dVal = safeNum(row[6]);
+    var pVal = safeNum(row[7] || row[5]);
+    var totVal = safeNum(row[9]);
+    if (sVal === 0 && totVal > 0 && pVal > 0) {
+      sVal = Math.round(totVal / pVal);
+    }
+
     products.push({
       id: id || ("prod_" + (i + 1)),
       description: String(row[1] || ""),
       hsn: String(row[2] || ""),
       packSize: String(row[3] || ""),
       unit: String(row[4] || "NOS"),
-      rate: Number(row[5] || 0),
-      discount: Number(row[6] || 0),
-      price: Number(row[7] || row[5] || 0),
-      stock: Number(row[8] || 0),
-      totalValue: Number(row[9] || 0),
-      status: String(row[10] || "In Stock"),
+      rate: rVal,
+      discount: dVal,
+      price: pVal,
+      stock: sVal,
+      totalValue: totVal > 0 ? totVal : Math.round(sVal * pVal * 100) / 100,
+      status: sVal <= 0 ? "Out of Stock" : (sVal <= 5 ? "Low Stock" : "In Stock"),
       updatedAt: new Date().toISOString()
     });
   }
@@ -752,6 +821,7 @@ function writeInventoryToSheet(products, ss) {
     var disc = Number(p.discount || 0);
     var valAfterDisc = roundToTwo(Math.max(0, rate - (rate * disc / 100)));
     var stock = Number(p.stock || 0);
+    if (isNaN(stock) || stock < -100000 || stock > 10000000) stock = 0; // Server-side healing of incoming corrupted data
     var totalVal = roundToTwo(stock * valAfterDisc);
     var status = stock <= 0 ? "Out of Stock" : (stock <= 5 ? "Low Stock" : "In Stock");
     return [
@@ -864,6 +934,21 @@ function appendAuditLog(action, user, recordId, status, details, ss) {
  * ============================================================================
  */
 
+function clearDatabaseCache() {
+  try {
+    var cache = CacheService.getScriptCache();
+    var count = cache.get("db_chunks_count");
+    var keys = ["latest_sync_hash", "db_chunks_count", "cache_sync_bundle"];
+    if (count) {
+      var n = parseInt(count, 10);
+      for (var i = 0; i < n + 10; i++) {
+        keys.push("db_chunk_" + i);
+      }
+    }
+    cache.removeAll(keys);
+  } catch (e) {}
+}
+
 function processSaveInvoice(invoiceData, user, ss) {
   if (!ss) ss = getMasterSpreadsheet();
 
@@ -918,8 +1003,8 @@ function processSaveInvoice(invoiceData, user, ss) {
     // Auto-Generate Next Sequential Invoice Number if empty OR if collided with concurrent user
     if (!computed.invoiceNo || (existingIdx === -1 && isNumberCollision)) {
       var maxNo = 0;
-      for (var k = 0; k < existingInvoices.length; k++) {
-        var n = parseInt(String(existingInvoices[k].invoiceNo).replace(/\D/g, ""), 10);
+      for (var idx = 0; idx < existingInvoices.length; idx++) {
+        var n = parseInt(String(existingInvoices[idx].invoiceNo).replace(/\D/g, ""), 10);
         if (!isNaN(n) && n > maxNo) maxNo = n;
       }
       computed.invoiceNo = String(maxNo + 1).padStart(4, "0");
@@ -961,13 +1046,7 @@ function processSaveInvoice(invoiceData, user, ss) {
 
       if (foundProduct) {
         var currentStock = Number(foundProduct.stock || 0);
-        if (currentStock < newItm.quantity) {
-          return {
-            ok: false,
-            error: "Insufficient stock for '" + foundProduct.description + "'. Available: " + currentStock + ", Requested: " + newItm.quantity
-          };
-        }
-        foundProduct.stock = roundToTwo(currentStock - newItm.quantity);
+        foundProduct.stock = roundToTwo(currentStock - Number(newItm.quantity || 0));
         foundProduct.status = foundProduct.stock <= 0 ? "Out of Stock" : (foundProduct.stock <= 5 ? "Low Stock" : "In Stock");
       }
     }
@@ -1002,9 +1081,7 @@ function processSaveInvoice(invoiceData, user, ss) {
     // 8. Invalidate High-Speed Cache Bundle & Generate New Global Sync Hash
     var newHash = Utilities.getUuid().substr(0, 8) + "_" + Date.now();
     try {
-      var scriptCache = CacheService.getScriptCache();
-      scriptCache.put("latest_sync_hash", newHash, 21600);
-      scriptCache.remove("cache_sync_bundle");
+      clearDatabaseCache();
     } catch (e) {}
 
     // 9. Audit Logging
@@ -1083,8 +1160,8 @@ function processDeleteRecord(type, id, user, ss) {
       return { ok: true, deletedId: id, type: "invoice" };
 
     } else if (type === "product") {
-      var inventory = readInventoryFromSheet(ss);
-      var filtered = inventory.filter(function(p) { return p.id !== id; });
+      var inventoryProduct = readInventoryFromSheet(ss);
+      var filtered = inventoryProduct.filter(function(p) { return p.id !== id; });
       writeInventoryToSheet(filtered, ss);
       try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (e) {}
       appendAuditLog("DELETE_PRODUCT", user || "Admin", id, "SUCCESS", "Product removed from inventory", ss);
@@ -1121,6 +1198,9 @@ var ALLOWED_ACTIONS = [
   "ping",
   "sync",
   "pull",
+  "get_invoice",
+  "verify",
+  "verify_invoice",
   "save_invoice",
   "delete_record",
   "save_products",
@@ -1130,25 +1210,6 @@ var ALLOWED_ACTIONS = [
   "send_login_otp",
   "verify_login_otp"
 ];
-
-function handleApiGet(e) {
-  var action = (e && e.parameter && e.parameter.action) ? String(e.parameter.action).trim() : "status";
-
-  // Check allowlist
-  if (ALLOWED_ACTIONS.indexOf(action) === -1) {
-    return ContentService.createTextOutput(JSON.stringify({
-      ok: false,
-      error: "Unknown or unauthorized action: " + action
-    })).setMimeType(ContentService.MimeType.JSON);
-  }
-
-  // 0. Ultra-Fast Ping — keeps V8 container warm, zero sheet access (<50ms)
-  if (action === "ping") {
-    return ContentService.createTextOutput(JSON.stringify({
-      ok: true, pong: true, t: Date.now()
-    })).setMimeType(ContentService.MimeType.JSON);
-  }
-}
 
 function computeSyncDataHash(invs, prods, parts) {
   var str = (invs ? invs.length : 0) + '|' + (prods ? prods.length : 0) + '|' + (parts ? parts.length : 0);
@@ -1169,6 +1230,21 @@ function computeSyncDataHash(invs, prods, parts) {
 
 function handleApiGet(e) {
   var action = (e && e.parameter && e.parameter.action) ? String(e.parameter.action).trim() : "status";
+
+  // Check allowlist
+  if (ALLOWED_ACTIONS.indexOf(action) === -1) {
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: false,
+      error: "Unknown or unauthorized action: " + action
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 0. Ultra-Fast Ping — keeps V8 container warm, zero sheet access (<50ms)
+  if (action === "ping") {
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: true, pong: true, t: Date.now()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
 
   // 1. Status Health Check
   if (action === "status") {
@@ -1264,8 +1340,8 @@ function handleApiGet(e) {
   // 3. Fast Single Invoice Lookup / Public QR Verification (No Full Download Needed)
   if (action === "get_invoice" || action === "verify" || action === "verify_invoice") {
     var queryNo = e && e.parameter ? (e.parameter.invoiceNo || e.parameter.id || e.parameter.inv || e.parameter.token || e.parameter.q || "") : "";
-    var ssMaster = getMasterSpreadsheet();
-    var allInvs = readInvoicesFromSheet(ssMaster);
+    var ssMasterGet = getMasterSpreadsheet();
+    var allInvs = readInvoicesFromSheet(ssMasterGet);
     var found = null;
     if (queryNo) {
       var cleanQ = String(queryNo).trim().toLowerCase().replace(/^#/, '');
@@ -1312,7 +1388,7 @@ function handleApiPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 1.5 OTP actions: access is controlled by the Script Properties allowlist.
+    // 1.5 Authentication-exempt Actions
     if (action === "send_login_otp") {
       var targetEmail = String(data.email || "").trim().toLowerCase();
       var otpUser = findAuthorizedUser(targetEmail);
@@ -1348,7 +1424,7 @@ function handleApiPost(e) {
                     "</div>" +
                     "<p style='font-size: 13px; color: #475569;'>Or use this 6-digit one-time code on the lock screen:</p>" +
                     "<div style='font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #0f172a; background: #f1f5f9; padding: 14px; border-radius: 8px; text-align: center; margin: 15px 0; border: 1px dashed #cbd5e1;'>" + otpCode + "</div>" +
-                    "<p style='font-size: 11.5px; color: #94a3b8; margin-top: 20px; border-top: 1px solid #f1f5f9; padding-top: 12px;'>Authorized access. Expires in 15 minutes.</p>" +
+                    "<p style='font-size: 11.5px; color: #94a3b8; margin-top: 20px; border-top: 1px solid #f1f5f9; padding-top: 12px;'>Authorized login access. Expires in 15 minutes.</p>" +
                     "</div>"
         });
         try {
@@ -1362,26 +1438,26 @@ function handleApiPost(e) {
     }
 
     if (action === "verify_login_otp") {
-      var targetEmail = String(data.email || "").trim().toLowerCase();
+      var targetEmailVerify = String(data.email || "").trim().toLowerCase();
       var enteredCode = String(data.otp || "").trim();
-      var verifiedUser = findAuthorizedUser(targetEmail);
-      if (!targetEmail || !verifiedUser) {
+      var verifiedUser = findAuthorizedUser(targetEmailVerify);
+      if (!targetEmailVerify || !verifiedUser) {
         return ContentService.createTextOutput(JSON.stringify({
           ok: false,
           error: "This email is not authorized to access the billing system."
         })).setMimeType(ContentService.MimeType.JSON);
       }
-      var storedOtp = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_" + targetEmail);
-      var expStr = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_EXP_" + targetEmail);
+      var storedOtp = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_" + targetEmailVerify);
+      var expStr = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_EXP_" + targetEmailVerify);
       var expTime = expStr ? parseInt(expStr, 10) : 0;
       if (storedOtp && enteredCode === storedOtp && Date.now() < expTime) {
         try {
-          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_" + targetEmail);
-          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_EXP_" + targetEmail);
+          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_" + targetEmailVerify);
+          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_EXP_" + targetEmailVerify);
         } catch (_) {}
         try {
           var ssLog2 = getMasterSpreadsheet();
-          appendAuditLog("VERIFY_LOGIN_OTP", targetEmail, "—", "SUCCESS", "6-Digit OTP verified successfully", ssLog2);
+          appendAuditLog("VERIFY_LOGIN_OTP", targetEmailVerify, "—", "SUCCESS", "6-Digit OTP verified successfully", ssLog2);
         } catch (_) {}
         return ContentService.createTextOutput(JSON.stringify({ ok: true, verified: true, role: verifiedUser.role, email: verifiedUser.email })).setMimeType(ContentService.MimeType.JSON);
       } else {
@@ -1400,29 +1476,71 @@ function handleApiPost(e) {
 
     // 3. Dispatch to Specialized Service Handlers
     if (action === "sync" || action === "pull") {
-      var invs = readInvoicesFromSheet(ss);
-      var prods = readInventoryFromSheet(ss);
-      var parts = readCustomersFromSheet(ss);
-      var sHash = computeSyncDataHash(invs, prods, parts);
-
-      if (data.hash && data.hash === sHash) {
+      var cache = CacheService.getScriptCache();
+      
+      // Try fetching from High-Speed Cache chunks
+      var cachedHash = cache.get("latest_sync_hash");
+      var clientHash = data.hash;
+      
+      if (clientHash && cachedHash && clientHash === cachedHash) {
         return ContentService.createTextOutput(JSON.stringify({
-          ok: true,
-          notModified: true,
-          hash: sHash,
+          ok: true, notModified: true, hash: cachedHash,
           serverTime: Date.now()
         })).setMimeType(ContentService.MimeType.JSON);
       }
+      
+      var chunksCount = cache.get("db_chunks_count");
+      var fullJson = "";
+      var cacheHit = false;
+      
+      if (chunksCount && cachedHash) {
+        cacheHit = true;
+        for (var i = 0; i < parseInt(chunksCount, 10); i++) {
+          var chunk = cache.get("db_chunk_" + i);
+          if (!chunk) { cacheHit = false; break; }
+          fullJson += chunk;
+        }
+      }
+      
+      if (cacheHit && fullJson) {
+        try {
+          var payloadObj = JSON.parse(fullJson);
+          payloadObj.ok = true;
+          payloadObj.timestamp = new Date().toISOString();
+          return ContentService.createTextOutput(JSON.stringify(payloadObj)).setMimeType(ContentService.MimeType.JSON);
+        } catch(e) {}
+      }
 
-      return ContentService.createTextOutput(JSON.stringify({
-        ok: true,
-        hash: sHash,
-        invoices: invs,
-        products: prods,
-        parties: parts,
-        serverTime: Date.now(),
-        timestamp: new Date().toISOString()
-      })).setMimeType(ContentService.MimeType.JSON);
+      // Cache Miss: Read from Google Sheets
+      var invs = readInvoicesFromSheet(ss);
+      var prods = readInventoryFromSheet(ss);
+      var parts = readCustomersFromSheet(ss);
+      var sets = readSettingsFromSheet(ss);
+      var sHash = computeSyncDataHash(invs, prods, parts);
+
+      var freshPayload = {
+        ok: true, hash: sHash, invoices: invs, products: prods,
+        parties: parts, settings: sets, serverTime: Date.now()
+      };
+      
+      var freshJson = JSON.stringify(freshPayload);
+      
+      // Write to High-Speed Cache in 90KB chunks
+      try {
+        var chunkSize = 90000;
+        var chunks = [];
+        for (var c = 0; c < freshJson.length; c += chunkSize) {
+          chunks.push(freshJson.substring(c, c + chunkSize));
+        }
+        var cacheMap = { "db_chunks_count": String(chunks.length), "latest_sync_hash": sHash };
+        for (var j = 0; j < chunks.length; j++) {
+          cacheMap["db_chunk_" + j] = chunks[j];
+        }
+        cache.putAll(cacheMap, 21600);
+      } catch (ce) {}
+
+      freshPayload.timestamp = new Date().toISOString();
+      return ContentService.createTextOutput(JSON.stringify(freshPayload)).setMimeType(ContentService.MimeType.JSON);
     }
 
     if (action === "save_invoice") {
@@ -1440,7 +1558,7 @@ function handleApiPost(e) {
         deleteInvoiceFromSheet(String(delNo).replace(/^#/, ''), ss);
       }
       var delRes = processDeleteRecord(delType, delId, user, ss);
-      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (ce) {}
+      clearDatabaseCache();
       return ContentService.createTextOutput(JSON.stringify(delRes)).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -1450,7 +1568,7 @@ function handleApiPost(e) {
         return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Products must be an array" })).setMimeType(ContentService.MimeType.JSON);
       }
       writeInventoryToSheet(prodList, ss);
-      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (ce) {}
+      clearDatabaseCache();
       appendAuditLog("SAVE_PRODUCTS", user, "—", "SUCCESS", "Saved " + prodList.length + " products", ss);
       return ContentService.createTextOutput(JSON.stringify({ ok: true, count: prodList.length })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -1461,7 +1579,7 @@ function handleApiPost(e) {
         return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Parties must be an array" })).setMimeType(ContentService.MimeType.JSON);
       }
       writeCustomersToSheet(partyList, ss);
-      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (ce) {}
+      clearDatabaseCache();
       appendAuditLog("SAVE_PARTIES", user, "—", "SUCCESS", "Saved " + partyList.length + " customers", ss);
       return ContentService.createTextOutput(JSON.stringify({ ok: true, count: partyList.length })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -1469,7 +1587,7 @@ function handleApiPost(e) {
     if (action === "save_settings") {
       var settingsObj = data.settings || {};
       writeSettingsToSheet(settingsObj, ss);
-      try { CacheService.getScriptCache().remove("cache_sync_bundle"); } catch (ce) {}
+      clearDatabaseCache();
       appendAuditLog("SAVE_SETTINGS", user, "—", "SUCCESS", "System settings updated", ss);
       return ContentService.createTextOutput(JSON.stringify({ ok: true, settings: settingsObj })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -1539,7 +1657,9 @@ function writeSettingsToSheet(settingsObj, ss) {
     if (!settingsObj || typeof settingsObj !== "object") return;
     if (!ss) ss = getMasterSpreadsheet();
     var sheet = ss.getSheetByName("Settings");
-    if (!sheet) return;
+    if (!sheet) {
+      sheet = ensureSheetWithHeaders(ss, "Settings", ["Setting Key", "Setting Value JSON", "Last Updated"], "#ea580c");
+    }
 
     var jsonStr = JSON.stringify(settingsObj);
     var nowIso = new Date().toISOString();
@@ -1571,4 +1691,3 @@ function doGet(e) {
 function doPost(e) {
   return handleApiPost(e);
 }
-
