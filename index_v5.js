@@ -1028,7 +1028,9 @@ window.lastSyncETag = null;
 window.lastSyncTimestamp = parseInt(localStorage.getItem("aaryan_last_sync_time") || "0", 10);
 
 const GOOGLE_SCRIPT_URL = window.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbyNkALvgRbXAXtN4rdbe6dEHwO27MgRbcqxUDQqs5Y25BHbem3K1TbgJLH19_nLJ-LAkQ/exec";
-const API_SECRET_TOKEN = window.API_SECRET_TOKEN || "AARYAN_AQUA_SECURE_KEY_2026";
+const API_SECRET_TOKEN = (typeof window.API_SECRET_TOKEN !== "undefined" && window.API_SECRET_TOKEN)
+  ? String(window.API_SECRET_TOKEN).trim()
+  : "AARYAN_AQUA_SECURE_KEY_2026";
 const GOOGLE_SCRIPT_FALLBACK_URL = GOOGLE_SCRIPT_URL;
 
 // =========================================================
@@ -1319,7 +1321,7 @@ const AppWireSecurity = {
 
   // Private store-scoped topic derived from API_SECRET_TOKEN
   getSecureTopic(baseTopic = "aaryan_aqua_gst_billing_2026") {
-    const token = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
+    const token = API_SECRET_TOKEN;
     const secretHash = AppSecurity.quickHash(token + "_mesh_sync_v2");
     return `${baseTopic}/mesh_${secretHash}`;
   },
@@ -1383,7 +1385,7 @@ const AppWireSecurity = {
     const jsonStr = JSON.stringify(minObj);
     const compressedB64 = await AppWireSecurity.compress(jsonStr);
     
-    const secret = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
+    const secret = API_SECRET_TOKEN;
     const ciphertextB64 = AppWireSecurity.cipher(compressedB64, secret);
     
     const timestamp = Date.now();
@@ -1418,7 +1420,7 @@ const AppWireSecurity = {
     }
 
     const { v, s, t, n, c } = envelope;
-    const secret = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
+    const secret = API_SECRET_TOKEN;
 
     // 1. Replay defense: 5-minute timestamp window (bypassed for persistent retained snapshots)
     if (!options.allowRetained) {
@@ -2500,7 +2502,7 @@ let directPushPartiesTimer = null;
 async function pushDirectToGoogleDatabaseRaw(action, payload) {
   const minPayload = minifyTransferPayload(payload) || {};
   const reqTs = Date.now();
-  const secret = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
+  const secret = (typeof API_SECRET_TOKEN !== "undefined" && API_SECRET_TOKEN) ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026";
   const gasPayload = {
     action,
     auth: secret,
@@ -2560,7 +2562,7 @@ async function pushDirectToGoogleDatabase(action, payload, maxRetries = 2) {
 
   const minPayload = minifyTransferPayload(payload) || {};
   const reqTs = Date.now();
-  const secret = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
+  const secret = (typeof API_SECRET_TOKEN !== "undefined" && API_SECRET_TOKEN) ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026";
   const gasPayload = {
     action,
     auth: secret,
@@ -3495,6 +3497,49 @@ window.clearPersistentAuthSession = function() {
   } catch (e) {}
 };
 
+// Safe helper to determine current user role
+window.getCurrentResolvedRole = function() {
+  const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
+  const mainAdminEmail = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  if (currentEmail === mainAdminEmail || sessionStorage.getItem("is_main_admin") === "true") {
+    return "super_admin";
+  }
+
+  // Check persistent session if sessionStorage was wiped or empty
+  if (typeof window.getPersistentAuthSession === 'function') {
+    const pSess = window.getPersistentAuthSession();
+    if (pSess && pSess.role) {
+      if ((pSess.email || "").toLowerCase().trim() === mainAdminEmail || pSess.isMainAdmin) {
+        return "super_admin";
+      }
+      return pSess.role;
+    }
+  }
+
+  const role = sessionStorage.getItem("current_user_role");
+  if (role) return role;
+
+  // If there's an email in session/local storage, check against authorized users
+  if (currentEmail && typeof window.getAuthorizedUsersList === 'function') {
+    const list = window.getAuthorizedUsersList();
+    const found = list.find(u => (u.email || "").toLowerCase().trim() === currentEmail);
+    if (found && found.role) return found.role;
+  }
+
+  // Terminal unlocked via PIN/Password default is admin, NOT customer!
+  return "admin";
+};
+
+// Safe helper to determine if current session belongs to a restricted customer account
+window.isCustomerAccount = function() {
+  const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
+  const mainAdminEmail = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  if (currentEmail === mainAdminEmail) return false;
+  if (sessionStorage.getItem("is_main_admin") === "true") return false;
+
+  const currentRole = (typeof window.getCurrentResolvedRole === 'function') ? window.getCurrentResolvedRole() : (sessionStorage.getItem("current_user_role") || "admin");
+  return currentRole === "customer";
+};
 
 // --- NUMBER TO WORDS ENGINE (INDIAN RUPEES SYSTEM) ---
 function convertNumberToWords(num) {
@@ -3940,7 +3985,7 @@ function initializeApp() {
 
   if (canStayUnlocked) {
     unlockSystemSilently(false);
-    const roleToApply = sessionStorage.getItem("current_user_role") || "customer";
+    const roleToApply = (typeof window.getCurrentResolvedRole === 'function') ? window.getCurrentResolvedRole() : (sessionStorage.getItem("current_user_role") || "admin");
     if (typeof window.applyRolePermissions === 'function') {
       window.applyRolePermissions(roleToApply);
     }
@@ -4558,10 +4603,8 @@ window.closeMobileSidebar = function() {
 window.switchTab = function(tabName) {
   if (isLocked) return;
 
-  const currentEmail = (sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
-  const isSuperAdmin = (currentEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
-  const currentRole = isSuperAdmin ? "super_admin" : (sessionStorage.getItem("current_user_role") || "customer");
-  if (currentRole === "customer" && ["billing", "products", "parties", "reports", "settings"].includes(tabName)) {
+  const isCustomer = (typeof window.isCustomerAccount === 'function') ? window.isCustomerAccount() : false;
+  if (isCustomer && ["billing", "products", "parties", "reports", "settings"].includes(tabName)) {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("⛔ Access Denied: Customer accounts can only view Dashboard & Invoices.", "warning", 3500);
     }
@@ -5038,13 +5081,15 @@ function updateDashboardOverview() {
   invoicesDb = (invoicesDb || []).filter(inv => inv && (inv.id || inv.invoiceNo) && inv.id !== 'inv_test_delta');
 
   let activeInvoices = invoicesDb;
-  const curRole = sessionStorage.getItem("current_user_role") || "customer";
-  if (curRole === "customer") {
+  const isCust = (typeof window.isCustomerAccount === 'function') ? window.isCustomerAccount() : false;
+  if (isCust) {
     const curName = (sessionStorage.getItem("current_user_name") || "").toLowerCase().trim();
-    activeInvoices = invoicesDb.filter(inv => {
-      const invName = (inv.customerName || (inv.details && inv.details.buyer && inv.details.buyer.name) || "").toLowerCase().trim();
-      return invName === curName || invName.includes(curName) || curName.includes(invName);
-    });
+    if (curName) {
+      activeInvoices = invoicesDb.filter(inv => {
+        const invName = (inv.customerName || (inv.details && inv.details.buyer && inv.details.buyer.name) || "").toLowerCase().trim();
+        return invName === curName || invName.includes(curName) || curName.includes(invName);
+      });
+    }
   }
 
   const isSyncLoading = activeInvoices.length === 0 && !window.isInitialSyncDone;
@@ -5202,8 +5247,7 @@ function updateDashboardOverview() {
         if (status === 'Partial') badgeClass = 'badge-partial';
         if (status === 'Unpaid') badgeClass = 'badge-unpaid';
 
-        const currentRole = sessionStorage.getItem("current_user_role") || "customer";
-        const isCustomerRole = (currentRole === 'customer');
+        const isCustomerRole = (typeof window.isCustomerAccount === 'function') ? window.isCustomerAccount() : false;
 
         let balanceQrDropdownItem = "";
         if (!isEstimate && !isPaid && balance > 0 && !isCustomerRole) {
@@ -8660,8 +8704,7 @@ function prepareInvoiceItemsBeforeSave() {
 
 // --- UNIFIED INVOICE SAVE ENGINE ---
 window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl = null) {
-  const currentRole = sessionStorage.getItem("current_user_role") || "customer";
-  if (currentRole === "customer") {
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("⛔ Access Denied: Customer accounts cannot create or modify invoices.", "error", 4000);
     }
@@ -11881,8 +11924,7 @@ window.openBalanceQrModal = function(id) {
   const customControls = document.getElementById("bal-partial-payment-controls");
   if (customControls) customControls.style.display = "none";
 
-  const curRole = sessionStorage.getItem("current_user_role") || "customer";
-  const isCust = (curRole === "customer");
+  const isCust = (typeof window.isCustomerAccount === 'function') ? window.isCustomerAccount() : false;
   const markBtn = document.getElementById("bal-mark-paid-btn");
   const partialToggleBtn = document.getElementById("bal-partial-toggle-btn");
   if (markBtn) markBtn.style.display = isCust ? "none" : "";
@@ -11968,8 +12010,7 @@ window.togglePartialPaymentSection = function() {
 };
 
 window.submitCustomPartialPayment = function() {
-  const curRole = sessionStorage.getItem("current_user_role") || "customer";
-  if (curRole === "customer") {
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("⛔ Access Denied: Customer accounts cannot record payments.", "error", 4500);
     }
@@ -12105,8 +12146,7 @@ window.shareBalanceQrWhatsApp = function() {
 };
 
 window.markBalanceQrPaidAndSendWhatsApp = function() {
-  const curRole = sessionStorage.getItem("current_user_role") || "customer";
-  if (curRole === "customer") {
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
     if (typeof showFloatingToast === "function") {
       showFloatingToast("⛔ Access Denied: Customer accounts cannot mark invoices as paid.", "error", 4500);
     }
@@ -12529,13 +12569,15 @@ function renderHistoryTableRows(records) {
   if (!elements.historyInvoicesBody) return;
   elements.historyInvoicesBody.innerHTML = "";
 
-  const curRole = sessionStorage.getItem("current_user_role") || "customer";
-  if (curRole === "customer") {
+  const isCustUser = (typeof window.isCustomerAccount === 'function') ? window.isCustomerAccount() : false;
+  if (isCustUser) {
     const curName = (sessionStorage.getItem("current_user_name") || "").toLowerCase().trim();
-    records = (records || []).filter(inv => {
-      const invName = (inv.customerName || (inv.details && inv.details.buyer && inv.details.buyer.name) || "").toLowerCase().trim();
-      return invName === curName || invName.includes(curName) || curName.includes(invName);
-    });
+    if (curName) {
+      records = (records || []).filter(inv => {
+        const invName = (inv.customerName || (inv.details && inv.details.buyer && inv.details.buyer.name) || "").toLowerCase().trim();
+        return invName === curName || invName.includes(curName) || curName.includes(invName);
+      });
+    }
   }
 
   if (!records || records.length === 0) {
@@ -12583,8 +12625,7 @@ function renderHistoryTableRows(records) {
     const isPaid = payInfo.isPaid;
     const balance = payInfo.balance;
 
-    const currentRole = sessionStorage.getItem("current_user_role") || "customer";
-    const isCustomerRole = (currentRole === 'customer');
+    const isCustomerRole = (typeof window.isCustomerAccount === 'function') ? window.isCustomerAccount() : false;
 
     let badgeClass = 'badge-paid';
     if (status === 'Partial') badgeClass = 'badge-partial';
@@ -12673,8 +12714,7 @@ elements.searchHistoryInput.addEventListener("input", () => {
 });
 
 window.editSavedInvoice = function(id) {
-  const curRole = sessionStorage.getItem("current_user_role") || "customer";
-  if (curRole === "customer") {
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("⛔ Access Denied: Customer accounts cannot edit invoices.", "error", 4000);
     }
@@ -12739,8 +12779,7 @@ window.editSavedInvoice = function(id) {
 };
 
 window.repeatInvoice = function(id) {
-  const curRole = sessionStorage.getItem("current_user_role") || "customer";
-  if (curRole === "customer") {
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("⛔ Access Denied: Customer accounts cannot create bills.", "error", 4000);
     }
@@ -13131,8 +13170,7 @@ window.executeConfirmedDelete = function() {
 };
 
 window.deleteSavedInvoice = function(identifier, skipConfirm = false) {
-  const curRole = sessionStorage.getItem("current_user_role") || "customer";
-  if (curRole === "customer") {
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("⛔ Access Denied: Customer accounts cannot delete invoices.", "error", 4000);
     }
@@ -16310,11 +16348,11 @@ window.deleteAuthorizedUser = function(email) {
 
 // 7. Role Permissions Application
 window.applyRolePermissions = function(role) {
-  const currentEmail = (sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
-  const isSuperAdmin = (currentEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
-  const currentRole = isSuperAdmin ? "super_admin" : (role || sessionStorage.getItem("current_user_role") || "customer");
+  const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
+  const isSuperAdmin = (currentEmail === (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim() || sessionStorage.getItem("is_main_admin") === "true");
+  const currentRole = isSuperAdmin ? "super_admin" : (role || (typeof window.getCurrentResolvedRole === 'function' ? window.getCurrentResolvedRole() : (sessionStorage.getItem("current_user_role") || "admin")));
   const isAdmin = (currentRole === 'admin' || isSuperAdmin);
-  const isCustomer = (currentRole === 'customer');
+  const isCustomer = (typeof window.isCustomerAccount === 'function') ? window.isCustomerAccount() : (currentRole === 'customer');
 
   const email = sessionStorage.getItem("current_user_email") || (isSuperAdmin ? window.AUTHORIZED_LOGIN_EMAIL : "");
   const name = sessionStorage.getItem("current_user_name") || (isSuperAdmin ? "Jagan (Main Admin)" : (email.split("@")[0] || "User"));
@@ -16441,28 +16479,9 @@ window.sendMailOtpToJagan = async function(mode = 'code') {
   const enteredEmail = rawEmail.toLowerCase();
   const errBlock = document.getElementById("login-error-message");
 
-  let isAuthorized = window.isUserAuthorizedByAdmin(enteredEmail);
-
-  // If local check fails (e.g. new device), check cloud settings
-  if (enteredEmail && !isAuthorized && typeof GOOGLE_SCRIPT_URL !== 'undefined') {
-    try {
-      if (typeof showFloatingToast === 'function') {
-        showFloatingToast(`🔄 Checking cloud access for ${enteredEmail}...`, "info", 2000);
-      }
-      const syncUrl = `${GOOGLE_SCRIPT_URL}?action=sync&auth=${encodeURIComponent(typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : '')}&token=${encodeURIComponent(typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : '')}&_t=${Date.now()}`;
-      const res = await fetch(syncUrl, { redirect: 'follow', cache: 'no-store' });
-      if (res.ok) {
-        const text = await res.text();
-        const data = JSON.parse(text);
-        if (data && data.settings && data.settings.authorizedUsers) {
-           window.saveAuthorizedUsersList(data.settings.authorizedUsers);
-           isAuthorized = window.isUserAuthorizedByAdmin(enteredEmail);
-        }
-      }
-    } catch(e) {}
-  }
-
-  if (!enteredEmail || !isAuthorized) {
+  // The server-side Script Properties allowlist is authoritative. Local storage
+  // is editable by the browser owner and must never decide who receives an OTP.
+  if (!enteredEmail) {
     if (errBlock) {
       errBlock.innerHTML = `
         <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
@@ -16486,9 +16505,6 @@ window.sendMailOtpToJagan = async function(mode = 'code') {
   const isLinkMode = (mode === 'link');
   const actionDescription = isLinkMode ? "direct 1-click Gmail login link" : "6-digit security code";
   showFloatingToast(`⏳ Sending ${actionDescription} to ${enteredEmail}...`, "info", 4000);
-
-  const generatedCode = String(Math.floor(100000 + Math.random() * 900000));
-  sessionStorage.setItem("current_mail_otp", generatedCode);
 
   const otpField = document.getElementById("login-otp-code");
   if (otpField) {
@@ -16569,60 +16585,8 @@ window.handleTraditionalLoginSubmit = async function(e) {
     return;
   }
 
-  // 2. STRICT CHECK: Email must be authorized by Main Admin
-  let isAuth = false;
-  if (typeof window.verifyAndAuthorizeUser === 'function') {
-    isAuth = await window.verifyAndAuthorizeUser(enteredEmail, enteredEmail);
-  } else {
-    isAuth = window.isUserAuthorizedByAdmin(enteredEmail);
-  }
-
-  if (!isAuth) {
-    if (errBlock) {
-      errBlock.innerHTML = `
-        <div style="text-align: left; padding: 4px 2px;">
-          <div style="font-weight: 700; color: #f43f5e; display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
-            <i class="fa-solid fa-circle-xmark"></i> Access Denied: Unauthorized Email!
-          </div>
-          <div style="font-size: 12px; color: #e2e8f0; line-height: 1.4;">
-            The email <strong>${escapeHtml(rawEmail)}</strong> is NOT authorized to open this application.
-          </div>
-          <div style="font-size: 11px; color: #38bdf8; margin-top: 5px; font-weight: 600; display: flex; align-items: center; gap: 4px;">
-            <i class="fa-solid fa-shield-halved"></i> Only authorized users can log in.
-          </div>
-        </div>
-      `;
-      errBlock.classList.remove("hidden");
-    }
-    const penalty = AppSecurity.recordFailedAttempt("Unauthorized email: " + rawEmail);
-    if (penalty.lockoutSec > 0) {
-      AppSecurity.startLockoutCountdown(submitBtn, errBlock);
-    }
-    const card = document.querySelector(".login-card");
-    if (card) {
-      card.classList.remove("shake-animation");
-      void card.offsetWidth;
-      card.classList.add("shake-animation");
-    }
-    return;
-  }
-
-  // 3. MASTER PASSWORD OR 6-DIGIT VERIFICATION CODE CHECK:
-  const masterPass = (typeof globalSettings !== 'undefined' && globalSettings.security?.password) ? globalSettings.security.password : "Aaryan@2024";
-  
-  // Try Master Password First
-  if (enteredPass === masterPass) {
-    if (submitBtn) submitBtn.disabled = true;
-    if (btnText) btnText.classList.add("hidden");
-    if (btnSpinner) btnSpinner.classList.remove("hidden");
-    
-    setTimeout(() => {
-      window.verifyAndAuthorizeUser(enteredEmail, enteredEmail);
-    }, 500);
-    return;
-  }
-
-  // Check if password was entered at all
+  // 2. Every browser login must be verified against the server-issued OTP.
+  // Local passwords and client-generated OTPs are not authentication factors.
   if (!enteredPass) {
     if (errBlock) {
       errBlock.innerHTML = `
@@ -16645,19 +16609,9 @@ window.handleTraditionalLoginSubmit = async function(e) {
     return;
   }
 
-  // 4. VERIFY CODE AGAINST LOCAL SESSION OR CLOUD BACKEND OR USER SPECIFIC PASSWORD:
-  const activeMailOtp = sessionStorage.getItem("current_mail_otp");
-  let isOtpValid = (activeMailOtp && enteredPass === activeMailOtp);
-  
-  if (!isOtpValid) {
-    // Check if enteredPass matches the user's specific password assigned by the Main Admin
-    const userList = window.getAuthorizedUsersList();
-    const matchedUser = userList.find(u => (u.email || "").toLowerCase().trim() === enteredEmail);
-    if (matchedUser && matchedUser.password && matchedUser.password === enteredPass) {
-      isOtpValid = true;
-    }
-  }
-
+  // 3. Verify only the OTP stored by the Apps Script backend.
+  let isOtpValid = false;
+  let verifiedRole = "cashier";
   if (!isOtpValid) {
     if (submitBtn) submitBtn.disabled = true;
     if (btnText) btnText.classList.add("hidden");
@@ -16677,6 +16631,7 @@ window.handleTraditionalLoginSubmit = async function(e) {
       const data = await res.json();
       if (data && (data.ok || data.verified)) {
         isOtpValid = true;
+        verifiedRole = data.role || verifiedRole;
       }
     } catch (_) {}
   }
@@ -16711,7 +16666,6 @@ window.handleTraditionalLoginSubmit = async function(e) {
   }
 
   // VERIFIED! UNLOCK SYSTEM
-  sessionStorage.removeItem("current_mail_otp");
   if (errBlock) errBlock.classList.add("hidden");
 
   AppSecurity.recordSuccessfulLogin(enteredEmail, "Traditional / OTP Login");
@@ -16722,7 +16676,7 @@ window.handleTraditionalLoginSubmit = async function(e) {
     ? { email: window.AUTHORIZED_LOGIN_EMAIL, name: "Jagan (Main Admin)", role: "super_admin", status: "active" }
     : usersList.find(u => (u.email || "").toLowerCase().trim() === enteredEmail && u.status === "active");
 
-  const role = matchedUser ? matchedUser.role : "customer";
+  const role = matchedUser ? matchedUser.role : verifiedRole;
   const name = matchedUser ? matchedUser.name : enteredEmail.split("@")[0];
 
   if (typeof window.savePersistentAuthSession === 'function') {
@@ -20603,8 +20557,7 @@ window.toggleDynamicUpiPartialPayment = function() {
 };
 
 window.confirmDynamicUpiPaymentCompleted = function() {
-  const curRole = sessionStorage.getItem("current_user_role") || "customer";
-  if (curRole === "customer") {
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("⛔ Access Denied: Customer accounts cannot mark invoices as paid.", "error", 4500);
     }
@@ -20717,8 +20670,7 @@ window.confirmDynamicUpiPaymentCompleted = function() {
 };
 
 window.confirmDynamicUpiPartialPayment = function() {
-  const curRole = sessionStorage.getItem("current_user_role") || "customer";
-  if (curRole === "customer") {
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("⛔ Access Denied: Customer accounts cannot record payments.", "error", 4500);
     }

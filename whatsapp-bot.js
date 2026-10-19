@@ -1161,16 +1161,8 @@ app.get('/api/whatsapp/debug-inspect', async (req, res) => {
   }
 });
 
-app.post('/api/whatsapp/eval', express.json(), async (req, res) => {
-  try {
-    if (!client || !client.pupPage) return res.status(500).json({ error: 'No pupPage' });
-    const fn = new Function('client', req.body.code);
-    const result = await client.pupPage.evaluate(fn);
-    res.json({ ok: true, result });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
+// No remote evaluation endpoint: accepting arbitrary JavaScript here would
+// allow takeover of the authenticated WhatsApp browser session.
 
 // ============================================================================
 // LOCAL MULTI-USER INSTANT SYNC ENGINE (< 2ms LOCAL / LAN SYNC & DISK PERSISTENCE)
@@ -1389,7 +1381,8 @@ app.get('/companion', (req, res) => {
 });
 
 // Start Server & Initialize Client
-const server = app.listen(PORT, () => {
+// This companion is local-only; other network devices must not control it.
+const server = app.listen(PORT, '127.0.0.1', () => {
   console.log(`\n======================================================`);
   console.log(`🚀 AARYAN AQUA NEEDS - WhatsApp Bot Companion Running!`);
   console.log(`📡 Web Dashboard: http://localhost:${PORT}`);

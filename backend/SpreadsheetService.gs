@@ -237,17 +237,24 @@ function readInventoryFromSheet(ss) {
     var id = String(row[0] || "").trim();
     if (!id && !row[1]) continue;
 
+    // Helper to prevent Date objects from becoming massive negative timestamps
+    function safeNum(val) {
+      if (val instanceof Date) return 0;
+      var n = Number(val);
+      return isNaN(n) ? 0 : n;
+    }
+
     products.push({
       id: id || ("prod_" + i),
       description: String(row[1] || ""),
       hsn: String(row[2] || ""),
       packSize: String(row[3] || ""),
       unit: String(row[4] || "NOS"),
-      rate: Number(row[5] || 0),
-      discount: Number(row[6] || 0),
-      price: Number(row[7] || row[5] || 0),
-      stock: Number(row[8] || 0),
-      totalValue: Number(row[9] || 0),
+      rate: safeNum(row[5]),
+      discount: safeNum(row[6]),
+      price: safeNum(row[7] || row[5]),
+      stock: safeNum(row[8]),
+      totalValue: safeNum(row[9]),
       status: String(row[10] || "In Stock"),
       updatedAt: new Date().toISOString()
     });

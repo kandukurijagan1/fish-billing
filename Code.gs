@@ -25,7 +25,44 @@
 
 function getApiSecretKey() {
   var props = PropertiesService.getScriptProperties();
-  return props.getProperty("API_SECRET_KEY") || "AARYAN_AQUA_SECURE_KEY_2026";
+  // Never provide a fallback key: a fallback becomes public when the app ships.
+  return props.getProperty("API_SECRET_KEY");
+}
+
+// AUTHORIZED_USERS_JSON: [{"email":"owner@example.com","role":"admin"}]
+// AUTHORIZED_USERS (comma-separated) remains supported during migration.
+function getAuthorizedUsers() {
+  var props = PropertiesService.getScriptProperties();
+  var raw = String(props.getProperty("AUTHORIZED_USERS_JSON") || "").trim();
+  var users = [];
+  if (raw) {
+    try { users = JSON.parse(raw); } catch (e) { throw new Error("AUTHORIZED_USERS_JSON must be valid JSON."); }
+  } else {
+    users = String(props.getProperty("AUTHORIZED_USERS") || "").split(",").map(function(email) {
+      return { email: email.trim(), role: "cashier" };
+    });
+  }
+  return users.filter(function(user) {
+    return user && typeof user.email === "string" && user.email.indexOf("@") > 0;
+  }).map(function(user) {
+    return { email: user.email.trim().toLowerCase(), role: String(user.role || "cashier").trim().toLowerCase() };
+  });
+}
+
+function findAuthorizedUser(email) {
+  var normalized = String(email || "").trim().toLowerCase();
+  var users = getAuthorizedUsers();
+  for (var i = 0; i < users.length; i++) if (users[i].email === normalized) return users[i];
+  return null;
+}
+
+function allowOtpRequest(email) {
+  var cache = CacheService.getScriptCache();
+  var key = "otp_attempts_" + Utilities.base64EncodeWebSafe(email).slice(0, 80);
+  var count = parseInt(cache.get(key) || "0", 10);
+  if (count >= 5) return false;
+  cache.put(key, String(count + 1), 15 * 60);
+  return true;
 }
 
 function constantTimeEquals(a, b) {
@@ -524,7 +561,7 @@ function readInvoicesFromSheet(ss) {
   if (!sheet || sheet.getLastRow() < 2) return [];
 
   var lastRow = sheet.getLastRow();
-  var numCols = Math.min(sheet.getLastColumn(), 15);
+  var numCols = sheet.getLastColumn() || 15;
   var values = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
   var invoices = [];
 
@@ -533,10 +570,21 @@ function readInvoicesFromSheet(ss) {
     var invNo = String(row[0] || "").trim();
     if (!invNo) continue;
 
-    var rawJson = row[14] ? String(row[14]).trim() : "";
+    var rawJson = "";
     var invObj = null;
 
-    if (rawJson && (rawJson.startsWith("{") || rawJson.startsWith("["))) {
+    // Dynamically search for JSON payload from right to left to survive manual column insertions!
+    for (var colIdx = row.length - 1; colIdx >= 0; colIdx--) {
+      var cellVal = String(row[colIdx] || "").trim();
+      if (cellVal.startsWith("{") || cellVal.startsWith("[")) {
+        if (cellVal.indexOf('"id"') !== -1 || cellVal.indexOf('"invoiceNo"') !== -1) {
+          rawJson = cellVal;
+          break;
+        }
+      }
+    }
+
+    if (rawJson) {
       try {
         invObj = JSON.parse(rawJson);
       } catch (e) {}
@@ -593,9 +641,9 @@ function writeInvoiceToSheet(inv, ss) {
   var pdfUrl = inv.pdfUrl || d.pdfUrl || "";
 
   var fullJson = JSON.stringify(inv);
-
-  var lastRow = sheet.getLastRow();
   var targetRow = -1;
+  var lastRow = sheet.getLastRow();
+  var numCols = sheet.getLastColumn() || 15;
 
   if (lastRow >= 2) {
     var idColVals = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
@@ -607,13 +655,41 @@ function writeInvoiceToSheet(inv, ss) {
     }
   }
 
-  var rowData = [
-    invNo, invDate, custName, itemsCount, total,
-    payStatus, payMode, paidAmt, balDue,
-    orderNo, transport, dest, pdfUrl, lastUpdated, fullJson
-  ];
+  var headers = sheet.getRange(1, 1, 1, numCols).getValues()[0];
+  var rowData = new Array(headers.length);
+  for (var i = 0; i < rowData.length; i++) rowData[i] = "";
+
+  for (var i = 0; i < headers.length; i++) {
+    var h = String(headers[i]).trim().toLowerCase();
+    if (h === "invoice no") rowData[i] = invNo;
+    else if (h === "date") rowData[i] = invDate;
+    else if (h.indexOf("customer") !== -1) rowData[i] = custName;
+    else if (h.indexOf("items") !== -1) rowData[i] = itemsCount;
+    else if (h.indexOf("taxable") !== -1) rowData[i] = total;
+    else if (h === "total" || h === "total (₹)") rowData[i] = total;
+    else if (h.indexOf("cgst") !== -1) rowData[i] = 0;
+    else if (h.indexOf("sgst") !== -1) rowData[i] = 0;
+    else if (h.indexOf("grand total") !== -1) rowData[i] = total;
+    else if (h.indexOf("paid") !== -1) rowData[i] = paidAmt;
+    else if (h.indexOf("balance") !== -1) rowData[i] = balDue;
+    else if (h.indexOf("status") !== -1) rowData[i] = payStatus;
+    else if (h.indexOf("mode") !== -1) rowData[i] = payMode;
+    else if (h.indexOf("order") !== -1) rowData[i] = orderNo;
+    else if (h.indexOf("transport") !== -1) rowData[i] = transport;
+    else if (h.indexOf("destination") !== -1) rowData[i] = dest;
+    else if (h.indexOf("pdf") !== -1) rowData[i] = pdfUrl;
+    else if (h.indexOf("last updated") !== -1) rowData[i] = lastUpdated;
+    else if (h.indexOf("json") !== -1) rowData[i] = fullJson;
+  }
+
+  if (rowData.indexOf(fullJson) === -1) {
+    rowData.push(fullJson);
+  }
 
   if (targetRow > -1) {
+    if (sheet.getMaxColumns() < rowData.length) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), rowData.length - sheet.getMaxColumns());
+    }
     sheet.getRange(targetRow, 1, 1, rowData.length).setValues([rowData]);
   } else {
     sheet.appendRow(rowData);
@@ -627,7 +703,7 @@ function deleteInvoiceFromSheet(delId, ss) {
   if (!sheet || sheet.getLastRow() < 2) return false;
 
   var lastRow = sheet.getLastRow();
-  var numCols = Math.min(sheet.getLastColumn(), 15);
+  var numCols = sheet.getLastColumn() || 15;
   var values = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
   var targetStr = String(delId).trim().toLowerCase();
   var cleanTarget = targetStr.replace(/^#/, '').replace(/^inv_/, '');
@@ -639,7 +715,18 @@ function deleteInvoiceFromSheet(delId, ss) {
     var cellVal = String(row[0] || "").trim().toLowerCase();
     var cleanCell = cellVal.replace(/^#/, '').replace(/^inv_/, '');
     var numCell = parseInt(cleanCell, 10);
-    var rawJson = row[14] ? String(row[14]).trim() : "";
+    
+    var rawJson = "";
+    for (var colIdx = row.length - 1; colIdx >= 0; colIdx--) {
+      var cv = String(row[colIdx] || "").trim();
+      if (cv.startsWith("{") || cv.startsWith("[")) {
+        if (cv.indexOf('"id"') !== -1 || cv.indexOf('"invoiceNo"') !== -1) {
+          rawJson = cv;
+          break;
+        }
+      }
+    }
+
 
     var match = false;
     if (cellVal === targetStr || cleanCell === cleanTarget) match = true;
@@ -682,17 +769,24 @@ function readInventoryFromSheet(ss) {
     var id = String(row[0] || "").trim();
     if (!id && !row[1]) continue;
 
+    function safeNum(val) {
+      if (val instanceof Date) return 0;
+      var n = Number(val);
+      if (isNaN(n) || n < -100000 || n > 10000000) return 0; // Heal massive epoch timestamp corruptions
+      return n;
+    }
+
     products.push({
       id: id || ("prod_" + (i + 1)),
       description: String(row[1] || ""),
       hsn: String(row[2] || ""),
       packSize: String(row[3] || ""),
       unit: String(row[4] || "NOS"),
-      rate: Number(row[5] || 0),
-      discount: Number(row[6] || 0),
-      price: Number(row[7] || row[5] || 0),
-      stock: Number(row[8] || 0),
-      totalValue: Number(row[9] || 0),
+      rate: safeNum(row[5]),
+      discount: safeNum(row[6]),
+      price: safeNum(row[7] || row[5]),
+      stock: safeNum(row[8]),
+      totalValue: safeNum(row[9]),
       status: String(row[10] || "In Stock"),
       updatedAt: new Date().toISOString()
     });
@@ -718,6 +812,7 @@ function writeInventoryToSheet(products, ss) {
     var disc = Number(p.discount || 0);
     var valAfterDisc = roundToTwo(Math.max(0, rate - (rate * disc / 100)));
     var stock = Number(p.stock || 0);
+    if (isNaN(stock) || stock < -100000 || stock > 10000000) stock = 0; // Server-side healing of incoming corrupted data
     var totalVal = roundToTwo(stock * valAfterDisc);
     var status = stock <= 0 ? "Out of Stock" : (stock <= 5 ? "Low Stock" : "In Stock");
     return [
@@ -1280,11 +1375,15 @@ function handleApiPost(e) {
     // 1.5 Authentication-exempt Actions
     if (action === "send_login_otp") {
       var targetEmail = String(data.email || "").trim().toLowerCase();
-      if (!targetEmail) {
+      var otpUser = findAuthorizedUser(targetEmail);
+      if (!targetEmail || !otpUser) {
         return ContentService.createTextOutput(JSON.stringify({
           ok: false,
-          error: "Valid email address is required."
+          error: "This email is not authorized to access the billing system."
         })).setMimeType(ContentService.MimeType.JSON);
+      }
+      if (!allowOtpRequest(targetEmail)) {
+        return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Too many login-code requests. Try again in 15 minutes." })).setMimeType(ContentService.MimeType.JSON);
       }
       var otpCode = String(Math.floor(100000 + Math.random() * 900000));
       try {
@@ -1316,7 +1415,7 @@ function handleApiPost(e) {
           var ssLog = getMasterSpreadsheet();
           appendAuditLog("SEND_LOGIN_OTP", targetEmail, "—", "SUCCESS", "Security OTP & direct access email dispatched", ssLog);
         } catch (_) {}
-        return ContentService.createTextOutput(JSON.stringify({ ok: true, message: "Code and direct access link sent to " + targetEmail })).setMimeType(ContentService.MimeType.JSON);
+        return ContentService.createTextOutput(JSON.stringify({ ok: true, role: otpUser.role, message: "Login code sent." })).setMimeType(ContentService.MimeType.JSON);
       } catch (me) {
         return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Failed to send email: " + me.message })).setMimeType(ContentService.MimeType.JSON);
       }
@@ -1325,10 +1424,11 @@ function handleApiPost(e) {
     if (action === "verify_login_otp") {
       var targetEmailVerify = String(data.email || "").trim().toLowerCase();
       var enteredCode = String(data.otp || "").trim();
-      if (!targetEmailVerify) {
+      var verifiedUser = findAuthorizedUser(targetEmailVerify);
+      if (!targetEmailVerify || !verifiedUser) {
         return ContentService.createTextOutput(JSON.stringify({
           ok: false,
-          error: "Valid email address is required."
+          error: "This email is not authorized to access the billing system."
         })).setMimeType(ContentService.MimeType.JSON);
       }
       var storedOtp = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_" + targetEmailVerify);
@@ -1343,7 +1443,7 @@ function handleApiPost(e) {
           var ssLog2 = getMasterSpreadsheet();
           appendAuditLog("VERIFY_LOGIN_OTP", targetEmailVerify, "—", "SUCCESS", "6-Digit OTP verified successfully", ssLog2);
         } catch (_) {}
-        return ContentService.createTextOutput(JSON.stringify({ ok: true, verified: true })).setMimeType(ContentService.MimeType.JSON);
+        return ContentService.createTextOutput(JSON.stringify({ ok: true, verified: true, role: verifiedUser.role, email: verifiedUser.email })).setMimeType(ContentService.MimeType.JSON);
       } else {
         return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Invalid or expired security code." })).setMimeType(ContentService.MimeType.JSON);
       }
@@ -1360,32 +1460,71 @@ function handleApiPost(e) {
 
     // 3. Dispatch to Specialized Service Handlers
     if (action === "sync" || action === "pull") {
+      var cache = CacheService.getScriptCache();
+      
+      // Try fetching from High-Speed Cache chunks
+      var cachedHash = cache.get("latest_sync_hash");
+      var clientHash = data.hash;
+      
+      if (clientHash && cachedHash && clientHash === cachedHash) {
+        return ContentService.createTextOutput(JSON.stringify({
+          ok: true, notModified: true, hash: cachedHash,
+          serverTime: Date.now()
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      var chunksCount = cache.get("db_chunks_count");
+      var fullJson = "";
+      var cacheHit = false;
+      
+      if (chunksCount && cachedHash) {
+        cacheHit = true;
+        for (var i = 0; i < parseInt(chunksCount, 10); i++) {
+          var chunk = cache.get("db_chunk_" + i);
+          if (!chunk) { cacheHit = false; break; }
+          fullJson += chunk;
+        }
+      }
+      
+      if (cacheHit && fullJson) {
+        try {
+          var payloadObj = JSON.parse(fullJson);
+          payloadObj.ok = true;
+          payloadObj.timestamp = new Date().toISOString();
+          return ContentService.createTextOutput(JSON.stringify(payloadObj)).setMimeType(ContentService.MimeType.JSON);
+        } catch(e) {}
+      }
+
+      // Cache Miss: Read from Google Sheets
       var invs = readInvoicesFromSheet(ss);
       var prods = readInventoryFromSheet(ss);
       var parts = readCustomersFromSheet(ss);
       var sets = readSettingsFromSheet(ss);
       var sHash = computeSyncDataHash(invs, prods, parts);
 
-      if (data.hash && data.hash === sHash) {
-        return ContentService.createTextOutput(JSON.stringify({
-          ok: true,
-          notModified: true,
-          hash: sHash,
-          settings: sets,
-          serverTime: Date.now()
-        })).setMimeType(ContentService.MimeType.JSON);
-      }
+      var freshPayload = {
+        ok: true, hash: sHash, invoices: invs, products: prods,
+        parties: parts, settings: sets, serverTime: Date.now()
+      };
+      
+      var freshJson = JSON.stringify(freshPayload);
+      
+      // Write to High-Speed Cache in 90KB chunks
+      try {
+        var chunkSize = 90000;
+        var chunks = [];
+        for (var c = 0; c < freshJson.length; c += chunkSize) {
+          chunks.push(freshJson.substring(c, c + chunkSize));
+        }
+        var cacheMap = { "db_chunks_count": String(chunks.length), "latest_sync_hash": sHash };
+        for (var j = 0; j < chunks.length; j++) {
+          cacheMap["db_chunk_" + j] = chunks[j];
+        }
+        cache.putAll(cacheMap, 21600);
+      } catch (ce) {}
 
-      return ContentService.createTextOutput(JSON.stringify({
-        ok: true,
-        hash: sHash,
-        invoices: invs,
-        products: prods,
-        parties: parts,
-        settings: sets,
-        serverTime: Date.now(),
-        timestamp: new Date().toISOString()
-      })).setMimeType(ContentService.MimeType.JSON);
+      freshPayload.timestamp = new Date().toISOString();
+      return ContentService.createTextOutput(JSON.stringify(freshPayload)).setMimeType(ContentService.MimeType.JSON);
     }
 
     if (action === "save_invoice") {

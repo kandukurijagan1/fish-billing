@@ -9,6 +9,40 @@ function getApiSecretKey() {
   return props.getProperty("API_SECRET_KEY");
 }
 
+function getAuthorizedUsers() {
+  var props = PropertiesService.getScriptProperties();
+  var raw = String(props.getProperty("AUTHORIZED_USERS_JSON") || "").trim();
+  var users = [];
+  if (raw) {
+    try { users = JSON.parse(raw); } catch (e) { throw new Error("AUTHORIZED_USERS_JSON must be valid JSON."); }
+  } else {
+    users = String(props.getProperty("AUTHORIZED_USERS") || "").split(",").map(function(email) {
+      return { email: email.trim(), role: "cashier" };
+    });
+  }
+  return users.filter(function(user) {
+    return user && typeof user.email === "string" && user.email.indexOf("@") > 0;
+  }).map(function(user) {
+    return { email: user.email.trim().toLowerCase(), role: String(user.role || "cashier").trim().toLowerCase() };
+  });
+}
+
+function findAuthorizedUser(email) {
+  var normalized = String(email || "").trim().toLowerCase();
+  var users = getAuthorizedUsers();
+  for (var i = 0; i < users.length; i++) if (users[i].email === normalized) return users[i];
+  return null;
+}
+
+function allowOtpRequest(email) {
+  var cache = CacheService.getScriptCache();
+  var key = "otp_attempts_" + Utilities.base64EncodeWebSafe(email).slice(0, 80);
+  var count = parseInt(cache.get(key) || "0", 10);
+  if (count >= 5) return false;
+  cache.put(key, String(count + 1), 15 * 60);
+  return true;
+}
+
 function constantTimeEquals(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   if (a.length !== b.length) return false;
