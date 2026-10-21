@@ -93,6 +93,59 @@
     },
     "terms": [
       "We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct."
+    ],
+    "authorizedUsers": [
+      {
+        "email": "kandukurijagan99@gmail.com",
+        "name": "Jagan Kandukuri (Main Admin)",
+        "role": "super_admin",
+        "status": "active",
+        "addedAt": "2026-09-01T00:00:00.000Z",
+        "isMainAdmin": true
+      },
+      {
+        "email": "kandukurijagan7@gmail.com",
+        "name": "kandukurijagan7@gmail.com",
+        "role": "admin",
+        "status": "active",
+        "addedAt": "2026-10-03T11:09:26.901Z"
+      },
+      {
+        "email": "kandukurijagan642@gmail.com",
+        "name": "jagann",
+        "role": "admin",
+        "status": "active",
+        "addedAt": "2026-10-03T13:16:10.634Z"
+      },
+      {
+        "email": "kandukurijagan@gmail.com",
+        "name": "yuhjm",
+        "role": "customer",
+        "status": "active",
+        "addedAt": "2026-10-03T14:35:31.616Z"
+      },
+      {
+        "email": "192472374.simats@saveetha.com",
+        "name": "jagan",
+        "role": "admin",
+        "status": "active",
+        "addedAt": "2026-10-03T15:00:44.387Z"
+      },
+      {
+        "email": "endukuniku35@gmail.com",
+        "name": "tghjnm",
+        "role": "customer",
+        "status": "active",
+        "addedAt": "2026-10-07T07:55:42.999Z"
+      },
+      {
+        "email": "manasakokkiligadda11@gmail.com",
+        "name": "Aaryan aqua",
+        "password": "2024",
+        "role": "admin",
+        "status": "active",
+        "addedAt": "2026-10-21T14:35:08.992Z"
+      }
     ]
   }
 }

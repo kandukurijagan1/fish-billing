@@ -223,7 +223,7 @@
     } catch (e) {}
   </script>
   <!-- Custom CSS -->
-  <link rel="stylesheet" href="index.css?v=612_save_persistence_restored">
+  <link rel="stylesheet" href="index.css?v=613_commercial_product_view_mode">
   <script src="invoice_utils_v5.js?v=436_payment_wa_stock_fix"></script>
 </head>
 <body class="app-is-locked">
@@ -305,13 +305,18 @@
           </button>
         </div>
       </div>
+
+      <!-- EXPLORE IN FREE VIEW DEMO MODE BUTTON -->
+      <button type="button" class="btn-demo-view-mode" onclick="window.loginAsFreeViewer()" style="width: 100%; margin-top: 14px; padding: 11px 16px; border-radius: 8px; background: rgba(14, 165, 233, 0.12); border: 1.5px solid #0ea5e9; color: #38bdf8; font-weight: 700; font-size: 13.5px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s ease;">
+        <i class="fa-solid fa-eye"></i> <span>Explore in Free View Mode (Demo)</span>
+      </button>
       
       <div class="login-footer" style="margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 11.5px; color: #64748b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
         <div style="display: flex; align-items: center; gap: 6px;">
           <i class="fa-solid fa-shield-halved" style="color: #0ea5e9;"></i>
-          <span style="font-weight: 700; color: #94a3b8;">Authorized Access Only</span>
+          <span style="font-weight: 700; color: #94a3b8;">Commercial Product Tier</span>
         </div>
-        <span style="font-size: 10.5px; color: #64748b;">Main Admin: <strong style="color: #38bdf8;">kandukurijagan99@gmail.com</strong></span>
+        <span style="font-size: 10.5px; color: #64748b;">Free View for all visitors • Full Edit access authorized by <strong style="color: #38bdf8;">kandukurijagan99@gmail.com</strong></span>
       </div>
     </div>
   </div>
@@ -379,6 +384,19 @@
 
     <!-- MAIN PANEL -->
     <main class="main-content no-print">
+      
+      <!-- COMMERCIAL PRODUCT: FREE VIEW DEMO BANNER -->
+      <div id="demo-mode-top-banner" class="demo-mode-banner no-print" style="display: none;">
+        <div class="demo-banner-content">
+          <span class="demo-banner-badge"><i class="fa-solid fa-eye"></i> FREE VIEW MODE</span>
+          <span class="demo-banner-text">You are exploring this software in Read-Only Preview. Full Billing &amp; Data Editing requires an authorized license from <strong>kandukurijagan99@gmail.com</strong>.</span>
+        </div>
+        <div class="demo-banner-actions">
+          <button type="button" class="btn-demo-buy" onclick="window.showProductBuyModal('banner')">
+            <i class="fa-solid fa-crown"></i> Buy License / Contact Owner
+          </button>
+        </div>
+      </div>
       
       <header class="content-header">
         <div class="header-left">
@@ -5202,7 +5220,70 @@
     <i class="fa-solid fa-wifi" id="network-banner-icon"></i> <span id="network-banner-text">Working Offline</span>
   </div>
 
-  <script src="index_v5.js?v=612_save_persistence_restored"></script>
+  
+  <!-- COMMERCIAL PRODUCT LICENSE / BUY MODAL -->
+  <div id="product-buy-modal" class="modal-overlay hidden no-print" style="display: none;" onclick="if(event.target === this) window.closeProductBuyModal()">
+    <div class="modal-box buy-license-modal-box" onclick="event.stopPropagation()">
+      <div class="buy-modal-header">
+        <div class="buy-modal-title-group">
+          <div class="buy-modal-icon"><i class="fa-solid fa-crown"></i></div>
+          <div>
+            <h3 style="margin: 0; font-size: 18px; font-weight: 800; color: #ffffff;">Upgrade to Commercial License</h3>
+            <span style="font-size: 12px; color: #94a3b8;">Unlock Full Edit, Invoicing &amp; Multi-Device Cloud Sync</span>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" onclick="window.closeProductBuyModal()">&times;</button>
+      </div>
+      <div class="buy-modal-body">
+        <div id="buy-modal-trigger-notice" class="buy-trigger-notice" style="display: none;"></div>
+        
+        <div class="buy-features-grid">
+          <div class="buy-feature-item">
+            <i class="fa-solid fa-file-invoice-dollar" style="color: #0ea5e9;"></i>
+            <div><strong>Unlimited GST Billing</strong><span>Generate, save &amp; print tax invoices</span></div>
+          </div>
+          <div class="buy-feature-item">
+            <i class="fa-solid fa-cubes" style="color: #10b981;"></i>
+            <div><strong>Product &amp; Stock Control</strong><span>Add, edit items &amp; batch inventory</span></div>
+          </div>
+          <div class="buy-feature-item">
+            <i class="fa-solid fa-cloud" style="color: #6366f1;"></i>
+            <div><strong>Real-Time Cloud Sync</strong><span>Automatic multi-device database sync</span></div>
+          </div>
+          <div class="buy-feature-item">
+            <i class="fa-brands fa-whatsapp" style="color: #22c55e;"></i>
+            <div><strong>WhatsApp &amp; UPI QR</strong><span>Automated billing &amp; instant collections</span></div>
+          </div>
+        </div>
+
+        <div class="buy-contact-card">
+          <div class="buy-contact-label">DIRECT SOFTWARE DEVELOPER &amp; LICENSING:</div>
+          <div class="buy-contact-owner">
+            <div class="owner-avatar"><i class="fa-solid fa-user-shield"></i></div>
+            <div>
+              <div class="owner-name">Kandukuri Jagan</div>
+              <div class="owner-role">Product Owner &amp; Main Administrator</div>
+            </div>
+          </div>
+          <div class="buy-action-buttons">
+            <a href="https://wa.me/918367047947?text=Hello%20Jagan,%20I%20am%20interested%20in%20purchasing%20a%20commercial%20license%20for%20the%20Aqua%20GST%20Billing%20Software." target="_blank" rel="noopener noreferrer" class="btn-buy-whatsapp">
+              <i class="fa-brands fa-whatsapp"></i> Chat on WhatsApp (+91 8367047947)
+            </a>
+            <a href="mailto:kandukurijagan99@gmail.com?subject=Commercial%20License%20Inquiry%20-%20Aaryan%20Aqua%20Billing&body=Hello%20Jagan,%0A%0AI%20am%20interested%20in%20purchasing%20a%20license%20for%20the%20Aqua%20Billing%20System.%0A%0APlease%20provide%20pricing%20and%20activation%20details." class="btn-buy-email">
+              <i class="fa-solid fa-envelope"></i> Email: kandukurijagan99@gmail.com
+            </a>
+            <a href="tel:+918367047947" class="btn-buy-call">
+              <i class="fa-solid fa-phone"></i> Call: +91 8367047947
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="buy-modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="window.closeProductBuyModal()" style="width: 100%;">Continue Exploring in Free View Mode</button>
+      </div>
+    </div>
+  </div>
+<script src="index_v5.js?v=613_commercial_product_view_mode"></script>
 </body>
 </html>
 
