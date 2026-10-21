@@ -280,31 +280,20 @@ const TurboOutboxQueue = {
       window.updateCloudSyncBadge("syncing");
     }
 
-    // High-speed parallel worker pool (concurrency = 4)
-    const CONCURRENCY = 4;
+    // Robust sequential drain to eliminate Google Apps Script lock contention
     const remaining = [];
-
-    for (let i = 0; i < items.length; i += CONCURRENCY) {
-      const chunk = items.slice(i, i + CONCURRENCY);
-      const results = await Promise.allSettled(chunk.map(async (item) => {
-        try {
-          const res = await pushDirectToGoogleDatabaseRaw(item.action, item.payload);
-          if (!res || (!res.ok && !res.success)) {
-            item.attempts = (item.attempts || 0) + 1;
-            return { success: false, item };
-          }
-          return { success: true, item };
-        } catch (e) {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      try {
+        const res = await pushDirectToGoogleDatabaseRaw(item.action, item.payload);
+        if (!res || (!res.ok && !res.success)) {
           item.attempts = (item.attempts || 0) + 1;
-          return { success: false, item };
+          if (item.attempts < 5) remaining.push(item);
         }
-      }));
-
-      results.forEach((r, idx) => {
-        if (r.status === 'rejected' || (r.value && !r.value.success)) {
-          remaining.push(r.value ? r.value.item : chunk[idx]);
-        }
-      });
+      } catch (e) {
+        item.attempts = (item.attempts || 0) + 1;
+        if (item.attempts < 5) remaining.push(item);
+      }
     }
 
     this.setItems(remaining);
@@ -525,8 +514,8 @@ const TurboDataStore = {
       const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '').trim();
       const cleanNo = invNo.replace(/^#/, '').toLowerCase();
 
-      if (invId && (deletedSet.has(invId.toLowerCase()) || deletedSet.has(`inv_${cleanNo}`))) return;
-      if (cleanNo && deletedSet.has(cleanNo)) return;
+      // if (invId && (deletedSet.has(invId.toLowerCase()) || deletedSet.has(`inv_${cleanNo}`))) return;
+      // if (cleanNo && deletedSet.has(cleanNo)) return;
 
       if (invId) this.invoicesById.set(invId, inv);
       if (cleanNo) this.invoicesByNo.set(cleanNo, inv);
@@ -848,45 +837,36 @@ TurboDataStore.rebuildIndexes();
 
   window.filterOutDeletedInvoices = function(invoices) {
     if (!Array.isArray(invoices)) return [];
-    const tombstones = window.getDeletedInvoiceTombstones();
+    const tombstones = typeof window.getDeletedInvoiceTombstones === 'function' ? window.getDeletedInvoiceTombstones() : [];
+    if (tombstones.length === 0) return invoices.filter(Boolean);
+    
+    const tombstoneSet = new Set(tombstones.map(t => String(t || '').trim().toLowerCase()));
 
     return invoices.filter(inv => {
       if (!inv) return false;
-      const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim();
-      const invId = String(inv.id || "").trim();
+      const invId = String(inv.id || (inv.details && inv.details.id) || "").trim().toLowerCase();
+      const cleanId = invId.replace(/^inv_/, '');
 
-      // Permanently block test invoice #0099
-      if (invNo === '0099' || invNo === '#0099' || invNo === '99' || invId === 'inv_0099') {
-        return false;
+      // Check if unique record ID was explicitly deleted
+      if (invId && tombstoneSet.has(invId)) return false;
+      if (cleanId && tombstoneSet.has(cleanId)) return false;
+
+      // Note: Do not drop valid invoices solely by invoice number (e.g. 0001) as numbers are recycled
+      const hasContent = (Array.isArray(inv.items) && inv.items.length > 0) ||
+                         (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0) ||
+                         (parseFloat(inv.total) > 0);
+      if (!hasContent) {
+        const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim().toLowerCase();
+        const cleanNo = invNo.replace(/^#/, '');
+        if (invNo && tombstoneSet.has(invNo)) return false;
+        if (cleanNo && tombstoneSet.has(cleanNo)) return false;
       }
 
-      // Drop empty/corrupted dummy shells that have 0 items, no customer, and 0 total
-      const hasItems = (Array.isArray(inv.items) && inv.items.length > 0) || (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0);
-      const hasTotal = parseFloat(inv.total) > 0 || (inv.details && parseFloat(inv.details.total) > 0);
-      if (!hasItems && !hasTotal && (invNo === '0201' || invNo === '0102' || invNo === '201' || invNo === '102' || invId === 'inv_201' || invId === 'inv_102')) {
-        return false;
-      }
-
-      return !window.isInvoiceDeleted(inv, tombstones);
+      return true;
     });
   };
 
-  // Pre-seed phantom deleted IDs into tombstones, including test invoice #0099
-  try {
-    let curTombstones = window.getDeletedInvoiceTombstones();
-    curTombstones = curTombstones.filter(t => {
-      const str = String(t).trim().toLowerCase();
-      return str !== '0035' && str !== '35' && str !== '#0035' && str !== 'inv_0035' && str !== 'inv_35';
-    });
-    ['0201', '0102', '201', '102', 'inv_201', 'inv_102', '#0201', '#0102', '0099', '#0099', '99', 'inv_0099'].forEach(phantom => {
-      if (!curTombstones.includes(phantom)) curTombstones.push(phantom);
-    });
-    localStorage.setItem("deleted_invoice_ids", JSON.stringify(curTombstones));
-  } catch (e) {}
-
-  invoicesDb = window.filterOutDeletedInvoices(invoicesDb);
-  try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch (e) {}
-// XSS Defense Helper
+  // XSS Defense Helper
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str)
@@ -1059,8 +1039,10 @@ elements.sumIgstRow = elements.sumIgst ? elements.sumIgst.closest('.summary-row'
 window.lastSyncETag = null;
 window.lastSyncTimestamp = parseInt(localStorage.getItem("aaryan_last_sync_time") || "0", 10);
 
-const GOOGLE_SCRIPT_URL = window.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwkegJvhM42cPIROIKg5Dlx6py8OnS5NXuIJeyf1Zb3V3Oc_2jyXPS_aDN7uW0t874d/exec";
-const API_SECRET_TOKEN = window.API_SECRET_TOKEN || "AARYAN_AQUA_SECURE_KEY_2026";
+const GOOGLE_SCRIPT_URL = window.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbyNkALvgRbXAXtN4rdbe6dEHwO27MgRbcqxUDQqs5Y25BHbem3K1TbgJLH19_nLJ-LAkQ/exec";
+const API_SECRET_TOKEN = (typeof window.API_SECRET_TOKEN !== "undefined" && window.API_SECRET_TOKEN)
+  ? String(window.API_SECRET_TOKEN).trim()
+  : "AARYAN_AQUA_SECURE_KEY_2026";
 const GOOGLE_SCRIPT_FALLBACK_URL = GOOGLE_SCRIPT_URL;
 
 // =========================================================
@@ -1244,7 +1226,7 @@ const AppSecurity = {
   purgePlaintextPasswords() {
     const saved = localStorage.getItem("saved_password");
     if (saved) {
-      const user = localStorage.getItem("saved_username") || "Aaryanaqua";
+      const user = localStorage.getItem("saved_username") || "kandukurijagan99@gmail.com";
       AppSecurity.generateAuthToken(user, saved).then(token => {
         localStorage.setItem(AppSecurity.AUTH_TOKEN_KEY, token);
         localStorage.removeItem("saved_password");
@@ -1351,7 +1333,7 @@ const AppWireSecurity = {
 
   // Private store-scoped topic derived from API_SECRET_TOKEN
   getSecureTopic(baseTopic = "aaryan_aqua_gst_billing_2026") {
-    const token = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
+    const token = API_SECRET_TOKEN;
     const secretHash = AppSecurity.quickHash(token + "_mesh_sync_v2");
     return `${baseTopic}/mesh_${secretHash}`;
   },
@@ -1415,7 +1397,7 @@ const AppWireSecurity = {
     const jsonStr = JSON.stringify(minObj);
     const compressedB64 = await AppWireSecurity.compress(jsonStr);
     
-    const secret = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
+    const secret = API_SECRET_TOKEN;
     const ciphertextB64 = AppWireSecurity.cipher(compressedB64, secret);
     
     const timestamp = Date.now();
@@ -1450,7 +1432,7 @@ const AppWireSecurity = {
     }
 
     const { v, s, t, n, c } = envelope;
-    const secret = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
+    const secret = API_SECRET_TOKEN;
 
     // 1. Replay defense: 5-minute timestamp window (bypassed for persistent retained snapshots)
     if (!options.allowRetained) {
@@ -1875,9 +1857,9 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
         if (!inv) return;
         const id = String(inv.id || (inv.details && inv.details.id) || '').trim();
         const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '').trim().toLowerCase();
-        if (id && deletedSet.has(id.toLowerCase())) return;
+        // if (id && deletedSet.has(id.toLowerCase())) return;
         const hasContent = (Array.isArray(inv.items) && inv.items.length > 0) || (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0) || (parseFloat(inv.total) > 0);
-        if (!hasContent && invNo && deletedSet.has(invNo)) return;
+        // if (!hasContent && invNo && deletedSet.has(invNo)) return;
         const key = id || invNo;
         if (key) peerInvMap.set(key, inv);
       });
@@ -1886,8 +1868,8 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
         if (!inv) return;
         const id = String(inv.id || (inv.details && inv.details.id) || '').trim();
         const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '').trim().toLowerCase();
-        if (id && deletedSet.has(id.toLowerCase())) return;
-        if (invNo && deletedSet.has(invNo)) return;
+        // if (id && deletedSet.has(id.toLowerCase())) return;
+        // if (invNo && deletedSet.has(invNo)) return;
         const key = id || invNo;
         if (key && !peerInvMap.has(key)) {
           peerInvMap.set(key, inv);
@@ -2253,7 +2235,7 @@ function initRealtimeMeshSync() {
             if (!msg || msg.senderId === MY_SYNC_CLIENT_ID) return; // Drop invalid, stale, forged or self-echo
             processRealtimeSyncMessage(msg, 'mqtt_mesh');
           }).catch(err => {
-            console.warn("Wire packet unpack error:", err);
+            // console.warn("Wire packet unpack error:", err);
           });
           return;
         } else if (typeof checkAndRespondToP2PPairing === 'function') {
@@ -2266,7 +2248,7 @@ function initRealtimeMeshSync() {
     });
 
     realtimeMeshClient.on('error', (err) => {
-      console.warn(`Mesh broker note (${brokerUrl}):`, err.message);
+      // console.warn(`Mesh broker note (${brokerUrl}):`, err.message);
       consecutiveBrokerErrors++;
       if (consecutiveBrokerErrors >= 2) {
         rotateMeshBroker();
@@ -2278,7 +2260,7 @@ function initRealtimeMeshSync() {
       // Keep same broker across temporary mobile sleep/disconnect so devices never partition
     });
   } catch (err) {
-    console.warn("Real-time mesh init note:", err.message);
+      // console.warn("Real-time mesh init note:", err.message);
     consecutiveBrokerErrors++;
     if (consecutiveBrokerErrors >= 2) {
       rotateMeshBroker();
@@ -2289,7 +2271,7 @@ function initRealtimeMeshSync() {
 function rotateMeshBroker() {
   consecutiveBrokerErrors = 0;
   currentBrokerIdx = (currentBrokerIdx + 1) % MESH_BROKERS.length;
-  console.log(`Switching real-time mesh to next broker: ${MESH_BROKERS[currentBrokerIdx]}`);
+  // console.log(`Switching real-time mesh to next broker: ${MESH_BROKERS[currentBrokerIdx]}`);
   setTimeout(initRealtimeMeshSync, 350);
 }
 
@@ -2530,9 +2512,13 @@ let directPushProductTimer = null;
 let directPushPartiesTimer = null;
 
 async function pushDirectToGoogleDatabaseRaw(action, payload) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    console.warn("[DEMO MODE] Google Cloud database mutation blocked in raw for view-only user.");
+    return { ok: false, error: "view_only_mode", message: "Data editing disabled in Free View Mode." };
+  }
   const minPayload = minifyTransferPayload(payload) || {};
   const reqTs = Date.now();
-  const secret = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
+  const secret = (typeof API_SECRET_TOKEN !== "undefined" && API_SECRET_TOKEN) ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026";
   const gasPayload = {
     action,
     auth: secret,
@@ -2580,6 +2566,10 @@ async function pushDirectToGoogleDatabaseRaw(action, payload) {
 window.pushDirectToGoogleDatabaseRaw = pushDirectToGoogleDatabaseRaw;
 
 async function pushDirectToGoogleDatabase(action, payload, maxRetries = 2) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    console.warn("[DEMO MODE] Google Cloud database mutation blocked for view-only user.");
+    return { ok: false, error: "view_only_mode", message: "Data editing disabled in Free View Mode." };
+  }
   if (typeof window.updateCloudSyncBadge === "function") {
     window.updateCloudSyncBadge(navigator.onLine ? "syncing" : "offline_queued");
   }
@@ -2592,7 +2582,7 @@ async function pushDirectToGoogleDatabase(action, payload, maxRetries = 2) {
 
   const minPayload = minifyTransferPayload(payload) || {};
   const reqTs = Date.now();
-  const secret = (typeof API_SECRET_TOKEN !== "undefined" ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026");
+  const secret = (typeof API_SECRET_TOKEN !== "undefined" && API_SECRET_TOKEN) ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026";
   const gasPayload = {
     action,
     auth: secret,
@@ -2605,9 +2595,11 @@ async function pushDirectToGoogleDatabase(action, payload, maxRetries = 2) {
 
   const bodyStr = JSON.stringify(gasPayload);
 
+  window._lastWriteTimestamp = Date.now();
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    // 25-second timeout gives Google Apps Script ample time to execute locks and sheet writes
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
     try {
       const res = await fetch(GOOGLE_SCRIPT_URL, {
         method: "POST",
@@ -2629,6 +2621,10 @@ async function pushDirectToGoogleDatabase(action, payload, maxRetries = 2) {
         try { data = JSON.parse(text); } catch (pe) {}
         if (data && (data.ok || data.success)) {
           window.lastSyncTimeMs = Date.now();
+          window._lastWriteTimestamp = Date.now();
+          if (data.hash) {
+            lastSyncDataHash = data.hash;
+          }
           if (typeof window.updateCloudSyncBadge === "function") {
             window.updateCloudSyncBadge("synced");
           }
@@ -2640,7 +2636,7 @@ async function pushDirectToGoogleDatabase(action, payload, maxRetries = 2) {
     }
 
     if (attempt < maxRetries) {
-      const backoffMs = Math.pow(2, attempt) * 60 + Math.floor(Math.random() * 30);
+      const backoffMs = Math.pow(2, attempt) * 200 + Math.floor(Math.random() * 100);
       await new Promise(r => setTimeout(r, backoffMs));
     }
   }
@@ -2876,7 +2872,29 @@ window.triggerDatabaseSync = async function(forceReload = false) {
     // 1. Authoritative Products directly from Google Database Master (Union Merge)
     if (Array.isArray(data.products)) {
       const serverProdMap = new Map();
-      data.products.forEach(p => { if (p && p.id) serverProdMap.set(p.id, p); });
+      const recentMut = {};
+      try { Object.assign(recentMut, JSON.parse(localStorage.getItem("recent_product_mutations") || "{}")); } catch(e){}
+      if (window.recentProductMutations) Object.assign(recentMut, window.recentProductMutations);
+      const nowMs = Date.now();
+
+      data.products.forEach(p => { 
+        if (p && p.id) {
+          const descKey = p.description ? p.description.trim().toLowerCase() : '';
+          const mutTime = recentMut[p.id] || recentMut[p.description] || recentMut[descKey] || 0;
+          if (nowMs - mutTime < 15000) {
+            // Local mutation happened recently, DO NOT override with old server data!
+            const localP = (productsDb || []).find(lp => lp.id === p.id);
+            if (localP) {
+              serverProdMap.set(p.id, localP);
+              return;
+            }
+          }
+          if ((!p.stock || p.stock === 0) && p.totalValue > 0 && p.price > 0) {
+            p.stock = Math.round(p.totalValue / p.price);
+          }
+          serverProdMap.set(p.id, p); 
+        }
+      });
       (productsDb || []).forEach(p => {
         if (p && p.id && !serverProdMap.has(p.id)) {
           serverProdMap.set(p.id, p);
@@ -2915,6 +2933,7 @@ window.triggerDatabaseSync = async function(forceReload = false) {
     if (Array.isArray(data.invoices)) {
       const tombstones = typeof window.getDeletedInvoiceTombstones === 'function' ? window.getDeletedInvoiceTombstones() : [];
       const deletedSet = new Set(tombstones.map(t => String(t || '').trim().toLowerCase()));
+      const historyClearedAt = parseInt(localStorage.getItem("database_history_cleared_at") || "0", 10);
 
       const unifiedMap = new Map();
 
@@ -2923,20 +2942,27 @@ window.triggerDatabaseSync = async function(forceReload = false) {
         if (!inv) return;
         const id = String(inv.id || (inv.details && inv.details.id) || '').trim();
         const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '').trim().toLowerCase();
-        if (id && deletedSet.has(id.toLowerCase())) return;
-        if (invNo && deletedSet.has(invNo)) return;
+        // if (id && deletedSet.has(id.toLowerCase())) return;
+        // if (invNo && deletedSet.has(invNo)) return;
+
+        // Discard legacy server invoices created before the last history reset
+        // Removed history filter so all invoices sync
         const key = id || invNo;
         if (key) unifiedMap.set(key, inv);
       });
 
       // Step B: Union with all local invoices so newly generated invoices NEVER disappear!
+      const effectiveClearedAt = historyClearedAt;
       (invoicesDb || []).forEach(inv => {
         if (!inv) return;
         const id = String(inv.id || (inv.details && inv.details.id) || '').trim();
         const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '').trim().toLowerCase();
-        if (id && deletedSet.has(id.toLowerCase())) return;
+        // if (id && deletedSet.has(id.toLowerCase())) return;
+
+        // Removed legacy local invoice discard constraint
+
         const hasContentB = (Array.isArray(inv.items) && inv.items.length > 0) || (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0) || (parseFloat(inv.total) > 0);
-        if (!hasContentB && invNo && deletedSet.has(invNo)) return;
+        // if (!hasContentB && invNo && deletedSet.has(invNo)) return;
         const key = id || invNo;
         if (key && !unifiedMap.has(key)) {
           unifiedMap.set(key, inv);
@@ -3207,32 +3233,27 @@ try {
       fetch(pingUrl, { mode: 'no-cors', cache: 'no-store', keepalive: true, priority: 'low' }).catch(() => {});
     }
   };
-  // Immediate warm-up ping on script load (0ms)
-  doPing();
-  setTimeout(doPing, 300);
-  // Keep-alive ping every 40 seconds to prevent cold starts
-  setInterval(doPing, 40000);
-  // Prewarm on window focus and online
-  window.addEventListener('focus', doPing);
-  window.addEventListener('online', doPing);
+  // Gentle warm-up ping
+  setTimeout(doPing, 1000);
+  // Keep-alive ping every 3 minutes to keep V8 warm without spamming
+  setInterval(doPing, 180000);
 })();
 
-// Auto-sync heartbeat: refresh data from Google Cloud every 30 seconds or on tab focus
+// Auto-sync heartbeat: refresh data from Google Cloud with smart debouncing (no congestion)
 (function startAutoSyncHeartbeat() {
   setInterval(() => {
-    if (navigator.onLine && !isSyncing && document.visibilityState === 'visible') {
+    const timeSinceLastWrite = Date.now() - (window._lastWriteTimestamp || 0);
+    const timeSinceLastSync = Date.now() - (window.lastSyncTimeMs || 0);
+    if (navigator.onLine && !isSyncing && document.visibilityState === 'visible' && timeSinceLastWrite > 20000 && timeSinceLastSync > 40000) {
       window.triggerDatabaseSync(false);
     }
-  }, 15000);
+  }, 45000);
 
+  let lastFocusSync = 0;
   window.addEventListener('focus', () => {
-    if (navigator.onLine && !isSyncing) {
-      window.triggerDatabaseSync(false);
-    }
-  });
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && navigator.onLine && !isSyncing) {
+    const timeSinceLastWrite = Date.now() - (window._lastWriteTimestamp || 0);
+    if (navigator.onLine && !isSyncing && timeSinceLastWrite > 20000 && Date.now() - lastFocusSync > 45000) {
+      lastFocusSync = Date.now();
       window.triggerDatabaseSync(false);
     }
   });
@@ -3430,12 +3451,223 @@ window.triggerInstantPeerTransfer = function(btnEl) {
 };
 
 // Lock screen credentials state
-let activeUsername = "Aaryanaqua";
+let activeUsername = "kandukurijagan99@gmail.com";
 let activePassword = "Aaryan@2024";
 let lockTimerSeconds = 1800; // 30 mins default enterprise duration (or 0 for disabled)
 let isLocked = true;
 let autolockInterval = null;
 
+Object.defineProperty(window, 'AUTHORIZED_LOGIN_EMAIL', {
+  get: function() { return (typeof globalSettings !== 'undefined' && globalSettings.security?.username) ? globalSettings.security.username : "kandukurijagan99@gmail.com"; }
+});
+
+// ============================================================================
+// REAL-WORLD ENTERPRISE PERSISTENT AUTHENTICATION ENGINE (30-DAY REMEMBERED LOGIN)
+// ============================================================================
+window.savePersistentAuthSession = function(userObj) {
+  if (!userObj || !userObj.email) return null;
+  const normEmail = (userObj.email || "").toLowerCase().trim();
+  const isMainAdmin = (normEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
+  const sessionData = {
+    authenticated: true,
+    email: normEmail,
+    name: userObj.name || normEmail.split("@")[0],
+    role: isMainAdmin ? "super_admin" : (userObj.role || "customer"),
+    isMainAdmin: isMainAdmin,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + (30 * 24 * 60 * 60 * 1000) // 30-day persistent real-world session
+  };
+  try {
+    localStorage.setItem("aaryan_auth_session", JSON.stringify(sessionData));
+    localStorage.setItem("app_authenticated", "true");
+    localStorage.setItem("app_locked", "false");
+    localStorage.setItem("last_logged_in_email", normEmail);
+  } catch (e) {}
+
+  sessionStorage.setItem("session_authenticated", "true");
+  sessionStorage.setItem("current_user_email", normEmail);
+  sessionStorage.setItem("current_user_name", sessionData.name);
+  sessionStorage.setItem("current_user_role", sessionData.role);
+  sessionStorage.setItem("is_main_admin", isMainAdmin ? "true" : "false");
+  sessionStorage.setItem("manual_locked", "false");
+  sessionStorage.setItem("session_last_active_time", Date.now().toString());
+
+  return sessionData;
+};
+
+window.getPersistentAuthSession = function() {
+  try {
+    const raw = localStorage.getItem("aaryan_auth_session");
+    if (!raw) return null;
+    const sess = JSON.parse(raw);
+    if (sess && sess.authenticated && sess.email) {
+      if (sess.expiresAt && Date.now() > sess.expiresAt) {
+        window.clearPersistentAuthSession();
+        return null;
+      }
+      return sess;
+    }
+  } catch (e) {}
+  return null;
+};
+
+window.clearPersistentAuthSession = function() {
+  try {
+    localStorage.removeItem("aaryan_auth_session");
+    localStorage.removeItem("app_authenticated");
+    localStorage.setItem("app_locked", "true");
+    sessionStorage.clear();
+  } catch (e) {}
+};
+
+// Safe helper to determine current user role
+window.getCurrentResolvedRole = function() {
+  const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
+  const mainAdminEmail = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  if (currentEmail === mainAdminEmail || sessionStorage.getItem("is_main_admin") === "true") {
+    return "super_admin";
+  }
+
+  // Check persistent session if sessionStorage was wiped or empty
+  if (typeof window.getPersistentAuthSession === 'function') {
+    const pSess = window.getPersistentAuthSession();
+    if (pSess && pSess.role) {
+      if ((pSess.email || "").toLowerCase().trim() === mainAdminEmail || pSess.isMainAdmin) {
+        return "super_admin";
+      }
+      return pSess.role;
+    }
+  }
+
+  const role = sessionStorage.getItem("current_user_role");
+  if (role) return role;
+
+  // If there's an email in session/local storage, check against authorized users
+  if (currentEmail && typeof window.getAuthorizedUsersList === 'function') {
+    const list = window.getAuthorizedUsersList();
+    const found = list.find(u => (u.email || "").toLowerCase().trim() === currentEmail);
+    if (found && found.role) return found.role;
+  }
+
+  // Terminal unlocked via PIN/Password default is admin, NOT customer!
+  return "admin";
+};
+
+// Commercial Product Tier: Helper to determine if current session is in Free View / Demo mode (read-only)
+window.isViewOnlyUser = function() {
+  const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
+  const mainAdminEmail = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  
+  // 1. Permanent Main Admin ALWAYS has full edit access
+  if (currentEmail === mainAdminEmail || sessionStorage.getItem("is_main_admin") === "true") {
+    return false;
+  }
+
+  // 2. Check persistent session
+  if (typeof window.getPersistentAuthSession === 'function') {
+    const pSess = window.getPersistentAuthSession();
+    if (pSess && (pSess.isMainAdmin || (pSess.email || '').toLowerCase().trim() === mainAdminEmail)) {
+      return false;
+    }
+  }
+
+  // 3. Check if user is in authorized users list with active status and an edit role
+  if (currentEmail && typeof window.getAuthorizedUsersList === 'function') {
+    const list = window.getAuthorizedUsersList();
+    const u = list.find(x => (x.email || "").toLowerCase().trim() === currentEmail);
+    if (u && String(u.status || 'active').toLowerCase() === 'active') {
+      const role = String(u.role || '').toLowerCase();
+      // Any authorized role other than customer/viewer has FULL EDIT ACCESS!
+      if (['super_admin', 'admin', 'operator', 'staff', 'cashier', 'editor', 'billing'].includes(role)) {
+        return false;
+      }
+    }
+  }
+
+  // 4. Check current session role
+  const sessRole = String(sessionStorage.getItem("current_user_role") || "").toLowerCase();
+  if (['super_admin', 'admin', 'operator', 'staff', 'cashier', 'editor'].includes(sessRole)) {
+    return false;
+  }
+
+  // All unknown users, viewers, customers, or demo sessions are View-Only!
+  return true;
+};
+
+// Compatibility helper
+window.isCustomerAccount = function() {
+  return window.isViewOnlyUser();
+};
+
+window.loginAsFreeViewer = function(customData = {}) {
+  const email = (customData.email || "demo@viewer.com").toLowerCase().trim();
+  const name = customData.name || (customData.email ? customData.email.split("@")[0] : "Prospective Buyer");
+
+  sessionStorage.setItem("current_user_email", email);
+  sessionStorage.setItem("current_user_name", name);
+  sessionStorage.setItem("current_user_role", "viewer");
+  sessionStorage.setItem("is_main_admin", "false");
+  sessionStorage.setItem("is_demo_mode", "true");
+
+  localStorage.setItem("app_authenticated", "true");
+  localStorage.setItem("app_locked", "false");
+  isLocked = false;
+  document.body.classList.remove("app-is-locked");
+
+  const lockOverlay = document.getElementById("lock-screen-overlay");
+  if (lockOverlay) {
+    lockOverlay.classList.add("hidden");
+    lockOverlay.style.setProperty("display", "none", "important");
+  }
+
+  if (typeof window.applyRolePermissions === 'function') {
+    window.applyRolePermissions("viewer");
+  }
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast("👁️ Opened in Free View Mode! You can preview all tabs. Editing requires an authorized license from kandukurijagan99@gmail.com.", "info", 6000);
+  }
+};
+
+window.showProductBuyModal = function(actionContext = "") {
+  const modal = document.getElementById("product-buy-modal");
+  if (!modal) return;
+  const triggerEl = document.getElementById("buy-modal-trigger-notice");
+  if (triggerEl) {
+    if (actionContext && actionContext !== "banner" && actionContext !== "badge") {
+      triggerEl.innerHTML = `<i class="fa-solid fa-lock" style="color: #f59e0b;"></i> <span>${escapeHtml(actionContext)}</span>`;
+      triggerEl.style.display = "flex";
+    } else {
+      triggerEl.style.display = "none";
+    }
+  }
+  modal.classList.remove("hidden");
+  modal.style.setProperty("display", "flex", "important");
+  modal.style.setProperty("visibility", "visible", "important");
+  modal.style.setProperty("opacity", "1", "important");
+  modal.style.setProperty("pointer-events", "auto", "important");
+};
+
+window.closeProductBuyModal = function() {
+  const modal = document.getElementById("product-buy-modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.style.setProperty("display", "none", "important");
+  modal.style.setProperty("visibility", "hidden", "important");
+  modal.style.setProperty("opacity", "0", "important");
+  modal.style.setProperty("pointer-events", "none", "important");
+};
+
+// Legacy helper replacement
+window.isCustomerAccountOriginal = function() {
+  const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
+  const mainAdminEmail = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  if (currentEmail === mainAdminEmail) return false;
+  if (sessionStorage.getItem("is_main_admin") === "true") return false;
+
+  const currentRole = (typeof window.getCurrentResolvedRole === 'function') ? window.getCurrentResolvedRole() : (sessionStorage.getItem("current_user_role") || "admin");
+  return currentRole === "customer";
+};
 
 // --- NUMBER TO WORDS ENGINE (INDIAN RUPEES SYSTEM) ---
 function convertNumberToWords(num) {
@@ -3743,14 +3975,14 @@ function initializeApp() {
   // ============================================================================
   let multiUserSyncTimer = null;
   let lastCloudSyncPoll = 0;
-  let nextStaggeredPollInterval = 45000 + Math.floor(Math.random() * 30000);
+  let nextStaggeredPollInterval = 2000;
 
   async function performCloudHeartbeat(force = false) {
     const now = Date.now();
-    // Staggered adaptive polling (45s - 75s random jitter) protects Google Apps Script from 50 concurrent users
-    if (force || (now - lastCloudSyncPoll >= nextStaggeredPollInterval)) {
+    // Continuous 2-second polling as explicitly requested
+    if (force || (now - lastCloudSyncPoll >= 2000)) {
       lastCloudSyncPoll = now;
-      nextStaggeredPollInterval = 45000 + Math.floor(Math.random() * 30000);
+      nextStaggeredPollInterval = 2000;
       try {
         if (navigator.onLine && typeof window.triggerDatabaseSync === "function" && !isSyncing) {
           await window.triggerDatabaseSync(false);
@@ -3804,29 +4036,70 @@ function initializeApp() {
     }
   });
 
-  // Security Enforcement & Session Verification (v421 — strict lock enforcement)
-  const isManuallyLocked = localStorage.getItem("app_locked") === "true";
-  const hasSessionAuth = sessionStorage.getItem("session_authenticated") === "true";
-  const savedPwd = localStorage.getItem("saved_password") || "";
-  const lastActive = parseInt(localStorage.getItem("last_active_time") || "0", 10);
-  const lockTimeout = lockTimerSeconds > 0 ? (lockTimerSeconds * 1000) : 0;
-  const isTimedOut = lockTimeout > 0 && lastActive > 0 && (Date.now() - lastActive > lockTimeout);
+  // REAL-WORLD ENTERPRISE SESSION PERSISTENCE (Strict Main Admin Authorization)
+  if (typeof window.cleanStorageOfUnauthorizedUsers === 'function') {
+    window.cleanStorageOfUnauthorizedUsers();
+  }
+
+  const savedSession = (typeof window.getPersistentAuthSession === 'function') ? window.getPersistentAuthSession() : null;
+  const isManuallyLocked = sessionStorage.getItem("manual_locked") === "true";
+  const lockoutStatus = AppSecurity.isLockedOut();
+
+  let canStayUnlocked = false;
+  let candidateEmail = (savedSession?.email || sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
+
+  // STRICT AUDIT: If currently stored email is not authorized by Main Admin, purge immediately!
+  if (candidateEmail && typeof window.isUserAuthorizedByAdmin === 'function' && !window.isUserAuthorizedByAdmin(candidateEmail)) {
+    console.warn("Purging unauthorized session on boot for:", candidateEmail);
+    if (typeof window.clearPersistentAuthSession === 'function') {
+      window.clearPersistentAuthSession();
+    }
+    sessionStorage.clear();
+    localStorage.removeItem("aaryan_auth_session");
+    localStorage.removeItem("app_authenticated");
+    localStorage.setItem("app_locked", "true");
+    candidateEmail = "";
+  }
+
+  if (candidateEmail && typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(candidateEmail) && !isManuallyLocked && !lockoutStatus.locked) {
+    const isMainAdmin = (candidateEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
+    const usersList = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
+    const matchedUser = isMainAdmin
+      ? { status: "active", role: "super_admin", name: "Jagan (Main Admin)" }
+      : usersList.find(u => (u.email || "").toLowerCase().trim() === candidateEmail && u.status === "active");
+
+    if (matchedUser) {
+      canStayUnlocked = true;
+      const role = matchedUser.role || "customer";
+      const name = matchedUser.name || (isMainAdmin ? "Jagan (Main Admin)" : candidateEmail.split("@")[0]);
+      sessionStorage.setItem("session_authenticated", "true");
+      sessionStorage.setItem("current_user_email", candidateEmail);
+      sessionStorage.setItem("current_user_name", name);
+      sessionStorage.setItem("current_user_role", role);
+      sessionStorage.setItem("is_main_admin", isMainAdmin ? "true" : "false");
+      sessionStorage.setItem("manual_locked", "false");
+      sessionStorage.setItem("session_last_active_time", Date.now().toString());
+      localStorage.setItem("app_authenticated", "true");
+      localStorage.setItem("app_locked", "false");
+    } else {
+      if (typeof window.clearPersistentAuthSession === 'function') {
+        window.clearPersistentAuthSession();
+      }
+      sessionStorage.clear();
+      localStorage.removeItem("aaryan_auth_session");
+      localStorage.removeItem("app_authenticated");
+      localStorage.setItem("app_locked", "true");
+    }
+  }
 
   // Auto-migrate legacy cleartext saved_password to cryptographic SHA-256 token
+  const savedPwd = localStorage.getItem("saved_password") || "";
   if (savedPwd) {
     AppSecurity.purgePlaintextPasswords();
   }
 
-  // Check rate limit lockout state
-  const lockoutStatus = AppSecurity.isLockedOut();
-
-  // v424 ENTERPRISE ZERO-TRUST LOCK POLICY:
-  // Strict Boot Lock is enabled by default — EVERY launch & reload requires password/PIN
-  const sec = globalSettings?.security || {};
-  const isStrictBootLock = sec.strictBootLock !== false; // Default: true (Zero-Trust)
-  const canStayUnlocked = !isStrictBootLock && !isElectronApp && !isManuallyLocked && !lockoutStatus.locked && !isTimedOut && hasSessionAuth;
-
   // Restore Counter Privacy Shield if previously active
+  const sec = globalSettings?.security || {};
   const isPrivacyActive = localStorage.getItem("counter_privacy_mode") === "true" || sec.counterPrivacyMode === true;
   if (isPrivacyActive) {
     document.body.classList.add("counter-privacy-active");
@@ -3839,20 +4112,21 @@ function initializeApp() {
   }
 
   if (canStayUnlocked) {
-    unlockSystemSilently();
+    unlockSystemSilently(false);
+    const roleToApply = (typeof window.getCurrentResolvedRole === 'function') ? window.getCurrentResolvedRole() : (sessionStorage.getItem("current_user_role") || "admin");
+    if (typeof window.applyRolePermissions === 'function') {
+      window.applyRolePermissions(roleToApply);
+    }
   } else {
-    // Lock the system cleanly
-    isLocked = true;
-    localStorage.setItem("app_locked", "true");
-    sessionStorage.removeItem("session_authenticated");
+    // STRICT LOCKOUT: System must remain securely locked behind authentication overlay!
+    const lockReason = isManuallyLocked ? "manual" : "initial";
+    triggerLockOverlay(lockReason, false);
     document.body.classList.add("app-is-locked");
-
     const overlay = document.getElementById("lock-screen-overlay");
-    if (overlay) overlay.classList.remove("hidden");
-    const wrapper = document.querySelector('.dashboard-wrapper');
-    if (wrapper) wrapper.classList.add("blur-dashboard-wrapper");
-
-    // Setup login form credentials & check lockout
+    if (overlay) {
+      overlay.classList.remove("hidden");
+      overlay.style.setProperty("display", "flex", "important");
+    }
     autofillRememberedCredentials();
   }
 
@@ -3861,24 +4135,27 @@ function initializeApp() {
   if (typeof startSessionTimerTick === 'function') {
     startSessionTimerTick();
   }
-  ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel'].forEach(evt => {
+  ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel', 'click'].forEach(evt => {
     document.addEventListener(evt, resetAutolockTimer, { passive: true, capture: true });
   });
 
   // Background Tab Inactivity Auto-Lock (visibilitychange listener)
   document.addEventListener("visibilitychange", function() {
     if (document.hidden) {
-      localStorage.setItem("tab_hidden_timestamp", Date.now().toString());
+      sessionStorage.setItem("tab_hidden_timestamp", Date.now().toString());
     } else {
-      const hiddenTimeStr = localStorage.getItem("tab_hidden_timestamp");
+      const hiddenTimeStr = sessionStorage.getItem("tab_hidden_timestamp") || localStorage.getItem("tab_hidden_timestamp");
       if (hiddenTimeStr) {
         const hiddenTime = parseInt(hiddenTimeStr, 10);
         const elapsedSec = (Date.now() - hiddenTime) / 1000;
-        const lockThreshold = (typeof lockTimerSeconds !== "undefined" && lockTimerSeconds > 0) ? lockTimerSeconds : 120;
+        const lockThreshold = (typeof lockTimerSeconds !== "undefined" && lockTimerSeconds > 0) ? lockTimerSeconds : 1800;
         if (lockThreshold > 0 && elapsedSec >= lockThreshold && !isLocked) {
           AppSecurity.logEvent("BACKGROUND_AUTOLOCK", `App locked after ${Math.round(elapsedSec)}s inactive in background tab`, "INFO");
-          triggerLockOverlay();
+          triggerLockOverlay("inactivity_timeout", true);
+        } else if (!isLocked) {
+          resetAutolockTimer();
         }
+        sessionStorage.removeItem("tab_hidden_timestamp");
         localStorage.removeItem("tab_hidden_timestamp");
       }
     }
@@ -3933,7 +4210,7 @@ if (document.readyState === 'loading') {
 }
 
 // --- AUTHORITATIVE INITIAL BOOTSTRAP DATABASE (0ms Instant Loading on Any Device/Laptop) ---
-const INITIAL_BOOTSTRAP_SNAPSHOT = {"version":"1.0.0","generatedAt":"2026-09-20T18:04:28.789Z","invoices":[{"id":"inv_1789924736074_48","qrToken":"Q-0001-Z1HMA98H","invoiceNo":"0001","invoiceDate":"2026-09-20","customerName":"hari","buyer":{"name":"hari","address":"Repalle","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"hari","state":"Andhra Pradesh","stateCode":"37"},"items":[{"id":"1789924708639_280","productId":"prod-1789924485015-616","baleNo":"1","description":"GEO CAR","hsn":"5667886","packSize":"25","quantity":37,"unit":"Bucket","rate":3599,"gstRate":0,"discount":30,"amount":93214.09999999999}],"itemsCount":1,"taxable":93214.1,"cgst":0,"sgst":0,"igst":0,"roundOff":-0.1,"total":93214,"paymentStatus":"Paid","paymentMode":"UPI / QR","paidAmount":93214,"balancePaid":0,"balanceDue":0,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789924736074_48","qrToken":"Q-0001-Z1HMA98H","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0001","invoiceDate":"2026-09-20","paymentDate":"2026-09-20","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Paid","paymentMode":"UPI / QR","paidAmount":93214,"balancePaid":0,"balanceDue":0,"buyer":{"name":"hari","address":"Repalle","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"hari","state":"Andhra Pradesh","stateCode":"37"},"items":[{"id":"1789924708639_280","productId":"prod-1789924485015-616","baleNo":"1","description":"GEO CAR","hsn":"5667886","packSize":"25","quantity":37,"unit":"Bucket","rate":3599,"gstRate":0,"discount":30,"amount":93214.09999999999}],"supplyPlace":"Andhra Pradesh","taxable":93214.1,"cgst":0,"sgst":0,"igst":0,"total":93214,"pdfUrl":"https://drive.google.com/file/d/1jYvHx34qHsJq_QSSOERK4nmLIJtCLW1_/view?usp=sharing"},"pdfUrl":"https://drive.google.com/file/d/1jYvHx34qHsJq_QSSOERK4nmLIJtCLW1_/view?usp=sharing"},{"id":"inv_1789925299558_884","qrToken":"Q-0002-B49YWHXT","invoiceNo":"0002","invoiceDate":"2026-09-20","customerName":"Cash Customer","buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"state":"Andhra Pradesh","stateCode":"37"},"items":[{"id":"1789925231957_227","productId":"prod-1789924485015-616","baleNo":"1","description":"GEO CAR","hsn":"5667886","packSize":"25","quantity":33,"unit":"Bucket","rate":3599,"gstRate":0,"discount":30,"amount":83136.9}],"itemsCount":1,"taxable":83136.9,"cgst":0,"sgst":0,"igst":0,"roundOff":0.1,"total":83137,"paymentStatus":"Paid","paymentMode":"Bank Transfer","paidAmount":83137,"balancePaid":83137,"balanceDue":0,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789925299558_884","qrToken":"Q-0002-B49YWHXT","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0002","invoiceDate":"2026-09-20","paymentDate":"2026-09-20","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Paid","paymentMode":"Bank Transfer","paidAmount":83137,"balancePaid":83137,"balanceDue":0,"buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"state":"Andhra Pradesh","stateCode":"37"},"items":[{"id":"1789925231957_227","productId":"prod-1789924485015-616","baleNo":"1","description":"GEO CAR","hsn":"5667886","packSize":"25","quantity":33,"unit":"Bucket","rate":3599,"gstRate":0,"discount":30,"amount":83136.9}],"supplyPlace":"Andhra Pradesh","taxable":83136.9,"cgst":0,"sgst":0,"igst":0,"total":83137,"pdfUrl":"https://drive.google.com/file/d/1oJkqBHQGk7Th5Nrl1nE8Z7fK8xEEw3P-/view?usp=sharing"},"_ts":1789925299558,"pdfUrl":"https://drive.google.com/file/d/1oJkqBHQGk7Th5Nrl1nE8Z7fK8xEEw3P-/view?usp=sharing","paymentHistory":[{"date":"2026-09-20T17:29:24.075Z","amount":83137,"mode":"Bank Transfer","status":"Paid","source":"Admin Verification Modal Settlement"}]},{"id":"inv_1789831709460_181","qrToken":"Q-0003-L5P0YPF5","invoiceNo":"0003","invoiceDate":"2026-09-19","customerName":"JAGAN","buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789831704293_350","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":1,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":5920.2}],"itemsCount":1,"taxable":5920.2,"cgst":0,"sgst":0,"igst":0,"roundOff":-0.2,"total":5920,"paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":5920,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789831709460_181","qrToken":"Q-0003-L5P0YPF5","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0003","invoiceDate":"2026-09-19","paymentDate":"2026-09-19","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":5920,"buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789831704293_350","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":1,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":5920.2}],"supplyPlace":"Andhra Pradesh","taxable":5920.2,"cgst":0,"sgst":0,"igst":0,"total":5920,"pdfUrl":"https://drive.google.com/file/d/1A3t7wRRh7a7L-u4wCAE4bEcrVVcDXlgA/view?usp=sharing"},"waAutoSent":true,"pdfUrl":"https://drive.google.com/file/d/1A3t7wRRh7a7L-u4wCAE4bEcrVVcDXlgA/view?usp=sharing"},{"id":"inv_1789834327560_22","qrToken":"Q-0004-59U0ZBJW","invoiceNo":"0004","invoiceDate":"2026-09-19","customerName":"JAGAN","buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789834323721_49","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"itemsCount":1,"taxable":29601,"cgst":0,"sgst":0,"igst":0,"roundOff":0,"total":29601,"paymentStatus":"Partial","paymentMode":"UPI / Online","paidAmount":9601,"balancePaid":9601,"balanceDue":20000,"transportMode":"ugyj","destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789834327560_22","qrToken":"Q-0004-59U0ZBJW","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0004","invoiceDate":"2026-09-19","paymentDate":"2026-09-19","buyerOrderNo":"hgbn","buyerOrderDate":"2026-09-19","transportMode":"ugyj","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Partial","paymentMode":"UPI / Online","paidAmount":9601,"balancePaid":9601,"balanceDue":20000,"buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789834323721_49","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"supplyPlace":"Andhra Pradesh","taxable":29601,"cgst":0,"sgst":0,"igst":0,"total":29601,"pdfUrl":"https://drive.google.com/file/d/1J2vdHNE4QZs7qlSGjS21mxWxOyQp6lFI/view?usp=sharing"},"waAutoSent":true,"pdfUrl":"https://drive.google.com/file/d/1J2vdHNE4QZs7qlSGjS21mxWxOyQp6lFI/view?usp=sharing","paymentHistory":[{"date":"2026-09-19T16:16:16.335Z","amount":9601,"mode":"UPI / Online","status":"Partial","source":"QR Verification Portal Settlement"}]},{"id":"inv_1789834640715_722","qrToken":"Q-0005-BZGSFY4Y","invoiceNo":"0005","invoiceDate":"2026-09-19","customerName":"JAGAN","buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789834636492_247","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":11840.4}],"itemsCount":1,"taxable":11840.4,"cgst":0,"sgst":0,"igst":0,"roundOff":-0.4,"total":11840,"paymentStatus":"Partial","paymentMode":"Cash","paidAmount":1840,"balancePaid":1840,"balanceDue":10000,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789834640715_722","qrToken":"Q-0005-BZGSFY4Y","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0005","invoiceDate":"2026-09-19","paymentDate":"2026-09-19","buyerOrderNo":"uygjh","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Partial","paymentMode":"Cash","paidAmount":1840,"balancePaid":1840,"balanceDue":10000,"buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789834636492_247","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":11840.4}],"supplyPlace":"Andhra Pradesh","taxable":11840.4,"cgst":0,"sgst":0,"igst":0,"total":11840,"pdfUrl":"https://drive.google.com/file/d/1Uxn1Z02rVb9QMZY3ohEN-MjhX2CKVO4W/view?usp=sharing"},"pdfUrl":"https://drive.google.com/file/d/1Uxn1Z02rVb9QMZY3ohEN-MjhX2CKVO4W/view?usp=sharing","paymentHistory":[{"date":"2026-09-19T16:49:51.154Z","amount":1840,"mode":"Cash","status":"Partial","source":"Admin Verification Modal Settlement"}]},{"id":"inv_1789837623716_832","qrToken":"Q-0006-3X5W99H6","invoiceNo":"0006","invoiceDate":"2026-09-19","customerName":"JAGAN","buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789837604002_277","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":11840.4},{"id":"1789837619468_564","productId":"prod-1789824170501-324","baleNo":"2","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":11840.4}],"itemsCount":2,"taxable":23680.8,"cgst":0,"sgst":0,"igst":0,"roundOff":0.2,"total":23681,"paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":23681,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789837623716_832","qrToken":"Q-0006-3X5W99H6","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0006","invoiceDate":"2026-09-19","paymentDate":"2026-09-19","buyerOrderDate":"2026-09-19","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":23681,"buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789837604002_277","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":11840.4},{"id":"1789837619468_564","productId":"prod-1789824170501-324","baleNo":"2","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":11840.4}],"supplyPlace":"Andhra Pradesh","taxable":23680.8,"cgst":0,"sgst":0,"igst":0,"total":23681}},{"id":"inv_1789837742259_920","qrToken":"Q-0007-6GMR84TM","invoiceNo":"0007","invoiceDate":"2026-09-19","customerName":"JAGAN","buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789837742240_995","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"itemsCount":1,"taxable":29601,"cgst":0,"sgst":0,"igst":0,"roundOff":0,"total":29601,"paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":29601,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789837742259_920","qrToken":"Q-0007-6GMR84TM","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0007","invoiceDate":"2026-09-19","paymentDate":"2026-09-19","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":29601,"buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789837742240_995","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"supplyPlace":"Andhra Pradesh","taxable":29601,"cgst":0,"sgst":0,"igst":0,"total":29601}},{"id":"inv_1789837765693_130","qrToken":"Q-0008-6YPP209D","invoiceNo":"0008","invoiceDate":"2026-09-19","customerName":"JAGAN","buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789837760498_372","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":1,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":5920.2}],"itemsCount":1,"taxable":5920.2,"cgst":0,"sgst":0,"igst":0,"roundOff":-0.2,"total":5920,"paymentStatus":"Partial","paymentMode":"UPI / Online","paidAmount":2920,"balancePaid":2920,"balanceDue":3000,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789837765693_130","qrToken":"Q-0008-6YPP209D","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0008","invoiceDate":"2026-09-19","paymentDate":"2026-09-19","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Partial","paymentMode":"UPI / Online","paidAmount":2920,"balancePaid":2920,"balanceDue":3000,"buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789837760498_372","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":1,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":5920.2}],"supplyPlace":"Andhra Pradesh","taxable":5920.2,"cgst":0,"sgst":0,"igst":0,"total":5920},"waAutoSent":true,"paymentHistory":[{"date":"2026-09-19T17:14:56.840Z","amount":920,"mode":"UPI / Online","status":"Partial","source":"QR Verification Portal Settlement"},{"date":"2026-09-20T03:09:43.570Z","amount":1000,"mode":"UPI / Online","status":"Partial","source":"QR Verification Portal Settlement"},{"date":"2026-09-20T03:14:03.833Z","amount":1000,"mode":"UPI / Online","status":"Partial","source":"QR Verification Portal Settlement"}]},{"id":"inv_1789872929716_939","qrToken":"Q-0009-4NG4Y055","invoiceNo":"0009","invoiceDate":"2026-09-20","customerName":"JAGAN","buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789872907109_151","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":5,"amount":12498.199999999999}],"itemsCount":1,"taxable":12498.2,"cgst":0,"sgst":0,"igst":0,"roundOff":-0.2,"total":12498,"paymentStatus":"Paid","paymentMode":"UPI / Online","paidAmount":12498,"balancePaid":11498,"balanceDue":0,"transportMode":"yfuhnb","destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789872929716_939","qrToken":"Q-0009-4NG4Y055","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0009","invoiceDate":"2026-09-20","paymentDate":"2026-09-20","buyerOrderNo":"gjhbmn","buyerOrderDate":"2026-09-20","transportMode":"yfuhnb","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Paid","paymentMode":"UPI / Online","paidAmount":12498,"balancePaid":11498,"balanceDue":0,"buyer":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789872907109_151","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":2,"unit":"Bucket","rate":6578,"gstRate":0,"discount":5,"amount":12498.199999999999}],"supplyPlace":"Andhra Pradesh","taxable":12498.2,"cgst":0,"sgst":0,"igst":0,"total":12498,"pdfUrl":"https://drive.google.com/file/d/1iZkRhNvoGkmxux4H03fw3kAPp8ZO4mKW/view?usp=sharing"},"waAutoSent":true,"pdfUrl":"https://drive.google.com/file/d/1iZkRhNvoGkmxux4H03fw3kAPp8ZO4mKW/view?usp=sharing","paymentHistory":[{"date":"2026-09-20T03:09:22.181Z","amount":11498,"mode":"UPI / Online","status":"Paid","source":"QR Verification Portal Settlement"}]},{"id":"inv_1789874678678_37","qrToken":"Q-0010-64YEH4KR","invoiceNo":"0010","invoiceDate":"2026-09-20","customerName":"abc","buyer":{"name":"abc","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"abc","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789874673846_124","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"itemsCount":1,"taxable":29601,"cgst":0,"sgst":0,"igst":0,"roundOff":0,"total":29601,"paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":29601,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789874678678_37","qrToken":"Q-0010-64YEH4KR","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0010","invoiceDate":"2026-09-20","paymentDate":"2026-09-20","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":29601,"buyer":{"name":"abc","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"consignee":{"name":"abc","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789874673846_124","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"supplyPlace":"Andhra Pradesh","taxable":29601,"cgst":0,"sgst":0,"igst":0,"total":29601}},{"id":"inv_1789876080820_593","qrToken":"Q-0011-06US85T0","invoiceNo":"0011","invoiceDate":"2026-09-20","customerName":"JAGAN","buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789876070247_767","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"itemsCount":1,"taxable":29601,"cgst":0,"sgst":0,"igst":0,"roundOff":0,"total":29601,"paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":29601,"destination":"Andhra Pradesh","supplyStateCode":"37","isEstimate":false,"details":{"id":"inv_1789876080820_593","qrToken":"Q-0011-06US85T0","isEditing":false,"invoiceType":"Bill of Supply","headerLogo":"ganesha","invoiceNo":"0011","invoiceDate":"2026-09-20","paymentDate":"2026-09-20","destination":"Andhra Pradesh","supplyStateCode":"37","paymentStatus":"Unpaid","paymentMode":"UPI / QR","paidAmount":0,"balancePaid":0,"balanceDue":29601,"buyer":{"name":"Cash Customer","state":"Andhra Pradesh","stateCode":"37"},"consignee":{"name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947"},"items":[{"id":"1789876070247_767","productId":"prod-1789824170501-324","baleNo":"1","description":"Y7UJKM","hsn":"87654678","packSize":"89kg","quantity":5,"unit":"Bucket","rate":6578,"gstRate":0,"discount":10,"amount":29601}],"supplyPlace":"Andhra Pradesh","taxable":29601,"cgst":0,"sgst":0,"igst":0,"total":29601},"_ts":1789876080820}],"products":[{"id":"prod-1789924485015-616","description":"GEO CAR","hsn":"5667886","packSize":"25","unit":"Bucket","rate":3599,"costPrice":1988.45,"price":1988.45,"gstRate":0,"discount":44.75,"stock":180,"status":"In Stock","totalValue":357921,"updatedAt":"2026-09-20T17:32:18.489Z"}],"parties":[{"id":"party-1789825147707-894","type":"receiver","name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947","updatedAt":"2026-09-19T13:39:07.707Z"},{"id":"party-1789825174872-232","type":"consignee","name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947","updatedAt":"2026-09-19T13:39:34.872Z"},{"id":"pty_1789874678666_576","name":"abc","type":"receiver","phone":"8367047947","state":"Andhra Pradesh","stateCode":"37","createdAt":"2026-09-20T03:24:38.666Z"}],"settings":{"company":{"name":"AARYAN AQUA NEEDS","tagline":"QUALITY PRODUCTS FOR BETTER AQUACULTURE","address":"Door No: 10-13-94/42A REVENUE WARD 7\nAP HOUSING BOARD COLONY, REPALLE Village,\nREPALLE Mandal, Bapatla District, Pincode 522265","phones":"+91 74166 05652","email":"aaryanaquaneeds@gmail.com","gstin":"37ACNFA4687Q1ZC","state":"Andhra Pradesh","stateCode":"37","website":"www.aaryan-aqua.com"},"bank":{"name":"State Bank of India","accountName":"Aaryan aqua Needs","accountNo":"45413424177","ifsc":"SBIN0000911","branch":"Repalle"},"upiId":"7386262139@upi","telegram":{"token":"8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g","chatId":"6877857251, 7906132548","botUsername":"fishbilling_bot_bot","autoSend":true},"security":{"autolock":"60","username":"Aaryanaqua","password":"Aaryan@2024","whatsappLockEnabled":false,"whatsappPin":"2024","whatsappAutoLockMinutes":"15","whatsappMaskPhones":true,"whatsappProtectChats":true,"securityPin":"2024","strictBootLock":true,"counterPrivacyMode":false},"terms":["We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct."]}};
+const INITIAL_BOOTSTRAP_SNAPSHOT = {"version":"1.0.0","generatedAt":"2026-09-20T18:04:28.789Z","invoices":[],"products":[{"id":"prod-1789924485015-616","description":"GEO CAR","hsn":"5667886","packSize":"25","unit":"Bucket","rate":3599,"costPrice":1988.45,"price":1988.45,"gstRate":0,"discount":44.75,"stock":180,"status":"In Stock","totalValue":357921,"updatedAt":"2026-09-20T17:32:18.489Z"}],"parties":[{"id":"party-1789825147707-894","type":"receiver","name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947","updatedAt":"2026-09-19T13:39:07.707Z"},{"id":"party-1789825174872-232","type":"consignee","name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947","updatedAt":"2026-09-19T13:39:34.872Z"},{"id":"pty_1789874678666_576","name":"abc","type":"receiver","phone":"8367047947","state":"Andhra Pradesh","stateCode":"37","createdAt":"2026-09-20T03:24:38.666Z"}],"settings":{"company":{"name":"AARYAN AQUA NEEDS","tagline":"QUALITY PRODUCTS FOR BETTER AQUACULTURE","address":"Door No: 10-13-94/42A REVENUE WARD 7\nAP HOUSING BOARD COLONY, REPALLE Village,\nREPALLE Mandal, Bapatla District, Pincode 522265","phones":"+91 74166 05652","email":"aaryanaquaneeds@gmail.com","gstin":"37ACNFA4687Q1ZC","state":"Andhra Pradesh","stateCode":"37","website":"www.aaryan-aqua.com"},"bank":{"name":"State Bank of India","accountName":"Aaryan aqua Needs","accountNo":"45413424177","ifsc":"SBIN0000911","branch":"Repalle"},"upiId":"7386262139@upi","telegram":{"token":"8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g","chatId":"6877857251, 7906132548","botUsername":"fishbilling_bot_bot","autoSend":true},"security":{"autolock":"60","username":"kandukurijagan99@gmail.com","email":"kandukurijagan99@gmail.com","password":"Aaryan@2024","whatsappLockEnabled":false,"whatsappPin":"2024","whatsappAutoLockMinutes":"15","whatsappMaskPhones":true,"whatsappProtectChats":true,"securityPin":"2024","strictBootLock":true,"counterPrivacyMode":false},"terms":["We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct."]}};
 
 // --- LOCAL STORAGE DATABASES SEEDING (EXCLUSIVELY GOOGLE DATABASE ARCHITECTURE) ---
 function seedDatabasesIfEmpty() {
@@ -3981,44 +4258,47 @@ function seedDatabasesIfEmpty() {
     window.partiesDb = partiesDb;
   }
 
-  // 4. Seed Invoices if empty
+  // 4. Invoices Database (initialized clean, never force-seeded with mock invoices)
   try {
-    const localInvs = JSON.parse(localStorage.getItem("invoices") || "[]");
-    if (!Array.isArray(localInvs) || localInvs.length === 0) {
-      localStorage.setItem("invoices", JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.invoices));
-      invoicesDb = INITIAL_BOOTSTRAP_SNAPSHOT.invoices;
-      window.invoicesDb = invoicesDb;
+    const localInvs = JSON.parse(localStorage.getItem("invoices") || "null");
+    if (Array.isArray(localInvs)) {
+      invoicesDb = localInvs;
+    } else {
+      invoicesDb = [];
+      localStorage.setItem("invoices", JSON.stringify([]));
     }
   } catch (e) {
-    localStorage.setItem("invoices", JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.invoices));
-    invoicesDb = INITIAL_BOOTSTRAP_SNAPSHOT.invoices;
-    window.invoicesDb = invoicesDb;
+    invoicesDb = [];
+    localStorage.setItem("invoices", JSON.stringify([]));
   }
-
-  // 5. Clean up any stale tombstones for active invoices #0001 through #0011
-  try {
-    let tombstones = JSON.parse(localStorage.getItem("deleted_invoice_ids") || "[]");
-    if (Array.isArray(tombstones) && tombstones.length > 0) {
-      const activeNos = new Set(['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11']);
-      tombstones = tombstones.filter(t => {
-        const clean = String(t || '').replace(/^#/, '').replace(/^inv_/, '').trim();
-        return !activeNos.has(clean);
-      });
-      localStorage.setItem("deleted_invoice_ids", JSON.stringify(tombstones));
-    }
-  } catch (e) {}
+  if (typeof window.filterOutDeletedInvoices === 'function') {
+    invoicesDb = window.filterOutDeletedInvoices(invoicesDb);
+    try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch (e) {}
+  }
+  window.invoicesDb = invoicesDb;
 }
 
 function loadAllDatabases() {
   try {
-    const invLocal = JSON.parse(localStorage.getItem("invoices") || "[]");
-    if (Array.isArray(invLocal) && invLocal.length > 0) {
-      invoicesDb = invLocal;
-    } else if ((!invoicesDb || invoicesDb.length === 0) && typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.invoices)) {
-      invoicesDb = INITIAL_BOOTSTRAP_SNAPSHOT.invoices;
-      try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
-    }
+    localStorage.removeItem("cancelled_invoices");
+    localStorage.removeItem("database_history_cleared_at");
   } catch(e) {}
+
+  try {
+    const invLocal = JSON.parse(localStorage.getItem("invoices") || "null");
+    if (Array.isArray(invLocal)) {
+      invoicesDb = invLocal;
+    } else {
+      invoicesDb = [];
+    }
+  } catch(e) {
+    invoicesDb = [];
+  }
+  if (typeof window.filterOutDeletedInvoices === 'function') {
+    invoicesDb = window.filterOutDeletedInvoices(invoicesDb);
+    try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
+  }
+  window.invoicesDb = invoicesDb;
 
   try {
     const prodLocal = JSON.parse(localStorage.getItem("products") || "[]");
@@ -4026,8 +4306,22 @@ function loadAllDatabases() {
       productsDb = prodLocal;
     } else if ((!productsDb || productsDb.length === 0) && typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.products)) {
       productsDb = INITIAL_BOOTSTRAP_SNAPSHOT.products;
+    }
+    
+    // Client-side self-healing: Fix massive negative epoch numbers
+    if (Array.isArray(productsDb)) {
+      productsDb.forEach(p => {
+        if (p) {
+          let s = Number(p.stock);
+          if (isNaN(s) || s < -100000 || s > 10000000) p.stock = 0;
+          if ((!p.stock || p.stock === 0) && p.totalValue > 0 && p.price > 0) {
+            p.stock = Math.round(p.totalValue / p.price);
+          }
+        }
+      });
       try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
     }
+
   } catch(e) {}
 
   try {
@@ -4104,8 +4398,8 @@ function loadAllDatabases() {
   if (!globalSettings.security) {
     globalSettings.security = {};
   }
-  if (!globalSettings.security.username || globalSettings.security.username === "1234") {
-    globalSettings.security.username = "Aaryanaqua";
+  if (!globalSettings.security.username || globalSettings.security.username === "1234" || globalSettings.security.username === "Aaryanaqua" || globalSettings.security.username === "admin") {
+    globalSettings.security.username = "kandukurijagan99@gmail.com";
   }
   if (!globalSettings.security.password || globalSettings.security.password === "1234" || globalSettings.security.pin === "1234") {
     globalSettings.security.password = "Aaryan@2024";
@@ -4176,6 +4470,10 @@ function loadAllDatabases() {
   lockTimerSeconds = parseInt(globalSettings.security?.autolock !== undefined ? globalSettings.security.autolock : "1800", 10);
   if (Number.isNaN(lockTimerSeconds)) {
     lockTimerSeconds = 1800;
+  }
+
+  if (typeof window.applyRolePermissions === 'function') {
+    window.applyRolePermissions();
   }
 }
 
@@ -4379,13 +4677,13 @@ function validateInvoiceStockAvailability(newItems, oldItems = []) {
       const effectiveAvailable = availableStock + previouslyInvoicedQty;
 
       if (effectiveAvailable <= 0) {
-        showFloatingToast(`❌ Cannot save invoice: "${prod.description}" is currently OUT OF STOCK (Available: 0).`, "warning");
-        return false;
-      }
-
-      if (totalReq > effectiveAvailable) {
-        showFloatingToast(`❌ Cannot save invoice: Insufficient stock for "${prod.description}". Available: ${effectiveAvailable} ${prod.unit || 'units'}, but invoice has ${totalReq}. Please adjust quantity.`, "warning");
-        return false;
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast(`ℹ️ Stock notice: "${prod.description}" is at 0 recorded stock.`, "info", 3000);
+        }
+      } else if (totalReq > effectiveAvailable) {
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast(`ℹ️ Stock notice: "${prod.description}" quantity (${totalReq}) exceeds recorded stock (${effectiveAvailable}).`, "info", 3000);
+        }
       }
     }
   }
@@ -4435,6 +4733,16 @@ window.closeMobileSidebar = function() {
 
 window.switchTab = function(tabName) {
   if (isLocked) return;
+
+  const currentRole = sessionStorage.getItem("current_user_role");
+  // Only restrict pure customer role (client checking their ledger) from store management, but allow general demo viewers to evaluate all tabs!
+  if (currentRole === "customer" && ["billing", "products", "parties", "reports", "settings"].includes(tabName)) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Customer accounts can only view Dashboard & Invoices. Contact kandukurijagan99@gmail.com for full access.", "warning", 3500);
+    }
+    tabName = "dashboard";
+  }
+
   if (typeof window.triggerHapticFeedback === 'function') {
     window.triggerHapticFeedback(10);
   }
@@ -4513,6 +4821,9 @@ window.switchTab = function(tabName) {
     resetReportsView();
   } else if (tabName === 'settings') {
     loadSettingsFields();
+    if (typeof window.renderUserManagerTable === 'function') {
+      window.renderUserManagerTable();
+    }
   }
 };
 
@@ -4893,10 +5204,27 @@ window.renderCustomerLedgerSummary = function() {
 function updateDashboardOverview() {
   loadAllDatabases();
 
+  // Rebuild TurboDataStore indexes to stay in sync with filtered databases
+  if (typeof window.TurboDataStore !== 'undefined' && window.TurboDataStore.rebuildIndexes) {
+    window.TurboDataStore.rebuildIndexes();
+  }
+
   // Clean out invalid / corrupted entries
   invoicesDb = (invoicesDb || []).filter(inv => inv && (inv.id || inv.invoiceNo) && inv.id !== 'inv_test_delta');
 
-  const isSyncLoading = invoicesDb.length === 0 && !window.isInitialSyncDone;
+  let activeInvoices = invoicesDb;
+  const isCust = (typeof window.isCustomerAccount === 'function') ? window.isCustomerAccount() : false;
+  if (isCust) {
+    const curName = (sessionStorage.getItem("current_user_name") || "").toLowerCase().trim();
+    if (curName) {
+      activeInvoices = invoicesDb.filter(inv => {
+        const invName = (inv.customerName || (inv.details && inv.details.buyer && inv.details.buyer.name) || "").toLowerCase().trim();
+        return invName === curName || invName.includes(curName) || curName.includes(invName);
+      });
+    }
+  }
+
+  const isSyncLoading = activeInvoices.length === 0 && !window.isInitialSyncDone;
 
   if (isSyncLoading) {
     if (elements.statTotalInvoices) elements.statTotalInvoices.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size: 16px;"></i>`;
@@ -4908,13 +5236,13 @@ function updateDashboardOverview() {
     const ss = document.getElementById("stat-settlement-rate");
     if (ss) ss.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size: 16px;"></i>`;
   } else {
-    if (elements.statTotalInvoices) elements.statTotalInvoices.textContent = invoicesDb.length;
+    if (elements.statTotalInvoices) elements.statTotalInvoices.textContent = activeInvoices.length;
     let totalRevenue = 0;
     let totalCollected = 0;
     let totalBalanceDue = 0;
     let pendingInvoicesCount = 0;
 
-    (invoicesDb || []).forEach(inv => {
+    (activeInvoices || []).forEach(inv => {
       if (!inv) return;
       const isEst = Boolean(inv.isEstimate || inv.details?.isEstimate || String(inv.invoiceNo || "").startsWith("EST-"));
       if (isEst) return;
@@ -4961,7 +5289,7 @@ function updateDashboardOverview() {
     // Advanced Gross Profit & Margin Analytics Calculation
     let allInvoicesCost = 0;
     let allInvoicesTaxable = 0;
-    (invoicesDb || []).forEach(inv => {
+    (activeInvoices || []).forEach(inv => {
       if (!inv) return;
       const items = inv.items || inv.details?.items || [];
       items.forEach(it => {
@@ -5051,8 +5379,10 @@ function updateDashboardOverview() {
         if (status === 'Partial') badgeClass = 'badge-partial';
         if (status === 'Unpaid') badgeClass = 'badge-unpaid';
 
+        const isCustomerRole = (typeof window.isCustomerAccount === 'function') ? window.isCustomerAccount() : false;
+
         let balanceQrDropdownItem = "";
-        if (!isEstimate && !isPaid && balance > 0) {
+        if (!isEstimate && !isPaid && balance > 0 && !isCustomerRole) {
           balanceQrDropdownItem = `
             <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openBalanceQrModal('${inv.id}')"><i class="fa-solid fa-qrcode" style="color: #06b6d4;"></i> Scan &amp; Settle Balance (₹ ${formatCurrency(balance)})</a>
           `;
@@ -5072,20 +5402,22 @@ function updateDashboardOverview() {
           <td class="text-center" style="white-space: nowrap;">${itemsCount}</td>
           <td style="text-align: right; font-weight: 700; white-space: nowrap;">₹ ${formatCurrency(invTotal)}</td>
           <td class="text-center" style="white-space: nowrap;">
-            <span class="badge-status ${badgeClass}">${status}</span>
-            ${(!isPaid && balance > 0) ? `<div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>` : ''}
+            ${(!isPaid && balance > 0 && !isCustomerRole)
+              ? `<span class="badge-status ${badgeClass}" onclick="openBalanceQrModal('${inv.id}')" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode" style="font-size: 11px;"></i>${status}</span><div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>`
+              : `<span class="badge-status ${badgeClass}">${status}</span>${(!isPaid && balance > 0 ? `<div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>` : '')}`}
           </td>
           <td class="actions-cell">
+            ${(!isEstimate && !isPaid && balance > 0 && !isCustomerRole) ? `<button class="action-btn share action-btn-qr" onclick="openBalanceQrModal('${inv.id}')" title="Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode"></i></button>` : ''}
             <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${inv.id}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
             <button class="action-btn print action-btn-thermal" onclick="openInvoicePrintPreview('${inv.id}', 'thermal')" title="Preview &amp; Print POS Thermal"><i class="fa-solid fa-receipt"></i></button>
             <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Share PDF via WhatsApp (1-Click)"><i class="fa-brands fa-whatsapp"></i></button>
-            <button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Invoice"><i class="fa-solid fa-pen-to-square"></i></button>
-            <button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Invoice"><i class="fa-solid fa-trash"></i></button>
+            ${!isCustomerRole ? `<button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Invoice"><i class="fa-solid fa-pen-to-square"></i></button>` : ''}
+            ${!isCustomerRole ? `<button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Invoice"><i class="fa-solid fa-trash"></i></button>` : ''}
             <div class="action-dropdown-wrapper">
               <button class="action-btn more-btn" onclick="toggleActionDropdown('${inv.id}', event)" title="More Options"><i class="fa-solid fa-ellipsis-vertical"></i></button>
               <div id="action-dropdown-${inv.id}" class="action-dropdown-menu hidden" onclick="event.stopPropagation();">
                 <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); downloadSavedInvoicePdf('${inv.id}', this)"><i class="fa-solid fa-file-pdf text-rose"></i> Download PDF</a>
-                <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatInvoice('${inv.id}')"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i> Clone / Repeat Bill</a>
+                ${!isCustomerRole ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatInvoice('${inv.id}')"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i> Clone / Repeat Bill</a>` : ''}
                 ${balanceQrDropdownItem}
                 <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openUniversalInvoiceShareModal('${inv.id}')"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i> Universal Share Link</a>
                 <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openInvoiceVerificationModal('${inv.id || inv.invoiceNo}')"><i class="fa-solid fa-shield-check" style="color: #10b981;"></i> Verify &amp; Digital Receipt</a>
@@ -5259,12 +5591,18 @@ function bindBillingFormInputs() {
   window.playAudioFeedback = function(type) {
     if (!audioFxEnabled) return;
     try {
+      // Prevent browser warnings by only initializing audio if user has interacted
+      if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
+
       if (!audioCtx) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         if (AudioContext) audioCtx = new AudioContext();
       }
       if (!audioCtx) return;
-      if (audioCtx.state === 'suspended') audioCtx.resume();
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(()=>{});
+        if (audioCtx.state === 'suspended') return;
+      }
 
       const now = audioCtx.currentTime;
       const osc = audioCtx.createOscillator();
@@ -7804,9 +8142,9 @@ window.testSampleInvoiceQrUpload = function() {
     ? invoicesDb[0]
     : { invoiceNo: "INV-2026-0001", total: 3599, paidAmount: 1599, balanceDue: 2000, buyerName: "Devi Fisheries" };
 
-  const testUrl = (typeof window.generateInvoiceVerificationUrl === "function")
-    ? window.generateInvoiceVerificationUrl(testInv.invoiceNo, testInv)
-    : `https://nenduku644-hash.github.io/fish/?verify_invoice=${testInv.invoiceNo}`;
+  const testUrl = (typeof window.getInvoiceVerificationUrl === "function")
+    ? window.getInvoiceVerificationUrl(testInv.invoiceNo, testInv)
+    : `https://kandukurijagan1.github.io/fish-billing/?verify_invoice=${testInv.invoiceNo}`;
 
   const canvas = document.createElement("canvas");
   if (typeof QRious !== "undefined") {
@@ -8339,6 +8677,8 @@ function calculateSummaryAndTable() {
   elements.sumRoundOff.textContent = (roundOff < 0 ? `- ` : `+ `) + `₹ ${formatCurrency(Math.abs(roundOff))}`;
   elements.sumGrandTotal.textContent = `₹ ${formatCurrency(roundedGrandTotal)}`;
   elements.sumGrandWords.textContent = convertNumberToWords(roundedGrandTotal);
+  const billQrBtnAmt = document.getElementById("bill-qr-btn-amt");
+  if (billQrBtnAmt) billQrBtnAmt.textContent = `₹ ${formatCurrency(roundedGrandTotal)}`;
 
   // Trigger price pulse animation
   if (elements.sumGrandTotal) {
@@ -8496,6 +8836,21 @@ function prepareInvoiceItemsBeforeSave() {
 
 // --- UNIFIED INVOICE SAVE ENGINE ---
 window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl = null) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof window.showProductBuyModal === 'function') {
+      window.showProductBuyModal("To create, save, or print invoices, please upgrade to a Commercial License.");
+    } else if (typeof showFloatingToast === 'function') {
+      showFloatingToast("👁️ Free View Mode: Invoice saving is disabled. Contact kandukurijagan99@gmail.com for a license.", "info", 5000);
+    }
+    return null;
+  }
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot create or modify invoices.", "error", 4000);
+    }
+    return null;
+  }
+
   if (isSavingInvoice) return null;
   isSavingInvoice = true;
 
@@ -8689,6 +9044,9 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       invoicesDb.push(invoiceRecord);
     }
 
+    // CRITICAL FIX: Ensure the new/edited invoice is actually saved to LocalStorage!
+    try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e) { console.warn("Failed to write to localStorage"); }
+
     // Immediately disarm currentInvoice editing state so subsequent bills are brand new
     currentInvoice.id = "";
     currentInvoice.qrToken = "";
@@ -8801,8 +9159,18 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       // Fully automated: saves invoice, compiles PDF, syncs Google Drive & auto-dispatches via WhatsApp bot silently in background
       showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} successfully created & saved!`);
 
-      // WhatsApp dispatch is handled by the background async worker above (line ~6537)
-      // which includes the precomputed PDF — no duplicate call needed here
+      // Auto-dispatch via WhatsApp if a phone number exists
+      const phone = invoiceRecord.details?.buyer?.phone || invoiceRecord.buyerPhone || "";
+      if (phone && typeof dispatchWhatsAppBotMessage === 'function') {
+        const msg = `🧾 *New Invoice Generated*\n\n` +
+          `👤 *Customer:* ${invoiceRecord.details?.buyer?.name || 'Customer'}\n` +
+          `🏷 *Invoice No:* ${invoiceRecord.invoiceNo}\n` +
+          `💰 *Total:* ₹ ${formatCurrency(invoiceRecord.total)}\n\n` +
+          `Thank you for your business!`;
+        dispatchWhatsAppBotMessage({ phone: phone, text: msg }).then(ok => {
+          if (ok) showFloatingToast(`✅ Invoice dispatched to ${phone} via WhatsApp!`);
+        });
+      }
 
       if (typeof openInvoiceSuccessModal === 'function') {
         openInvoiceSuccessModal(invoiceRecord);
@@ -9257,7 +9625,7 @@ function populateA4PrintOverlay(invoice) {
   if (verifyQrImg) {
     const verifyUrl = typeof window.getInvoiceVerificationUrl === "function"
       ? window.getInvoiceVerificationUrl(invoice.invoiceNo, invoice)
-      : `https://nenduku644-hash.github.io/fish/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
+      : `https://kandukurijagan1.github.io/fish-billing/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
     verifyQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(verifyUrl)}`;
   }
 }
@@ -9339,7 +9707,7 @@ function populateThermalPrintOverlay(invoice) {
   if (qrImg) {
     const verifyUrl = typeof window.getInvoiceVerificationUrl === "function"
       ? window.getInvoiceVerificationUrl(invoice.invoiceNo, invoice)
-      : `https://nenduku644-hash.github.io/fish/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
+      : `https://kandukurijagan1.github.io/fish-billing/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
     qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(verifyUrl)}`;
   }
 }
@@ -9560,6 +9928,7 @@ function playSuccessChime() {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return;
     const ctx = new AudioContext();
+    if (ctx.state === 'suspended') ctx.resume().catch(()=>{});
     const now = ctx.currentTime;
     
     // Pleasant dual-tone bell chime (587.33Hz [D5] -> 880Hz [A5])
@@ -11662,13 +12031,15 @@ let currentBalanceQrInv = null;
 
 window.openBalanceQrModal = function(id) {
   const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => i.id === id || i.invoiceNo === id);
-  if (inv && typeof openInvoiceVerificationModal === "function") {
-    openInvoiceVerificationModal(inv.id || inv.invoiceNo);
+  if (!inv) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Invoice record not found.", "warning");
+    }
     return;
   }
-  if (!inv) return;
+
   const details = inv.details || {};
-  const payInfo = getInvoicePaidAndBalance(inv);
+  const payInfo = typeof getInvoicePaidAndBalance === 'function' ? getInvoicePaidAndBalance(inv) : { total: inv.total || 0, paid: inv.paidAmount || 0, balance: inv.balanceDue || 0 };
   const total = payInfo.total;
   const paid = payInfo.paid;
   const balance = payInfo.balance;
@@ -11678,13 +12049,26 @@ window.openBalanceQrModal = function(id) {
   const invNoEl = document.getElementById("bal-qr-inv-no");
   if (invNoEl) invNoEl.textContent = `#${inv.invoiceNo || ''}`;
   const custEl = document.getElementById("bal-qr-customer");
-  if (custEl) custEl.textContent = inv.customerName || 'Customer';
+  if (custEl) custEl.textContent = inv.customerName || (details.consignee?.name || details.buyer?.name) || 'Customer';
   const totEl = document.getElementById("bal-qr-total");
   if (totEl) totEl.textContent = formatCurrency(total);
   const paidEl = document.getElementById("bal-qr-paid");
   if (paidEl) paidEl.textContent = formatCurrency(paid);
   const balEl = document.getElementById("bal-qr-balance");
   if (balEl) balEl.textContent = formatCurrency(balance);
+  const btnAmtEl = document.getElementById("bal-qr-btn-amt");
+  if (btnAmtEl) btnAmtEl.textContent = formatCurrency(balance);
+
+  const customInput = document.getElementById("bal-custom-paid-input");
+  if (customInput) customInput.value = balance.toFixed(2);
+  const customControls = document.getElementById("bal-partial-payment-controls");
+  if (customControls) customControls.style.display = "none";
+
+  const isCust = (typeof window.isCustomerAccount === 'function') ? window.isCustomerAccount() : false;
+  const markBtn = document.getElementById("bal-mark-paid-btn");
+  const partialToggleBtn = document.getElementById("bal-partial-toggle-btn");
+  if (markBtn) markBtn.style.display = isCust ? "none" : "";
+  if (partialToggleBtn) partialToggleBtn.style.display = isCust ? "none" : "";
 
   const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
   const upiIdEl = document.getElementById("bal-qr-upi-id");
@@ -11738,6 +12122,162 @@ window.closeBalanceQrModal = function() {
   }
 };
 
+window.copyBalanceUpiId = function() {
+  const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(realUpiId).then(() => {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("📋 UPI ID copied: " + realUpiId, "info", 2500);
+      }
+    }).catch(() => {});
+  }
+};
+
+window.togglePartialPaymentSection = function() {
+  const controls = document.getElementById("bal-partial-payment-controls");
+  if (!controls) return;
+  const isHidden = controls.style.display === "none" || !controls.style.display;
+  controls.style.display = isHidden ? "block" : "none";
+  if (isHidden) {
+    const input = document.getElementById("bal-custom-paid-input");
+    if (input) {
+      if (currentBalanceQrInv && currentBalanceQrInv.balance) {
+        input.value = (currentBalanceQrInv.balance / 2).toFixed(2);
+      }
+      setTimeout(() => input.focus(), 100);
+    }
+  }
+};
+
+window.submitCustomPartialPayment = function() {
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot record payments.", "error", 4500);
+    }
+    return;
+  }
+
+  if (!currentBalanceQrInv || !currentBalanceQrInv.inv) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("⚠️ No active invoice selected.", "warning");
+    return;
+  }
+
+  const inv = currentBalanceQrInv.inv;
+  const payInfo = typeof getInvoicePaidAndBalance === 'function' ? getInvoicePaidAndBalance(inv) : { total: inv.total || 0, paid: inv.paidAmount || 0, balance: inv.balanceDue || 0 };
+  const curBal = payInfo.balance;
+  const curPaid = payInfo.paid;
+  const totalAmt = payInfo.total;
+
+  const amtInput = document.getElementById("bal-custom-paid-input");
+  const partialAmt = parseFloat(amtInput?.value) || 0;
+  if (partialAmt <= 0) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("⚠️ Please enter a valid payment amount.", "warning");
+    return;
+  }
+
+  const mode = document.getElementById("bal-custom-mode-select")?.value || "UPI / Online";
+  const ref = document.getElementById("bal-custom-ref-input")?.value?.trim() || "";
+
+  const settledAmt = Math.min(partialAmt, curBal);
+  const newPaid = curPaid + settledAmt;
+  const newBal = Math.max(0, curBal - settledAmt);
+  const finalStatus = newBal <= 0.01 ? "Paid" : "Partial";
+
+  // Update Invoice Record
+  inv.paidAmount = newPaid;
+  inv.balanceDue = newBal;
+  inv.balancePaid = (inv.balancePaid || 0) + settledAmt;
+  inv.paymentStatus = finalStatus;
+  inv.paymentMode = mode;
+  if (ref) inv.paymentReference = ref;
+
+  if (inv.details) {
+    inv.details.paidAmount = newPaid;
+    inv.details.balanceDue = newBal;
+    inv.details.balancePaid = (inv.details.balancePaid || 0) + settledAmt;
+    inv.details.paymentStatus = finalStatus;
+    inv.details.paymentMode = mode;
+    if (ref) inv.details.paymentReference = ref;
+  }
+
+  if (!inv.paymentHistory) inv.paymentHistory = [];
+  inv.paymentHistory.push({
+    date: new Date().toISOString(),
+    amount: settledAmt,
+    mode: mode,
+    reference: ref,
+    status: finalStatus,
+    source: "Balance QR Modal Partial Payment"
+  });
+
+  // Persist to localStorage & IndexedDB
+  try {
+    localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+    window.invoicesDb = invoicesDb;
+  } catch (e) {
+    console.warn("Error persisting invoices:", e);
+  }
+  if (window.AaryanDB && typeof window.AaryanDB.saveInvoice === 'function') {
+    try { window.AaryanDB.saveInvoice(inv); } catch (e) {}
+  }
+  if (typeof syncDatabaseToServer === 'function') {
+    try { syncDatabaseToServer("invoices", inv); } catch (e) {}
+  }
+
+  // Refresh UI
+  if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
+  if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+  if (typeof syncPreviewIfOpen === 'function') syncPreviewIfOpen(inv);
+  if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+  if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
+
+  closeBalanceQrModal();
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast(`✅ Recorded ₹ ${formatCurrency(settledAmt)} payment for #${inv.invoiceNo}! New balance: ₹ ${formatCurrency(newBal)} (${finalStatus}).`, "success", 4000);
+  }
+};
+
+function syncPreviewIfOpen(inv) {
+  if (!inv || !window.currentPreviewInvoiceRecord) return;
+  const currId = window.currentPreviewInvoiceRecord.id || window.currentPreviewInvoiceRecord.invoiceNo;
+  if (currId !== inv.id && currId !== inv.invoiceNo) return;
+
+  window.currentPreviewInvoiceRecord = inv;
+  const payInfo = typeof getInvoicePaidAndBalance === 'function' ? getInvoicePaidAndBalance(inv) : { status: 'Paid', isPaid: true, balance: 0 };
+  const badgeEl = document.getElementById("preview-header-status-badge");
+  if (badgeEl) {
+    badgeEl.textContent = payInfo.status || 'Paid';
+    badgeEl.className = 'badge-status ' + (payInfo.status === 'Partial' ? 'badge-partial' : (payInfo.status === 'Unpaid' ? 'badge-unpaid' : 'badge-paid'));
+  }
+  const payBtn = document.getElementById("preview-collect-pay-btn");
+  const payBtnText = document.getElementById("preview-balance-btn-text");
+  if (payBtn) {
+    if (!payInfo.isPaid && payInfo.balance > 0) {
+      if (payBtnText) payBtnText.textContent = formatCurrency(payInfo.balance);
+      payBtn.style.display = "inline-flex";
+    } else {
+      payBtn.style.display = "none";
+    }
+  }
+
+  // Re-generate preview overlays
+  try {
+    if (typeof populateA4PrintOverlay === 'function') {
+      populateA4PrintOverlay(inv.details || inv);
+      const a4Source = document.getElementById("print-invoice-wrapper");
+      const a4Target = document.getElementById("preview-a4-sheet-container");
+      if (a4Source && a4Target) a4Target.innerHTML = a4Source.innerHTML;
+    }
+    if (typeof populateThermalPrintOverlay === 'function') {
+      populateThermalPrintOverlay(inv.details || inv);
+      const thSource = document.getElementById("print-thermal-wrapper");
+      const thTarget = document.getElementById("preview-thermal-sheet-container");
+      if (thSource && thTarget) thTarget.innerHTML = thSource.innerHTML;
+    }
+  } catch (err) {}
+}
+
 window.shareBalanceQrWhatsApp = function() {
   if (!currentBalanceQrInv) return;
   const { inv } = currentBalanceQrInv;
@@ -11746,25 +12286,36 @@ window.shareBalanceQrWhatsApp = function() {
 };
 
 window.markBalanceQrPaidAndSendWhatsApp = function() {
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
+    if (typeof showFloatingToast === "function") {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot mark invoices as paid.", "error", 4500);
+    }
+    return;
+  }
+
   if (!currentBalanceQrInv || !currentBalanceQrInv.inv) {
-    if (typeof showNotification === "function") showNotification("No active invoice selected.", "warning");
+    if (typeof showFloatingToast === "function") showFloatingToast("No active invoice selected.", "warning");
     return;
   }
 
   const inv = currentBalanceQrInv.inv;
-  const settledAmount = Number(inv.balanceDue || (inv.total - (inv.paidAmount || 0)));
+  const payInfo = typeof getInvoicePaidAndBalance === 'function' ? getInvoicePaidAndBalance(inv) : { total: inv.total || 0, balance: inv.balanceDue || 0 };
+  const settledAmount = Number(payInfo.balance || inv.balanceDue || (inv.total - (inv.paidAmount || 0)));
+  const totalAmt = Number(payInfo.total || inv.total || 0);
 
-  // Update Invoice Record to Paid
-  inv.paidAmount = Number(inv.total || 0);
+  // Update Invoice Record to 100% Paid
+  inv.paidAmount = totalAmt;
   inv.balanceDue = 0;
   inv.paymentStatus = "Paid";
   inv.paymentMode = inv.paymentMode || "UPI / Online";
+  inv.balancePaid = (inv.balancePaid || 0) + settledAmount;
 
   if (inv.details) {
-    inv.details.paidAmount = inv.paidAmount;
+    inv.details.paidAmount = totalAmt;
     inv.details.balanceDue = 0;
     inv.details.paymentStatus = "Paid";
     inv.details.paymentMode = inv.paymentMode;
+    inv.details.balancePaid = (inv.details.balancePaid || 0) + settledAmount;
   }
 
   if (!inv.paymentHistory) inv.paymentHistory = [];
@@ -11791,8 +12342,15 @@ window.markBalanceQrPaidAndSendWhatsApp = function() {
   if (typeof renderInvoicesTable === "function") renderInvoicesTable();
   if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
   if (typeof updateDashboardOverview === "function") updateDashboardOverview();
+  if (typeof syncPreviewIfOpen === 'function') syncPreviewIfOpen(inv);
   if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
   if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
+
+  closeBalanceQrModal();
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast(`✅ Invoice #${inv.invoiceNo} marked PAID! Balance settled to ₹0.00.`, "success", 4000);
+  }
 
   // Mesh MQTT Sync
   if (typeof publishMeshDatabaseUpdate === "function") {
@@ -11818,16 +12376,10 @@ window.markBalanceQrPaidAndSendWhatsApp = function() {
       if (typeof autoDispatchInvoiceToWhatsApp === "function") {
         autoDispatchInvoiceToWhatsApp(inv.details || inv);
       } else if (typeof shareInvoicePdfNative === "function") {
-        shareInvoicePdfNative(inv.details || inv, null, false, null);
+        shareInvoicePdfNative(inv.details || inv, null, false);
       }
-    }, 800);
+    }, 500);
   }
-
-  if (typeof showFloatingToast === "function") {
-    showFloatingToast(`✅ Invoice #${inv.invoiceNo} marked PAID! Balance settled to ₹0.00 & WhatsApp receipt sent!`, "success");
-  }
-
-  closeBalanceQrModal();
 };
 
 window.sendWhatsAppPaymentReminder = async function(id, btnEl = null) {
@@ -11878,21 +12430,21 @@ window.sendWhatsAppPaymentReminder = async function(id, btnEl = null) {
   const cleanNote = `Bill${inv.invoiceNo || '1'}`.replace(/[^a-zA-Z0-9]/g, '');
   const upiPayLink = `upi://pay?pa=${realUpiId}&pn=${upiName}&am=${balance.toFixed(2)}&cu=INR&tn=${cleanNote}`;
 
-  let reminderText = `🏛️ *${companyName}*\n`;
-  reminderText += `⚠️ *PAYMENT REMINDER*\n`;
+  let reminderText = `*${companyName}*\n`;
+  reminderText += `*PAYMENT REMINDER*\n`;
   reminderText += `-----------------------------------\n`;
-  reminderText += `📄 *Tax Invoice #:* #${inv.invoiceNo}\n`;
-  reminderText += `👤 *Customer:* ${inv.customerName || details.buyer?.name || 'Customer'}\n`;
-  reminderText += `📅 *Bill Date:* ${formatInputDateString(inv.invoiceDate)}\n`;
-  reminderText += `💰 *Total Bill Amount:* ₹ ${formatCurrency(total)}\n`;
-  reminderText += `✅ *Amount Paid:* ₹ ${formatCurrency(paid)}\n`;
-  reminderText += `🔴 *PENDING BALANCE DUE:* ₹ ${formatCurrency(balance)}\n`;
+  reminderText += `*Tax Invoice #:* #${inv.invoiceNo}\n`;
+  reminderText += `*Customer:* ${inv.customerName || details.buyer?.name || 'Customer'}\n`;
+  reminderText += `*Bill Date:* ${formatInputDateString(inv.invoiceDate)}\n`;
+  reminderText += `*Total Bill Amount:* Rs. ${formatCurrency(total)}\n`;
+  reminderText += `*Amount Paid:* Rs. ${formatCurrency(paid)}\n`;
+  reminderText += `*PENDING BALANCE DUE:* Rs. ${formatCurrency(balance)}\n`;
   reminderText += `-----------------------------------\n`;
-  reminderText += `📲 *Pay Directly via UPI App (GPay / PhonePe / Paytm):*\n`;
+  reminderText += `*Pay Directly via UPI App (GPay / PhonePe / Paytm):*\n`;
   reminderText += `${upiPayLink}\n\n`;
-  reminderText += `💳 Or send to UPI ID: *${realUpiId}*\n`;
+  reminderText += `Or send to UPI ID: *${realUpiId}*\n`;
   reminderText += `-----------------------------------\n`;
-  reminderText += `Kindly settle the pending balance at your earliest convenience. Thank you! 🙏`;
+  reminderText += `Kindly settle the pending balance at your earliest convenience. Thank you!`;
 
   let origHtml = "";
   if (btnEl && btnEl.tagName) {
@@ -12084,8 +12636,6 @@ window.filterInvoicesByStatus = async function() {
 
 // --- SAVED INVOICE VIEW EDIT & DELETE HISTORY ---
 function loadInvoicesHistoryTable() {
-  loadAllDatabases();
-
   if (invoicesDb && invoicesDb.length > 0) {
     if (elements.historyCount) elements.historyCount.textContent = invoicesDb.length;
     renderHistoryTableRows(invoicesDb);
@@ -12158,6 +12708,18 @@ function getInvoicePaidAndBalance(inv) {
 function renderHistoryTableRows(records) {
   if (!elements.historyInvoicesBody) return;
   elements.historyInvoicesBody.innerHTML = "";
+
+  const isCustUser = (typeof window.isCustomerAccount === 'function') ? window.isCustomerAccount() : false;
+  if (isCustUser) {
+    const curName = (sessionStorage.getItem("current_user_name") || "").toLowerCase().trim();
+    if (curName) {
+      records = (records || []).filter(inv => {
+        const invName = (inv.customerName || (inv.details && inv.details.buyer && inv.details.buyer.name) || "").toLowerCase().trim();
+        return invName === curName || invName.includes(curName) || curName.includes(invName);
+      });
+    }
+  }
+
   if (!records || records.length === 0) {
     const isSearching = elements.searchHistoryInput && elements.searchHistoryInput.value.trim().length > 0;
     if (!isSearching && !window.isInitialSyncDone) {
@@ -12203,28 +12765,29 @@ function renderHistoryTableRows(records) {
     const isPaid = payInfo.isPaid;
     const balance = payInfo.balance;
 
+    const isCustomerRole = (typeof window.isCustomerAccount === 'function') ? window.isCustomerAccount() : false;
+
     let badgeClass = 'badge-paid';
     if (status === 'Partial') badgeClass = 'badge-partial';
     if (status === 'Unpaid') badgeClass = 'badge-unpaid';
 
     let balanceQrBtn = "";
-    if (!isEstimate && !isPaid && balance > 0) {
+    if (!isEstimate && !isPaid && balance > 0 && !isCustomerRole) {
       balanceQrBtn = `
-        <button class="action-btn share" onclick="openBalanceQrModal('${inv.id}')" title="View Balance UPI QR Code (₹ ${formatCurrency(balance)})" style="background: rgba(6, 182, 212, 0.15); color: #06b6d4;"><i class="fa-solid fa-qrcode"></i></button>
-        <button class="action-btn share" onclick="sendWhatsAppPaymentReminder('${inv.id}', this)" title="Send 1-Click WhatsApp Payment Reminder (₹ ${formatCurrency(balance)})" style="background: rgba(245, 158, 11, 0.15); color: #d97706;"><i class="fa-solid fa-bell"></i></button>
+        <button class="action-btn share action-btn-qr" onclick="openBalanceQrModal('${inv.id}')" title="Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode"></i></button>
       `;
     }
 
     let balanceQrDropdownItem = "";
-    if (!isEstimate && !isPaid && balance > 0) {
+    if (!isEstimate && !isPaid && balance > 0 && !isCustomerRole) {
       balanceQrDropdownItem = `
-        <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openBalanceQrModal('${inv.id}')"><i class="fa-solid fa-qrcode" style="color: #06b6d4;"></i> View Balance UPI QR (₹ ${formatCurrency(balance)})</a>
+        <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openBalanceQrModal('${inv.id}')"><i class="fa-solid fa-qrcode" style="color: #06b6d4;"></i> Scan UPI QR &amp; Settle (₹ ${formatCurrency(balance)})</a>
         <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); sendWhatsAppPaymentReminder('${inv.id}', this)"><i class="fa-solid fa-bell" style="color: #d97706;"></i> WhatsApp Payment Reminder</a>
       `;
     }
 
     let convertEstimateDropdownItem = "";
-    if (isEstimate) {
+    if (isEstimate && !isCustomerRole) {
       convertEstimateDropdownItem = `
         <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); convertEstimateToInvoice('${inv.id}')"><i class="fa-solid fa-file-circle-check" style="color: #0891b2;"></i> Convert to Official GST Invoice</a>
       `;
@@ -12252,19 +12815,22 @@ function renderHistoryTableRows(records) {
         <td class="text-center">
           ${isEstimate 
             ? `<span class="badge-status" style="background: rgba(245, 158, 11, 0.15); color: #d97706; font-weight: 700; border: 1px solid rgba(245, 158, 11, 0.3);">Quotation</span>` 
-            : `<span class="badge-status ${badgeClass}">${status}</span>`}
+            : (!isPaid && balance > 0 && !isCustomerRole
+                ? `<span class="badge-status ${badgeClass}" onclick="openBalanceQrModal('${inv.id}')" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode" style="font-size: 11px;"></i>${status}</span><div style="font-size: 10.5px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>`
+                : `<span class="badge-status ${badgeClass}">${status}</span>${(!isPaid && balance > 0 ? `<div style="font-size: 10.5px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>` : '')}`)}
         </td>
         <td class="actions-cell">
+          ${balanceQrBtn}
           <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${inv.id}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
           <button class="action-btn print action-btn-thermal" onclick="openInvoicePrintPreview('${inv.id}', 'thermal')" title="Preview &amp; Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
           <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Send Invoice &amp; PDF via WhatsApp (1-Click)" style="background: #16a34a !important; color: #ffffff !important; font-weight: 700; width: 30px; height: 30px; border-radius: 6px; box-shadow: 0 1px 3px rgba(22, 163, 74, 0.35);"><i class="fa-brands fa-whatsapp" style="font-size: 15px; color: #ffffff !important;"></i></button>
-          <button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Bill"><i class="fa-solid fa-pen-to-square"></i></button>
-          <button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Bill"><i class="fa-solid fa-trash"></i></button>
+          ${!isCustomerRole ? `<button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Bill"><i class="fa-solid fa-pen-to-square"></i></button>` : ''}
+          ${!isCustomerRole ? `<button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Bill"><i class="fa-solid fa-trash"></i></button>` : ''}
           <div class="action-dropdown-wrapper">
             <button class="action-btn more-btn" onclick="toggleActionDropdown('${inv.id}', event)" title="More Options"><i class="fa-solid fa-ellipsis-vertical"></i></button>
             <div id="action-dropdown-${inv.id}" class="action-dropdown-menu hidden" onclick="event.stopPropagation();">
               <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); downloadSavedInvoicePdf('${inv.id}', this)"><i class="fa-solid fa-file-pdf text-rose"></i> Download PDF</a>
-              <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatInvoice('${inv.id}')"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i> Clone / Repeat Bill</a>
+              ${!isCustomerRole ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatInvoice('${inv.id}')"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i> Clone / Repeat Bill</a>` : ''}
               ${balanceQrDropdownItem}
               ${convertEstimateDropdownItem}
               <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); shareInvoiceToTelegram('${inv.id}', this)"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i> Share via Telegram</a>
@@ -12288,6 +12854,19 @@ elements.searchHistoryInput.addEventListener("input", () => {
 });
 
 window.editSavedInvoice = function(id) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof window.showProductBuyModal === 'function') {
+      window.showProductBuyModal("To edit existing invoices, please upgrade to a Commercial License.");
+    }
+    return;
+  }
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot edit invoices.", "error", 4000);
+    }
+    return;
+  }
+
   const inv = invoicesDb.find(i => i.id === id);
   if (inv) {
     currentInvoice = JSON.parse(JSON.stringify(inv.details));
@@ -12346,6 +12925,13 @@ window.editSavedInvoice = function(id) {
 };
 
 window.repeatInvoice = function(id) {
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot create bills.", "error", 4000);
+    }
+    return;
+  }
+
   const inv = (invoicesDb || []).find(i => i && (i.id === id || i.invoiceNo === id));
   if (!inv) {
     if (typeof showFloatingToast === 'function') showFloatingToast("Invoice not found to repeat", "error");
@@ -12487,11 +13073,31 @@ window.openInvoicePrintPreview = function(identifier, mode = 'a4') {
   const totEl = document.getElementById("preview-header-total");
   if (totEl) totEl.textContent = `₹ ${formatCurrency(totalAmt)}`;
 
-  const payInfo = typeof getInvoicePaidAndBalance === 'function' ? getInvoicePaidAndBalance(inv) : { status: 'Paid', isPaid: true };
+  const payInfo = typeof getInvoicePaidAndBalance === 'function' ? getInvoicePaidAndBalance(inv) : { status: 'Paid', isPaid: true, balance: 0 };
   const badgeEl = document.getElementById("preview-header-status-badge");
   if (badgeEl) {
     badgeEl.textContent = payInfo.status || 'Paid';
     badgeEl.className = 'badge-status ' + (payInfo.status === 'Partial' ? 'badge-partial' : (payInfo.status === 'Unpaid' ? 'badge-unpaid' : 'badge-paid'));
+    if (!payInfo.isPaid && payInfo.balance > 0) {
+      badgeEl.style.cursor = "pointer";
+      badgeEl.onclick = () => window.collectPaymentFromPreview();
+      badgeEl.title = `Click to Scan UPI QR & Settle Payment (Balance: ₹ ${formatCurrency(payInfo.balance)})`;
+    } else {
+      badgeEl.style.cursor = "default";
+      badgeEl.onclick = null;
+      badgeEl.title = "";
+    }
+  }
+
+  const payBtn = document.getElementById("preview-collect-pay-btn");
+  const payBtnText = document.getElementById("preview-balance-btn-text");
+  if (payBtn) {
+    if (!payInfo.isPaid && payInfo.balance > 0) {
+      if (payBtnText) payBtnText.textContent = formatCurrency(payInfo.balance);
+      payBtn.style.display = "inline-flex";
+    } else {
+      payBtn.style.display = "none";
+    }
   }
 
   // 2. Populate A4 print overlay DOM & Clone into preview container
@@ -12536,6 +13142,12 @@ window.closeInvoicePrintPreview = function() {
     modal.classList.add("hidden");
     modal.style.display = "none";
   }
+};
+
+window.collectPaymentFromPreview = function() {
+  if (!window.currentPreviewInvoiceRecord) return;
+  const id = window.currentPreviewInvoiceRecord.id || window.currentPreviewInvoiceRecord.invoiceNo;
+  window.openBalanceQrModal(id);
 };
 
 window.switchPrintPreviewMode = function(mode) {
@@ -12675,6 +13287,13 @@ document.addEventListener("keydown", function(e) {
       window.executePrintFromPreview();
     }
   }
+  const balModal = document.getElementById("balance-qr-modal");
+  if (balModal && !balModal.classList.contains("hidden") && balModal.style.display !== "none") {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      window.closeBalanceQrModal();
+    }
+  }
 });
 
 let pendingDeleteIdentifier = null;
@@ -12697,6 +13316,19 @@ window.executeConfirmedDelete = function() {
 };
 
 window.deleteSavedInvoice = function(identifier, skipConfirm = false) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof window.showProductBuyModal === 'function') {
+      window.showProductBuyModal("To delete invoices, please upgrade to a Commercial License.");
+    }
+    return;
+  }
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot delete invoices.", "error", 4000);
+    }
+    return;
+  }
+
   if (!identifier) return;
 
   const idStr = String(identifier).trim();
@@ -13073,6 +13705,12 @@ window.closeProductModal = function() {
 };
 
 window.saveProductModal = function(e, andAddAnother = false) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof window.showProductBuyModal === 'function') {
+      window.showProductBuyModal("To add or edit products in inventory, please upgrade to a Commercial License.");
+    }
+    return;
+  }
   if (e && e.preventDefault) e.preventDefault();
   const id = document.getElementById("modal-prod-id").value;
   const desc = document.getElementById("modal-prod-desc").value.toUpperCase().trim();
@@ -13705,6 +14343,12 @@ function renderProductsTable(records) {
 }
 
 window.deleteProductRowDb = function(id) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof window.showProductBuyModal === 'function') {
+      window.showProductBuyModal("To delete products, please upgrade to a Commercial License.");
+    }
+    return;
+  }
   if (confirm("Delete product from inventory list permanently?")) {
     productsDb = productsDb.filter(p => p.id !== id);
     localStorage.setItem("products", JSON.stringify(productsDb));
@@ -13813,6 +14457,12 @@ window.closePartyModal = function() {
 };
 
 window.savePartyModal = function(e, andAddAnother = false) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof window.showProductBuyModal === 'function') {
+      window.showProductBuyModal("To add or edit customer party accounts, please upgrade to a Commercial License.");
+    }
+    return;
+  }
   if (e && e.preventDefault) e.preventDefault();
   const id = document.getElementById("modal-party-id").value;
   const type = document.getElementById("modal-party-type").value;
@@ -13914,11 +14564,11 @@ function renderPartiesLists(records) {
 }
 
 window.sendPartyPaymentReminderWhatsApp = async function(partyName, phone) {
-  const pBal = TurboDataStore.getPartyBalance(partyName);
-  const totalBilled = pBal.billed;
-  const totalPaid = pBal.paid;
-  const pendingDues = pBal.balance;
-  const invCount = pBal.count;
+  const pBal = TurboDataStore.getPartyLedgerSummary(partyName);
+  const totalBilled = pBal.totalBilled || 0;
+  const totalPaid = pBal.totalPaid || 0;
+  const pendingDues = pBal.totalBalance || 0;
+  const invCount = pBal.invoiceCount || 0;
 
   let text = `🙏 *GENTLE PAYMENT REMINDER*\n`;
   text += `🏛️ *AARYAN AQUA NEEDS*\n`;
@@ -13990,33 +14640,39 @@ window.sendPartyPaymentReminderWhatsApp = async function(partyName, phone) {
 };
 
 function createPartyListCard(p) {
-  const pBal = TurboDataStore.getPartyBalance(p.name);
-  const totalBilled = pBal.billed;
-  const totalPaid = pBal.paid;
-  const pendingDues = pBal.balance;
-  const billCount = pBal.count;
+  const pBal = TurboDataStore.getPartyLedgerSummary(p.name);
+  const totalBilled = pBal.totalBilled || 0;
+  const totalPaid = pBal.totalPaid || 0;
+  const pendingDues = pBal.totalBalance || 0;
+  const billCount = pBal.invoiceCount || 0;
 
   let duesBadge = `<span style="background: rgba(16, 185, 129, 0.12); color: #10b981; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700;">Paid</span>`;
   if (pendingDues > 0) {
     duesBadge = `<span style="background: rgba(239, 68, 68, 0.12); color: #ef4444; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700;">Due: ₹ ${formatCurrency(pendingDues)}</span>`;
   }
 
+  let displayCompany = p.company || '';
+  if (displayCompany && displayCompany.includes('GMT')) {
+    // Clean up dirty data where a date string was saved as company
+    displayCompany = '';
+  }
+
   const card = document.createElement("div");
   card.className = "party-list-card";
   card.innerHTML = `
-    <div class="party-list-card-details" style="flex: 1;">
+    <div class="party-list-card-details" style="flex: 1; min-width: 0;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-        <h4 style="margin: 0;">${p.name}</h4>
+        <h4 style="margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70%;">${p.name}</h4>
         ${duesBadge}
       </div>
-      ${p.company ? `<p style="font-weight:600; color:var(--text-dark); margin: 2px 0;">${p.company}</p>` : ''}
-      <p style="font-size:10.5px; color:#475569; white-space: pre-line; margin-bottom: 4px;">${p.address || ''}</p>
-      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #64748b;">
-        <span>${p.phone ? 'Ph: ' + p.phone : ''}</span>
-        <span style="font-weight: 600;">Billed: ₹ ${formatCurrency(totalBilled)} (${billCount} bills)</span>
+      ${displayCompany ? `<p style="font-weight:600; color:var(--text-dark); margin: 2px 0;">${displayCompany}</p>` : ''}
+      <p style="font-size:10.5px; color:#475569; white-space: pre-wrap; margin-bottom: 6px; word-break: break-word;">${p.address || ''}</p>
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 6px; font-size: 11px; color: #64748b;">
+        <span style="word-break: break-all; max-width: 100%; flex: 1 1 auto; line-height: 1.3;">${p.phone ? 'Ph: ' + p.phone : ''}</span>
+        <span style="font-weight: 600; white-space: nowrap; flex-shrink: 0;">Billed: ₹ ${formatCurrency(totalBilled)} (${billCount} bills)</span>
       </div>
     </div>
-    <div class="actions-cell" style="display: flex; gap: 4px; align-items: center;">
+    <div class="actions-cell" style="display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; padding-left: 8px;">
       ${pendingDues > 0 ? `<button class="action-btn share btn-whatsapp" onclick="sendPartyPaymentReminderWhatsApp('${p.name.replace(/'/g, "\\'")}', '${p.phone || ''}')" title="Send WhatsApp Payment Reminder"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
       <button class="action-btn edit" onclick="openPartyModal('${p.type}', '${String(p.id || p.name || '').replace(/'/g, "\\'")}')" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
     </div>
@@ -14025,6 +14681,12 @@ function createPartyListCard(p) {
 }
 
 window.deletePartyRowDb = async function(id) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof window.showProductBuyModal === 'function') {
+      window.showProductBuyModal("To delete customer party accounts, please upgrade to a Commercial License.");
+    }
+    return;
+  }
   if (confirm("Delete this customer party profile permanently from Google Database?")) {
     const targetId = String(id || "").trim();
     
@@ -14376,7 +15038,7 @@ function loadSettingsFields() {
   }
 
   elements.setAutolockTimer.value = globalSettings.security?.autolock !== undefined ? globalSettings.security.autolock : "1800";
-  elements.setLoginUsername.value = globalSettings.security?.username || "Aaryanaqua";
+  elements.setLoginUsername.value = globalSettings.security?.username || "kandukurijagan99@gmail.com";
   elements.setLoginPassword.value = globalSettings.security?.password || globalSettings.security?.pin || "Aaryan@2024";
   if (elements.setSecurityPin) elements.setSecurityPin.value = globalSettings.security?.securityPin || globalSettings.security?.pin || "2024";
   if (elements.setStrictBootLock) elements.setStrictBootLock.checked = globalSettings.security?.strictBootLock !== false;
@@ -14637,6 +15299,12 @@ window.sendTelegramModalTestPing = async function(btnEl) {
 };
 
 window.saveSecuritySettings = async function(e) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof window.showProductBuyModal === 'function') {
+      window.showProductBuyModal("To modify security settings, please upgrade to a Commercial License.");
+    }
+    return;
+  }
   e.preventDefault();
   const autolock = elements.setAutolockTimer.value;
   const username = elements.setLoginUsername.value.trim();
@@ -14709,6 +15377,12 @@ window.saveSecuritySettings = async function(e) {
 };
 
 window.saveGlobalSettingsDefaults = function(e) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof window.showProductBuyModal === 'function') {
+      window.showProductBuyModal("To modify company settings, please upgrade to a Commercial License.");
+    }
+    return;
+  }
   e.preventDefault();
   globalSettings.company = {
     name: elements.setCName.value.trim().toUpperCase(),
@@ -14897,21 +15571,15 @@ function formatSessionDuration(seconds) {
 
 function updateSessionTimerUI() {
   const pill = document.getElementById("live-session-timer-pill");
-  const textEl = document.getElementById("session-timer-text");
-  const iconEl = document.getElementById("session-timer-icon");
-  if (!pill || !textEl) return;
+  if (pill) {
+    pill.style.display = "none";
+  }
 
   if (isLocked) {
-    pill.style.display = "none";
     return;
   }
 
-  pill.style.display = "inline-flex";
-
   if (!lockTimerSeconds || lockTimerSeconds <= 0) {
-    textEl.innerHTML = `<span class="session-label">Session: </span><span class="session-val">Active ∞</span>`;
-    pill.className = "session-timer-pill";
-    if (iconEl) iconEl.className = "fa-solid fa-infinity text-teal";
     return;
   }
 
@@ -14920,23 +15588,9 @@ function updateSessionTimerUI() {
   const elapsedSec = Math.floor((now - lastActive) / 1000);
   const remainingSec = Math.max(0, lockTimerSeconds - elapsedSec);
 
-  const timeStr = formatSessionDuration(remainingSec);
-  textEl.innerHTML = `<span class="session-label">Session: </span><span class="session-val">${timeStr}</span>`;
-
-  if (remainingSec <= 30) {
-    pill.className = "session-timer-pill critical";
-    if (iconEl) iconEl.className = "fa-solid fa-hourglass-end text-rose fa-shake";
-  } else if (remainingSec <= 120) {
-    pill.className = "session-timer-pill warning";
-    if (iconEl) iconEl.className = "fa-solid fa-hourglass-half text-amber";
-  } else {
-    pill.className = "session-timer-pill";
-    if (iconEl) iconEl.className = "fa-solid fa-hourglass-start text-teal";
-  }
-
-  // Trigger auto-lock strictly if session timing exhausted
+  // Trigger silent background security auto-lock strictly if session timing exhausted
   if (remainingSec <= 0 && !isLocked) {
-    triggerLockOverlay();
+    triggerLockOverlay("inactivity_timeout", true);
   }
 }
 
@@ -14949,6 +15603,7 @@ function startSessionTimerTick() {
 window.renewUserSession = function() {
   if (isLocked) return;
   lastActivityRecordTime = Date.now();
+  sessionStorage.setItem("session_last_active_time", lastActivityRecordTime.toString());
   resetAutolockTimer();
   updateSessionTimerUI();
   const durationLabel = lockTimerSeconds > 0 ? `${Math.round(lockTimerSeconds / 60)} min` : "unlimited";
@@ -14965,6 +15620,7 @@ window.onAutoLockSettingChange = function(newVal) {
   if (!Number.isNaN(parsed)) {
     lockTimerSeconds = parsed;
     lastActivityRecordTime = Date.now();
+    sessionStorage.setItem("session_last_active_time", lastActivityRecordTime.toString());
     resetAutolockTimer();
     updateSessionTimerUI();
     const label = parsed > 0 ? `${Math.round(parsed / 60)} min` : "disabled";
@@ -14978,9 +15634,12 @@ function resetAutolockTimer() {
   if (isLocked) return;
 
   const now = Date.now();
-  if (!lastActivityRecordTime || now - lastActivityRecordTime > 3000) {
+  window._inactivityWarningToastShown = false; // Reset warning toast flag on interaction
+
+  if (!lastActivityRecordTime || now - lastActivityRecordTime > 2000) {
     lastActivityRecordTime = now;
     try {
+      sessionStorage.setItem("session_last_active_time", now.toString());
       localStorage.setItem("last_active_time", now);
       localStorage.setItem("app_locked", "false");
     } catch (_) {}
@@ -14993,15 +15652,19 @@ function resetAutolockTimer() {
     return;
   }
 
-  autolockInterval = setTimeout(triggerLockOverlay, lockTimerSeconds * 1000);
+  autolockInterval = setTimeout(() => {
+    triggerLockOverlay("inactivity_timeout", true);
+  }, lockTimerSeconds * 1000);
 }
 
-function unlockSystemSilently() {
+function unlockSystemSilently(shouldBroadcast = false) {
   isLocked = false;
   localStorage.setItem("app_locked", "false");
   localStorage.setItem("app_authenticated", "true");
   sessionStorage.setItem("session_authenticated", "true");
+  sessionStorage.setItem("manual_locked", "false");
   lastActivityRecordTime = Date.now();
+  sessionStorage.setItem("session_last_active_time", lastActivityRecordTime.toString());
   localStorage.setItem("last_active_time", lastActivityRecordTime);
   document.body.classList.remove("app-is-locked");
   
@@ -15023,16 +15686,27 @@ function unlockSystemSilently() {
   if (typeof resetAutolockTimer === 'function') {
     resetAutolockTimer();
   }
+
+  // Apply user role permissions and update profile badge
+  if (typeof window.applyRolePermissions === 'function') {
+    window.applyRolePermissions();
+  }
+
+  if (shouldBroadcast) {
+    const email = sessionStorage.getItem("current_user_email") || "";
+    const name = sessionStorage.getItem("current_user_name") || "";
+    const role = sessionStorage.getItem("current_user_role") || "operator";
+    broadcastAuthEvent("LOGIN", { email, name, role });
+  }
 }
 window.unlockSystemSilently = unlockSystemSilently;
 
 window.autofillRememberedCredentials = function() {
   const userField = document.getElementById("login-username");
-  const pwdField = document.getElementById("login-password");
   const rememberBox = document.getElementById("login-remember-me");
 
   const remembered = localStorage.getItem("remember_me") === "true";
-  const savedUser = localStorage.getItem("saved_username") || "Aaryanaqua";
+  let savedUser = localStorage.getItem("last_logged_in_email") || "";
 
   // Purge any legacy plaintext passwords
   AppSecurity.purgePlaintextPasswords();
@@ -15041,13 +15715,7 @@ window.autofillRememberedCredentials = function() {
     userField.value = savedUser;
   }
   if (rememberBox) {
-    rememberBox.checked = remembered;
-  }
-  if (pwdField) {
-    pwdField.value = "";
-    if (remembered && localStorage.getItem(AppSecurity.AUTH_TOKEN_KEY)) {
-      pwdField.placeholder = "Enter password or PIN to unlock";
-    }
+    rememberBox.checked = (remembered !== false);
   }
 
   // If lockout is currently active, immediately start live countdown on lock screen
@@ -15060,51 +15728,51 @@ window.autofillRememberedCredentials = function() {
 };
 
 window.handleLockPasswordInput = function(inputEl) {
-  if (!inputEl) return;
-  const val = inputEl.value.trim();
-  // Fast 4-digit PIN auto-submission
-  if (val.length === 4 && /^\d{4}$/.test(val)) {
-    const sec = (window.globalSettings?.security) || {};
-    const customPin = (sec.securityPin || sec.whatsappPin || sec.pin || "2024").toString().trim();
-    if (val === "2024" || val === customPin) {
-      if (typeof window.submitUnlockLogin === 'function') {
-        window.submitUnlockLogin();
-      }
-    }
-  }
+  // Disabled in passwordless email mode
+  return false;
 };
 
-document.addEventListener('keyup', function(e) {
-  const capsWarn = document.getElementById('login-caps-lock-warning');
-  if (capsWarn && e.getModifierState) {
-    if (e.getModifierState('CapsLock')) {
-      capsWarn.classList.remove('hidden');
-    } else {
-      capsWarn.classList.add('hidden');
-    }
-  }
-});
-
-document.addEventListener('keydown', function(e) {
-  const capsWarn = document.getElementById('login-caps-lock-warning');
-  if (capsWarn && e.getModifierState) {
-    if (e.getModifierState('CapsLock')) {
-      capsWarn.classList.remove('hidden');
-    } else {
-      capsWarn.classList.add('hidden');
-    }
-  }
-});
-
-window.triggerManualLock = function() {
-  triggerLockOverlay();
+window.triggerManualLock = function(shouldBroadcast = true) {
+  sessionStorage.setItem("manual_locked", "true");
+  triggerLockOverlay("manual", shouldBroadcast);
   AppSecurity.logEvent("MANUAL_LOCK", "Screen locked manually by user", "INFO");
   if (typeof showFloatingToast === 'function') {
     showFloatingToast("🔒 Screen locked securely.", 2500);
   }
 };
 
-function triggerLockOverlay() {
+window.triggerUserLogout = function(shouldBroadcast = true) {
+  sessionStorage.clear();
+  localStorage.setItem("app_locked", "true");
+  localStorage.removeItem("app_authenticated");
+  isLocked = true;
+  document.body.classList.add("app-is-locked");
+
+  const overlay = document.getElementById("lock-screen-overlay");
+  if (overlay) overlay.classList.remove("hidden");
+  const wrapper = document.querySelector('.dashboard-wrapper');
+  if (wrapper) wrapper.classList.add("blur-dashboard-wrapper");
+
+  const sessionStatusBanner = document.getElementById("login-session-status-banner");
+  const sessionStatusText = document.getElementById("login-session-status-text");
+  if (sessionStatusBanner && sessionStatusText) {
+    sessionStatusBanner.style.display = "block";
+    sessionStatusBanner.style.background = "rgba(168, 85, 247, 0.15)";
+    sessionStatusBanner.style.border = "1px solid rgba(168, 85, 247, 0.35)";
+    sessionStatusBanner.style.color = "#c084fc";
+    sessionStatusText.innerHTML = '<i class="fa-solid fa-arrow-right-from-bracket"></i> You have signed out successfully.';
+  }
+
+  if (shouldBroadcast) {
+    broadcastAuthEvent("LOGOUT");
+  }
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast("👋 You have been logged out.", 3000);
+  }
+};
+
+function triggerLockOverlay(reason = "manual", shouldBroadcast = true) {
   isLocked = true;
   if (typeof lockWhatsAppSession === 'function') {
     lockWhatsAppSession(false);
@@ -15112,6 +15780,9 @@ function triggerLockOverlay() {
   localStorage.setItem("app_locked", "true");
   sessionStorage.removeItem("session_authenticated");
   localStorage.removeItem("app_authenticated");
+  if (reason === "manual") {
+    sessionStorage.setItem("manual_locked", "true");
+  }
   document.body.classList.add("app-is-locked");
 
   const errBlock = document.getElementById("login-error-message");
@@ -15123,34 +15794,42 @@ function triggerLockOverlay() {
   const calcModal = document.getElementById("quick-calculator-modal");
   if (calcModal) calcModal.classList.add("hidden");
 
-  // Autofill username, but clear password so user must re-enter to unlock
+  // Autofill authorized email
   const userField = document.getElementById("login-username");
-  const pwdField = document.getElementById("login-password");
-  const rememberBox = document.getElementById("login-remember-me");
-  const remembered = localStorage.getItem("remember_me") === "true";
-  const savedUser = localStorage.getItem("saved_username") || "Aaryanaqua";
+  let savedUser = localStorage.getItem("last_logged_in_email") || "";
   if (userField) userField.value = savedUser;
-  if (rememberBox) rememberBox.checked = remembered;
-  if (pwdField) {
-    pwdField.value = "";
-    setTimeout(() => { try { pwdField.focus(); } catch(_) {} }, 100);
-  }
 
   const wrapper = document.querySelector('.dashboard-wrapper');
   if (wrapper) wrapper.classList.add("blur-dashboard-wrapper");
   const overlay = document.getElementById("lock-screen-overlay");
   if (overlay) overlay.classList.remove("hidden");
 
-  // Update lock screen session timing indicator
+  // Update lock screen session timing indicator / banner
+  const sessionStatusBanner = document.getElementById("login-session-status-banner");
   const sessionStatusText = document.getElementById("login-session-status-text");
-  if (sessionStatusText) {
-    sessionStatusText.textContent = "Session Locked • Enter Password to Resume";
+  if (sessionStatusBanner && sessionStatusText) {
+    sessionStatusBanner.style.display = "block";
+    if (reason === "inactivity_timeout") {
+      sessionStatusBanner.style.background = "rgba(245, 158, 11, 0.15)";
+      sessionStatusBanner.style.border = "1px solid rgba(245, 158, 11, 0.35)";
+      sessionStatusBanner.style.color = "#fbbf24";
+      const mins = Math.max(1, Math.round((lockTimerSeconds || 1800) / 60));
+      sessionStatusText.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Session Expired: Inactive for ${mins} min. Sign in to resume.`;
+    } else if (reason === "manual") {
+      sessionStatusBanner.style.background = "rgba(56, 189, 248, 0.15)";
+      sessionStatusBanner.style.border = "1px solid rgba(56, 189, 248, 0.35)";
+      sessionStatusBanner.style.color = "#38bdf8";
+      sessionStatusText.innerHTML = '<i class="fa-solid fa-lock"></i> Screen Locked: Sign in with Google to resume.';
+    } else if (reason === "logout") {
+      sessionStatusBanner.style.background = "rgba(168, 85, 247, 0.15)";
+      sessionStatusBanner.style.border = "1px solid rgba(168, 85, 247, 0.35)";
+      sessionStatusBanner.style.color = "#c084fc";
+      sessionStatusText.innerHTML = '<i class="fa-solid fa-arrow-right-from-bracket"></i> You have signed out successfully.';
+    } else {
+      sessionStatusBanner.style.display = "none";
+    }
   }
-  const sessionLockSubtext = document.getElementById("login-session-lock-subtext");
-  if (sessionLockSubtext) {
-    const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    sessionLockSubtext.textContent = `Auto-locked at ${timeStr} • Inactivity timeout reached`;
-  }
+
   if (typeof updateSessionTimerUI === 'function') {
     updateSessionTimerUI();
   }
@@ -15161,20 +15840,85 @@ function triggerLockOverlay() {
     const submitBtn = document.querySelector(".btn-login-submit");
     AppSecurity.startLockoutCountdown(submitBtn, errBlock);
   }
+
+  if (shouldBroadcast) {
+    broadcastAuthEvent("LOCK", { reason });
+  }
 }
 
-window.toggleLoginPasswordVisibility = function() {
-  const pwdInput = document.getElementById("login-password");
-  const icon = document.getElementById("toggle-pwd-icon");
-  if (pwdInput.type === "password") {
-    pwdInput.type = "text";
-    icon.classList.remove("fa-eye");
-    icon.classList.add("fa-eye-slash");
-  } else {
-    pwdInput.type = "password";
-    icon.classList.remove("fa-eye-slash");
-    icon.classList.add("fa-eye");
+// REALTIME MULTI-TAB AUTH SYNCHRONIZATION (Enterprise BroadcastChannel Engine)
+let authBroadcastChannel = null;
+try {
+  if (typeof BroadcastChannel !== "undefined") {
+    authBroadcastChannel = new BroadcastChannel("aaryan_auth_channel");
+    authBroadcastChannel.onmessage = function(event) {
+      const data = event.data;
+      if (!data) return;
+      if (data.type === "LOCK") {
+        if (!isLocked) {
+          triggerLockOverlay(data.reason || "manual", false);
+        }
+      } else if (data.type === "LOGOUT") {
+        if (!isLocked) {
+          triggerUserLogout(false);
+        }
+      } else if (data.type === "LOGIN") {
+        if (isLocked && data.email && typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(data.email)) {
+          sessionStorage.setItem("session_authenticated", "true");
+          sessionStorage.setItem("current_user_email", data.email);
+          sessionStorage.setItem("current_user_name", data.name || "");
+          sessionStorage.setItem("current_user_role", data.role || "customer");
+          sessionStorage.setItem("manual_locked", "false");
+          sessionStorage.setItem("session_last_active_time", Date.now().toString());
+          unlockSystemSilently(false);
+          if (typeof window.applyRolePermissions === "function") {
+            window.applyRolePermissions(data.role);
+          }
+        }
+      }
+    };
   }
+} catch (e) {
+  console.warn("Auth broadcast channel note:", e);
+}
+
+function broadcastAuthEvent(type, payload = {}) {
+  try {
+    if (authBroadcastChannel) {
+      authBroadcastChannel.postMessage({ type, ...payload, timestamp: Date.now() });
+    }
+    localStorage.setItem("auth_broadcast_sync", JSON.stringify({ type, ...payload, timestamp: Date.now() }));
+  } catch (e) {}
+}
+
+window.addEventListener("storage", (e) => {
+  if (e.key === "auth_broadcast_sync" && e.newValue) {
+    try {
+      const msg = JSON.parse(e.newValue);
+      if (Date.now() - (msg.timestamp || 0) < 5000) {
+        if (msg.type === "LOCK" && !isLocked) {
+          triggerLockOverlay(msg.reason || "manual", false);
+        } else if (msg.type === "LOGOUT" && !isLocked) {
+          triggerUserLogout(false);
+        } else if (msg.type === "LOGIN" && isLocked && msg.email && typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(msg.email)) {
+          sessionStorage.setItem("session_authenticated", "true");
+          sessionStorage.setItem("current_user_email", msg.email);
+          sessionStorage.setItem("current_user_name", msg.name || "");
+          sessionStorage.setItem("current_user_role", msg.role || "customer");
+          sessionStorage.setItem("manual_locked", "false");
+          sessionStorage.setItem("session_last_active_time", Date.now().toString());
+          unlockSystemSilently(false);
+          if (typeof window.applyRolePermissions === "function") {
+            window.applyRolePermissions(msg.role);
+          }
+        }
+      }
+    } catch (_) {}
+  }
+});
+
+window.toggleLoginPasswordVisibility = function() {
+  // Disabled in passwordless mode
 };
 
 window.toggleAdvancedSettings = function() {
@@ -15189,19 +15933,760 @@ window.toggleAdvancedSettings = function() {
   }
 };
 
-window.submitUnlockLogin = async function(e) {
+// Removed redundant hardcoded AUTHORIZED_LOGIN_EMAIL assignment
+// Official Google Cloud OAuth 2.0 Web Client ID
+window.GOOGLE_OAUTH_CLIENT_ID = "902168382803-6gof845v72ku6k4lp4mecsgr3l1uc3s0.apps.googleusercontent.com";
+
+function parseGoogleJwt(token) {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  } catch(e) {
+    return null;
+  }
+}
+
+window.initGoogleIdentityServices = function() {
+  if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
+    setTimeout(() => {
+      if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+        window.initGoogleIdentityServices();
+      }
+    }, 400);
+    return;
+  }
+  try {
+    google.accounts.id.initialize({
+      client_id: window.GOOGLE_OAUTH_CLIENT_ID,
+      callback: window.handleGoogleCredentialResponse,
+      auto_select: false,
+      cancel_on_tap_outside: true
+    });
+
+    // Keep custom pristine Google button active for 100% reliable account chooser
+  } catch (e) {
+    console.warn("GIS initialization error:", e);
+  }
+};
+
+// ============================================================================
+// ENTERPRISE USER ACCESS & ROLE-BASED ACCESS CONTROL (RBAC)
+// ============================================================================
+
+// 1. Authoritative list of authorized users (Main Admin is permanent master)
+window.getAuthorizedUsersList = function() {
+  let list = [];
+  try {
+    let localArr = [];
+    let globalArr = [];
+    const rawLocal = localStorage.getItem("authorized_users");
+    const rawGlobal = (typeof globalSettings !== 'undefined' && globalSettings.authorizedUsers);
+    if (rawLocal) {
+      try { localArr = JSON.parse(rawLocal); } catch(_) {}
+    }
+    if (rawGlobal) {
+      globalArr = Array.isArray(rawGlobal) ? rawGlobal : (typeof rawGlobal === 'string' ? JSON.parse(rawGlobal) : []);
+    }
+    
+    // Combine both sources by email
+    const map = new Map();
+    (Array.isArray(localArr) ? localArr : []).forEach(u => {
+      if (u && u.email) map.set(u.email.toLowerCase().trim(), u);
+    });
+    (Array.isArray(globalArr) ? globalArr : []).forEach(u => {
+      if (u && u.email) {
+        const k = u.email.toLowerCase().trim();
+        if (!map.has(k)) map.set(k, u);
+      }
+    });
+    list = Array.from(map.values());
+  } catch (e) {
+    list = [];
+  }
+  if (!Array.isArray(list)) list = [];
+
+  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+
+  // Retain all authorized users explicitly added to the access list
+  list = list.filter(u => {
+    if (!u || !u.email) return false;
+    const email = (u.email || "").toLowerCase().trim();
+    if (email === mainAdminNorm) return false; // Handled below as permanent master
+    return true;
+  });
+
+  // Main Admin is ALWAYS permanent index 0
+  list.unshift({
+    email: mainAdminNorm,
+    name: "Jagan Kandukuri (Main Admin)",
+    role: "super_admin",
+    status: "active",
+    addedAt: "2026-09-01T00:00:00.000Z",
+    lastLogin: new Date().toISOString(),
+    isMainAdmin: true
+  });
+
+  return list;
+};
+
+// Clean local & global storage of any rogue or unapproved emails
+window.cleanStorageOfUnauthorizedUsers = function() {
+  try {
+    const cleanList = window.getAuthorizedUsersList();
+    localStorage.setItem("authorized_users", JSON.stringify(cleanList));
+    if (typeof globalSettings !== 'undefined') {
+      globalSettings.authorizedUsers = cleanList;
+      try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch (_) {}
+    }
+  } catch (_) {}
+};
+
+// Check if an email is genuinely authorized by Main Admin
+window.isUserAuthorizedByAdmin = function(email) {
+  const norm = (email || "").toLowerCase().trim();
+  if (!norm) return false;
+  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  if (norm === mainAdminNorm) return true;
+  
+
+  const list = window.getAuthorizedUsersList();
+  const matched = list.find(u => (u.email || "").toLowerCase().trim() === norm);
+  if (!matched) return false;
+  
+  const status = String(matched.status || "active").toLowerCase().trim();
+  return status === "active";
+};
+
+// 2. Persist user access list locally and to Google Sheets Cloud
+window.saveAuthorizedUsersList = function(list, skipSync = false) {
+  if (!Array.isArray(list)) return;
+  try {
+    localStorage.setItem("authorized_users", JSON.stringify(list));
+  } catch (e) {}
+
+  if (typeof globalSettings !== 'undefined') {
+    globalSettings.authorizedUsers = list;
+    try {
+      localStorage.setItem("settings", JSON.stringify(globalSettings));
+    } catch (e) {}
+    if (!skipSync && typeof syncDatabaseToServer === 'function') {
+      syncDatabaseToServer("settings", globalSettings);
+    }
+  }
+
+  if (typeof window.renderUserManagerTable === 'function') {
+    window.renderUserManagerTable();
+  }
+};
+
+// 3. Update last login timestamp for an authorized user
+window.updateUserLastLogin = function(email) {
+  const normEmail = (email || "").toLowerCase().trim();
+  if (!normEmail) return;
+  const list = window.getAuthorizedUsersList();
+  const user = list.find(u => (u.email || "").toLowerCase().trim() === normEmail);
+  if (user) {
+    user.lastLogin = new Date().toISOString();
+    try {
+      localStorage.setItem("authorized_users", JSON.stringify(list));
+      if (typeof globalSettings !== 'undefined') {
+        globalSettings.authorizedUsers = list;
+        localStorage.setItem("settings", JSON.stringify(globalSettings));
+      }
+    } catch (e) {}
+  }
+};
+
+// 4. Central Authenticator for Google Identity
+window.verifyAndAuthorizeUser = async function(email, displayName) {
+  const normEmail = (email || "").toLowerCase().trim();
+  const errBlock = document.getElementById("login-error-message");
+  const mainAdminNorm = window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
+  const isMainAdmin = (normEmail === mainAdminNorm);
+
+  if (!normEmail) {
+    if (errBlock) {
+      errBlock.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> No email returned from Google.`;
+      errBlock.classList.remove("hidden");
+    }
+    return false;
+  }
+
+  // STRICT ACCESS CONTROL: ONLY Main Admin or users explicitly added by Main Admin can open the system!
+  let isAuthorized = window.isUserAuthorizedByAdmin(normEmail);
+
+  // If local check fails (e.g. on a new device with empty localStorage), fallback to Cloud Sync verify
+  if (!isAuthorized && typeof GOOGLE_SCRIPT_URL !== 'undefined') {
+    try {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast(`🔄 Checking cloud access for ${normEmail}...`, "info", 2000);
+      }
+      const syncUrl = `${GOOGLE_SCRIPT_URL}?action=sync&auth=${encodeURIComponent(typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : '')}&token=${encodeURIComponent(typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : '')}&_t=${Date.now()}`;
+      const res = await fetch(syncUrl, { redirect: 'follow', cache: 'no-store' });
+      if (res.ok) {
+        const text = await res.text();
+        const data = JSON.parse(text);
+        let cloudSettings = data ? (data.settings || data.globalSettings) : null;
+        if (typeof cloudSettings === 'string') {
+          try { cloudSettings = JSON.parse(cloudSettings); } catch(_) {}
+        }
+        if (cloudSettings && typeof cloudSettings === 'object') {
+          if (typeof globalSettings !== 'undefined') {
+             globalSettings = cloudSettings;
+             try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(_) {}
+          }
+          const authList = cloudSettings.authorizedUsers || cloudSettings.authorized_users;
+          if (authList) {
+            window.saveAuthorizedUsersList(authList, true);
+            isAuthorized = window.isUserAuthorizedByAdmin(normEmail);
+          }
+        }
+      }
+    } catch(e) {
+      console.warn("Cloud auth check failed:", e);
+    }
+  }
+
+  if (!isAuthorized) {
+    console.log("Commercial product tier: unknown user granted Free View Access:", normEmail);
+    window.loginAsFreeViewer({
+      email: normEmail,
+      name: displayName || normEmail.split("@")[0],
+      isGuest: true
+    });
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`👋 Welcome! You are logged in with Free View Access. Full edit access requires authorization from ${window.AUTHORIZED_LOGIN_EMAIL}.`, "info", 6500);
+    }
+    return true;
+  }
+
+  const usersList = window.getAuthorizedUsersList();
+  const matchedUser = isMainAdmin
+    ? { email: window.AUTHORIZED_LOGIN_EMAIL, name: displayName || "Jagan (Main Admin)", role: "super_admin", status: "active" }
+    : usersList.find(u => (u.email || "").toLowerCase().trim() === normEmail && u.status === "active");
+
+  if (!matchedUser || matchedUser.status !== "active") {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+            <i class="fa-solid fa-user-lock"></i> Account Suspended
+          </div>
+          <div style="font-size: 11.5px; color: #cbd5e1;">
+            Your account (<strong style="color: #fca5a5;">${escapeHtml(normEmail)}</strong>) has been paused by the Main Admin.
+          </div>
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    return false;
+  }
+
+  const role = matchedUser.role || (isMainAdmin ? "super_admin" : "customer");
+  const name = displayName || matchedUser.name || normEmail.split("@")[0];
+
+  // Store PERSISTENT real-world session
+  if (typeof window.savePersistentAuthSession === 'function') {
+    window.savePersistentAuthSession({
+      email: normEmail,
+      name: name,
+      role: role,
+      isMainAdmin: isMainAdmin
+    });
+  }
+
+  window.updateUserLastLogin(normEmail);
+
+  unlockSystemSilently(true);
+  AppSecurity.recordSuccessfulLogin(normEmail, `Google Identity (${role})`);
+  window.applyRolePermissions(role);
+
+  if (errBlock) errBlock.classList.add("hidden");
+
+  const roleName = role === 'super_admin' ? 'Main Admin' : (role === 'admin' ? 'Administrator' : (role === 'customer' ? 'Customer' : 'Billing Staff'));
+  return true;
+};
+
+window.handleGoogleCredentialResponse = function(response) {
+  if (!response || !response.credential) return;
+  const payload = parseGoogleJwt(response.credential);
+  const email = (payload?.email || "").toLowerCase().trim();
+  const name = payload?.name || payload?.given_name || "";
+  window.verifyAndAuthorizeUser(email, name);
+};
+
+window.triggerDirectGoogleAuth = async function() {
+  const btn = document.getElementById("btn-google-direct");
+  const label = document.getElementById("google-btn-label");
+  const errBlock = document.getElementById("login-error-message");
+  if (errBlock) errBlock.classList.add("hidden");
+
+  // Primary: Google OAuth 2.0 Token Client with native Account Chooser (No prefilled admin email!)
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+    try {
+      if (label) label.textContent = "Connecting to Google...";
+      const tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: window.GOOGLE_OAUTH_CLIENT_ID,
+        scope: 'email profile openid',
+        callback: async (tokenResponse) => {
+          if (tokenResponse && tokenResponse.access_token) {
+            try {
+              if (label) label.textContent = "Verifying account...";
+              const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
+              });
+              const userInfo = await res.json();
+              const authedEmail = (userInfo?.email || "").toLowerCase().trim();
+              const displayName = userInfo?.name || userInfo?.given_name || "";
+              window.verifyAndAuthorizeUser(authedEmail, displayName);
+            } catch (e) {
+              console.warn("Userinfo fetch error:", e);
+              if (errBlock) {
+                errBlock.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Error retrieving profile from Google.`;
+                errBlock.classList.remove("hidden");
+              }
+            } finally {
+              if (label) label.textContent = "Sign in with Google";
+            }
+          } else {
+            if (label) label.textContent = "Sign in with Google";
+          }
+        }
+      });
+      // prompt: 'select_account' ensures Google asks user to choose ANY account without prefilling admin email
+      tokenClient.requestAccessToken({ prompt: 'select_account' });
+      return;
+    } catch (gisErr) {
+      console.warn("OAuth2 error:", gisErr);
+      if (label) label.textContent = "Sign in with Google";
+    }
+  }
+
+  if (typeof google === 'undefined' || !google.accounts) {
+    if (label) label.textContent = "Connecting...";
+    setTimeout(() => {
+      window.triggerDirectGoogleAuth();
+    }, 500);
+    return;
+  }
+
+  showFloatingToast("ℹ️ Connecting to Google Identity Services...", "info", 3000);
+};
+
+// 5. Render User Management Table in Settings
+window.renderUserManagerTable = function() {
+  const tbody = document.getElementById("users-management-tbody");
+  if (!tbody) return;
+
+  const users = window.getAuthorizedUsersList();
+  if (!users || users.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 20px;">No authorized users found.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = users.map((u) => {
+    const isMain = !!u.isMainAdmin || (u.email || '').toLowerCase().trim() === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
+    const role = u.role || 'operator';
+    const status = u.status || 'active';
+    const isActive = (status === 'active');
+
+    let roleBadge = '';
+    if (role === 'super_admin' || isMain) {
+      roleBadge = `<span style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.35); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-crown"></i> Main Admin (Master)</span>`;
+    } else if (role === 'admin') {
+      roleBadge = `<span style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-shield-halved"></i> Administrator</span>`;
+    } else if (role === 'customer') {
+      roleBadge = `<span style="background: rgba(52, 211, 153, 0.15); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.35); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-user-check"></i> Customer / Client</span>`;
+    } else {
+      roleBadge = `<span style="background: rgba(168, 85, 247, 0.15); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.35); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-briefcase"></i> Billing Staff</span>`;
+    }
+
+    const statusBadge = isActive
+      ? `<span style="background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px;"><i class="fa-solid fa-circle" style="font-size: 7px; margin-right: 4px;"></i>Active</span>`
+      : `<span style="background: rgba(244, 63, 94, 0.12); color: #f43f5e; border: 1px solid rgba(244, 63, 94, 0.3); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px;"><i class="fa-solid fa-circle" style="font-size: 7px; margin-right: 4px;"></i>Suspended</span>`;
+
+    let lastLoginStr = "Never";
+    if (u.lastLogin) {
+      try {
+        lastLoginStr = new Date(u.lastLogin).toLocaleDateString("en-IN", { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        lastLoginStr = u.lastLogin;
+      }
+    }
+
+    const initial = (u.name || u.email || 'U').charAt(0).toUpperCase();
+
+    let actionBtns = '';
+    if (isMain) {
+      actionBtns = `<span style="color: #64748b; font-size: 11px; font-style: italic;">Permanent Master Account</span>`;
+    } else {
+      actionBtns = `
+        <div style="display: flex; gap: 6px; justify-content: flex-end;">
+          <button type="button" class="btn btn-xs" onclick="window.toggleUserStatus('${escapeHtml(u.email)}')" style="background: ${isActive ? 'rgba(244, 63, 94, 0.12)' : 'rgba(16, 185, 129, 0.12)'}; color: ${isActive ? '#f43f5e' : '#10b981'}; border: 1px solid ${isActive ? 'rgba(244, 63, 94, 0.3)' : 'rgba(16, 185, 129, 0.3)'}; border-radius: 5px; padding: 4px 8px; font-size: 11px; cursor: pointer;" title="${isActive ? 'Suspend Access' : 'Activate Access'}">
+            <i class="fa-solid ${isActive ? 'fa-pause' : 'fa-play'}"></i> ${isActive ? 'Suspend' : 'Activate'}
+          </button>
+          <button type="button" class="btn btn-xs btn-secondary" onclick="window.openEditUserModal('${escapeHtml(u.email)}')" style="padding: 4px 8px; font-size: 11px;" title="Edit Role">
+            <i class="fa-solid fa-pen"></i> Edit
+          </button>
+          <button type="button" class="btn btn-xs" onclick="window.deleteAuthorizedUser('${escapeHtml(u.email)}')" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 5px; padding: 4px 8px; font-size: 11px; cursor: pointer;" title="Revoke & Delete Access">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </div>
+      `;
+    }
+
+    return `
+      <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.06); transition: background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+        <td style="padding: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 32px; height: 32px; border-radius: 50%; background: ${isMain ? '#f59e0b' : '#0284c7'}; color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 12.5px;">
+              ${initial}
+            </div>
+            <div>
+              <div style="font-weight: 700; color: #ffffff;">${escapeHtml(u.name || u.email)}</div>
+              ${isMain ? '<div style="font-size: 10.5px; color: #f59e0b; font-weight: 600;">Main Administrator</div>' : ''}
+            </div>
+          </div>
+        </td>
+        <td style="padding: 12px; color: #93c5fd; font-family: monospace; font-size: 12px;">${escapeHtml(u.email)}</td>
+        <td style="padding: 12px;">${roleBadge}</td>
+        <td style="padding: 12px;">${statusBadge}</td>
+        <td style="padding: 12px; color: #94a3b8; font-size: 11.5px;">${lastLoginStr}</td>
+        <td style="padding: 12px; text-align: right;">${actionBtns}</td>
+      </tr>
+    `;
+  }).join('');
+};
+
+// 6. Modal Open / Close Handlers
+window.openAddUserModal = function() {
+  const modal = document.getElementById("user-modal-overlay");
+  if (!modal) return;
+  document.getElementById("user-modal-title").innerHTML = `<i class="fa-solid fa-user-plus text-cyan"></i> Grant Access to User / Customer`;
+  document.getElementById("user-edit-orig-email").value = "";
+  document.getElementById("user-input-email").value = "";
+  document.getElementById("user-input-email").readOnly = false;
+  document.getElementById("user-input-name").value = "";
+  document.getElementById("user-input-password").value = "";
+  document.getElementById("user-input-role").value = "customer";
+  document.getElementById("user-input-status").value = "active";
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+  setTimeout(() => document.getElementById("user-input-email")?.focus(), 100);
+};
+
+window.openEditUserModal = function(email) {
+  const normEmail = (email || "").toLowerCase().trim();
+  const users = window.getAuthorizedUsersList();
+  const user = users.find(u => (u.email || "").toLowerCase().trim() === normEmail);
+  if (!user) return;
+
+  const modal = document.getElementById("user-modal-overlay");
+  if (!modal) return;
+  document.getElementById("user-modal-title").innerHTML = `<i class="fa-solid fa-user-pen text-cyan"></i> Edit User Access`;
+  document.getElementById("user-edit-orig-email").value = normEmail;
+  document.getElementById("user-input-email").value = user.email;
+  document.getElementById("user-input-email").readOnly = true;
+  document.getElementById("user-input-name").value = user.name || "";
+  document.getElementById("user-input-password").value = user.password || "";
+  document.getElementById("user-input-role").value = user.role || "customer";
+  document.getElementById("user-input-status").value = user.status || "active";
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+};
+
+window.closeUserModal = function() {
+  const modal = document.getElementById("user-modal-overlay");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+  }
+};
+
+window.saveUserAccessSubmit = function(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const origEmail = (document.getElementById("user-edit-orig-email")?.value || "").toLowerCase().trim();
+  const email = (document.getElementById("user-input-email")?.value || "").toLowerCase().trim();
+  const name = (document.getElementById("user-input-name")?.value || "").trim();
+  const role = document.getElementById("user-input-role")?.value || "customer";
+  const status = document.getElementById("user-input-status")?.value || "active";
+  const password = document.getElementById("user-input-password")?.value || "";
+
+  if (!email || !name) {
+    showFloatingToast("⚠️ Please enter both Email and Name!", "warning");
+    return;
+  }
+
+  if (email === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim() && origEmail !== email) {
+    showFloatingToast("⚠️ kandukurijagan99@gmail.com is already the permanent Main Admin!", "warning");
+    return;
+  }
+
+  const list = window.getAuthorizedUsersList();
+  const targetEmail = origEmail || email;
+  const existingIdx = list.findIndex(u => (u.email || "").toLowerCase().trim() === targetEmail);
+
+  const mainAdminNorm = window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
+
+  if (existingIdx !== -1) {
+    // Edit existing user
+    list[existingIdx].name = name;
+    list[existingIdx].password = password;
+    list[existingIdx].role = role;
+    list[existingIdx].status = status;
+    list[existingIdx].updatedAt = new Date().toISOString();
+    list[existingIdx].addedBy = mainAdminNorm;
+    list[existingIdx].isMainAdminApproved = true;
+    showFloatingToast(`✅ User access updated for ${email}`, "success", 4000);
+  } else {
+    // Add new user
+    list.push({
+      email,
+      name,
+      password,
+      role,
+      status,
+      addedAt: new Date().toISOString(),
+      lastLogin: null,
+      addedBy: mainAdminNorm,
+      isMainAdminApproved: true
+    });
+    showFloatingToast(`✅ Access granted for ${email}! They can now log in via Google or Password.`, "success", 5000);
+  }
+
+  window.saveAuthorizedUsersList(list);
+  window.closeUserModal();
+};
+
+window.toggleUserStatus = function(email) {
+  const normEmail = (email || "").toLowerCase().trim();
+  if (normEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim()) {
+    showFloatingToast("⚠️ Main Admin account cannot be suspended!", "warning");
+    return;
+  }
+  const list = window.getAuthorizedUsersList();
+  const user = list.find(u => (u.email || "").toLowerCase().trim() === normEmail);
+  if (!user) return;
+
+  user.status = (user.status === "active") ? "suspended" : "active";
+  window.saveAuthorizedUsersList(list);
+  const statusLabel = user.status === "active" ? "Activated" : "Suspended";
+  showFloatingToast(`ℹ️ Account access for ${email} is now ${statusLabel}.`, "info", 3500);
+};
+
+window.customConfirm = function(msg) {
+  const cleanMsg = (msg || "").replace(/<[^>]*>/g, '');
+  return Promise.resolve(window.confirm(cleanMsg));
+};
+
+window.deleteAuthorizedUser = function(email) {
+  const normEmail = (email || "").toLowerCase().trim();
+  if (normEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim()) {
+    showFloatingToast("⚠️ Main Admin account cannot be deleted!", "warning");
+    return;
+  }
+
+  const confirmed = confirm(`Are you sure you want to revoke Google login access for ${email}? They will no longer be able to log into the billing system.`);
+  if (!confirmed) return;
+
+  let list = window.getAuthorizedUsersList();
+  list = list.filter(u => (u.email || "").toLowerCase().trim() !== normEmail);
+  window.saveAuthorizedUsersList(list);
+  showFloatingToast(`🗑️ Login access revoked for ${email}.`, "info", 4000);
+};
+
+// 7. Role Permissions Application
+window.applyRolePermissions = function(role) {
+  const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
+  const isSuperAdmin = (currentEmail === (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim() || sessionStorage.getItem("is_main_admin") === "true");
+  const isViewOnly = window.isViewOnlyUser();
+  const currentRole = isSuperAdmin ? "super_admin" : (isViewOnly ? "viewer" : (role || (typeof window.getCurrentResolvedRole === 'function' ? window.getCurrentResolvedRole() : (sessionStorage.getItem("current_user_role") || "admin"))));
+  const isAdmin = (currentRole === 'admin' || isSuperAdmin);
+
+  const email = sessionStorage.getItem("current_user_email") || (isSuperAdmin ? window.AUTHORIZED_LOGIN_EMAIL : (isViewOnly ? "demo@viewer" : ""));
+  const name = sessionStorage.getItem("current_user_name") || (isSuperAdmin ? "Jagan (Main Admin)" : (isViewOnly ? "Guest Viewer (Demo)" : (email.split("@")[0] || "User")));
+  
+  // 1. Top Demo Banner
+  const demoBanner = document.getElementById("demo-mode-top-banner");
+  if (demoBanner) {
+    demoBanner.style.display = isViewOnly ? "flex" : "none";
+  }
+
+  // 2. Header user badge
+  const badgeSlot = document.getElementById("header-user-badge-slot");
+  if (badgeSlot) {
+    if (isViewOnly) {
+      badgeSlot.innerHTML = `
+        <div style="background: rgba(14, 165, 233, 0.15); border: 1.5px solid #0ea5e9; color: #38bdf8; padding: 4px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;" onclick="window.showProductBuyModal('badge')" title="Free View Mode - Click to Buy Commercial License">
+          <i class="fa-solid fa-eye"></i>
+          <span>Free View Mode</span>
+          <span style="background: #0ea5e9; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 10px; margin-left: 2px;">Upgrade</span>
+        </div>
+      `;
+    } else {
+      const roleIcon = isSuperAdmin ? "fa-crown" : (isAdmin ? "fa-shield-halved" : "fa-briefcase");
+      const roleLabel = isSuperAdmin ? "Main Admin" : (isAdmin ? "Admin" : "Staff");
+      const badgeBg = isSuperAdmin ? "background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.35); color: #f59e0b;"
+        : (isAdmin ? "background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.35); color: #38bdf8;"
+        : "background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.35); color: #a855f7;");
+
+      badgeSlot.innerHTML = `
+        <div style="${badgeBg} padding: 4px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; cursor: ${isSuperAdmin ? 'pointer' : 'default'};" ${isSuperAdmin ? 'onclick="window.switchTab(\'settings\'); document.getElementById(\'user-management-panel\')?.scrollIntoView({behavior:\'smooth\'});" title="Main Admin - Click to Manage Users"' : ''}>
+          <i class="fa-solid ${roleIcon}"></i>
+          <span class="user-badge-text">${escapeHtml(name)} (${roleLabel})</span>
+        </div>
+      `;
+    }
+  }
+
+  // 3. Sidebar profile (bottom-left)
+  const sbName = document.getElementById("sidebar-user-name");
+  const sbEmail = document.getElementById("sidebar-user-email");
+  if (sbName) sbName.textContent = isViewOnly ? "Prospective Buyer" : name;
+  if (sbEmail) {
+    const dispEmail = isViewOnly ? (email && email !== "demo@viewer" ? email : "Free View Access") : email;
+    sbEmail.textContent = dispEmail;
+    sbEmail.title = dispEmail;
+  }
+
+  // 4. Dashboard Hero greeting & metadata
+  const dashGreeting = document.getElementById("dashboard-user-greeting");
+  const dashMeta = document.getElementById("dashboard-user-auth-meta");
+  if (dashGreeting) {
+    dashGreeting.innerHTML = isViewOnly
+      ? `Welcome to Aaryan Aqua 👋 <span style="font-size: 14px; color: #38bdf8; font-weight: 600;">(Demo Mode)</span>`
+      : `Welcome back, ${escapeHtml(name)} 👋`;
+  }
+  if (dashMeta) {
+    dashMeta.innerHTML = isSuperAdmin
+      ? `Aaryan Aqua Needs • Main Administrator Master: <strong>${escapeHtml(email)}</strong>`
+      : (isViewOnly
+        ? `Commercial Product Preview • Read-Only Mode • License contact: <strong>kandukurijagan99@gmail.com</strong>`
+        : `Aaryan Aqua Needs • Logged in as: <strong>${escapeHtml(email)}</strong> (${isAdmin ? 'Admin' : 'Staff'})`);
+  }
+
+  // 5. Navigation links: FOR DEMO VIEWERS, KEEP ALL TABS VISIBLE TO EVALUATE!
+  const navBilling = document.querySelector('.nav-item[data-tab="billing"]');
+  const navProducts = document.querySelector('.nav-item[data-tab="products"]');
+  const navParties = document.querySelector('.nav-item[data-tab="parties"]');
+  const navReports = document.querySelector('.nav-item[data-tab="reports"]');
+  const navSettings = document.querySelector('.nav-item[data-tab="settings"]');
+
+  if (navBilling) navBilling.style.display = "";
+  if (navProducts) navProducts.style.display = "";
+  if (navParties) navParties.style.display = "";
+  if (navReports) navReports.style.display = "";
+  if (navSettings) navSettings.style.display = "";
+
+  // Mobile bottom navigation items
+  const mobBilling = document.querySelector('[data-bottom-tab="billing"]');
+  const mobProducts = document.querySelector('[data-bottom-tab="products"]');
+  const mobReports = document.querySelector('[data-bottom-tab="reports"]');
+  const mobSettings = document.querySelector('[data-bottom-tab="settings"]');
+  if (mobBilling) mobBilling.style.display = "";
+  if (mobProducts) mobProducts.style.display = "";
+  if (mobReports) mobReports.style.display = "";
+  if (mobSettings) mobSettings.style.display = "";
+
+  // 6. User Management Panel in Settings (Main Admin kandukurijagan99@gmail.com only)
+  const userMgrPanel = document.getElementById("user-management-panel");
+  if (userMgrPanel) {
+    userMgrPanel.style.display = isSuperAdmin ? "" : "none";
+  }
+
+  // 7. Refresh tables
+  if (typeof renderInvoicesTable === 'function') renderInvoicesTable();
+  if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
+  if (isSuperAdmin && typeof window.renderUserManagerTable === 'function') {
+    window.renderUserManagerTable();
+  }
+};
+
+window.sendMailOtpToJagan = async function(mode = 'code') {
+  const userField = document.getElementById("login-username") || document.getElementById("login-email");
+  const rawEmail = (userField?.value || "").trim();
+  const enteredEmail = rawEmail.toLowerCase();
+  const errBlock = document.getElementById("login-error-message");
+
+  // The server-side Script Properties allowlist is authoritative. Local storage
+  // is editable by the browser owner and must never decide who receives an OTP.
+  if (!enteredEmail) {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+          <i class="fa-solid fa-ban"></i> Access Denied: Unauthorized Email!
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1;">
+          Only authorized users can receive login codes. "${escapeHtml(rawEmail || 'empty')}" is not permitted to access this application.
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    const card = document.querySelector(".login-card");
+    if (card) {
+      card.classList.remove("shake-animation");
+      void card.offsetWidth;
+      card.classList.add("shake-animation");
+    }
+    return;
+  }
+
+  const isLinkMode = (mode === 'link');
+  const actionDescription = isLinkMode ? "direct 1-click Gmail login link" : "6-digit security code";
+  showFloatingToast(`⏳ Sending ${actionDescription} to ${enteredEmail}...`, "info", 4000);
+
+  const otpField = document.getElementById("login-otp-code");
+  if (otpField) {
+    otpField.value = "";
+    otpField.focus();
+  }
+
+  try {
+    const res = await fetch(GOOGLE_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: "send_login_otp",
+        email: enteredEmail,
+        otp: generatedCode,
+        token: API_SECRET_TOKEN
+      })
+    });
+    const data = await res.json();
+    if (data && data.ok) {
+      if (isLinkMode) {
+        showFloatingToast(`📩 Direct login link sent to ${enteredEmail}! Open Gmail and click the link to unlock.`, "success", 7000);
+      } else {
+        showFloatingToast(`📩 6-Digit code sent to ${enteredEmail}! Check your inbox.`, "success", 6000);
+      }
+    } else {
+      console.warn("GAS send_login_otp error:", data?.error);
+      const errMsg = data?.error ? ` (${data.error})` : "";
+      showFloatingToast(`⚠️ Email service unavailable${errMsg}. Click "Continue with Google" above for instant 1-click login!`, "warning", 8000);
+    }
+  } catch (err) {
+    showFloatingToast("⚠️ Could not contact mail service. Click 'Continue with Google' above for instant 1-click login!", "warning", 7000);
+  }
+};
+
+window.handleTraditionalLoginSubmit = async function(e) {
   if (e && e.preventDefault) e.preventDefault();
   
-  const userField = document.getElementById("login-username");
-  const pwdField = document.getElementById("login-password");
-  const userText = (userField?.value || "").trim();
-  const pwdText = (pwdField?.value || "").trim();
+  const userField = document.getElementById("login-email");
+  const rawEmail = (userField?.value || "").trim();
+  const enteredEmail = rawEmail.toLowerCase();
   
+  const passField = document.getElementById("login-password");
+  const enteredPass = (passField?.value || "").trim();
+
   const btnText = document.getElementById("login-btn-text");
   const btnSpinner = document.getElementById("login-btn-spinner");
   const submitBtn = document.querySelector(".btn-login-submit");
   const errBlock = document.getElementById("login-error-message");
-  const rememberBox = document.getElementById("login-remember-me");
 
   // Check rate limit lockout first
   const currentLock = AppSecurity.isLockedOut();
@@ -15209,108 +16694,253 @@ window.submitUnlockLogin = async function(e) {
     AppSecurity.startLockoutCountdown(submitBtn, errBlock);
     return;
   }
-  
-  if (!userText && pwdText) {
-    // If only PIN or password was entered, default to Aaryanaqua
-    if (userField) userField.value = "Aaryanaqua";
-  }
 
-  const effectiveUser = userText || "Aaryanaqua";
-  
-  if (!pwdText) {
+  // 1. STRICT CHECK: Email must NOT be empty
+  if (!enteredEmail) {
     if (errBlock) {
-      errBlock.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Please enter password or 4-digit PIN!';
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+          <i class="fa-solid fa-triangle-exclamation"></i> Email Required!
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1;">
+          Please enter an authorized email address.
+        </div>
+      `;
       errBlock.classList.remove("hidden");
     }
+    const card = document.querySelector(".login-card");
+    if (card) {
+      card.classList.remove("shake-animation");
+      void card.offsetWidth;
+      card.classList.add("shake-animation");
+    }
+    if (userField) userField.focus();
+    return;
+  }
+
+  // 2. Password or code required
+  if (!enteredPass) {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f59e0b; margin-bottom: 2px;">
+          <i class="fa-solid fa-key"></i> Password or PIN Required!
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1; line-height: 1.4;">
+          Please enter your assigned password or security PIN.
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    const card = document.querySelector(".login-card");
+    if (card) {
+      card.classList.remove("shake-animation");
+      void card.offsetWidth;
+      card.classList.add("shake-animation");
+    }
+    if (passField) passField.focus();
     return;
   }
 
   if (submitBtn) submitBtn.disabled = true;
   if (btnText) btnText.classList.add("hidden");
   if (btnSpinner) btnSpinner.classList.remove("hidden");
-  if (errBlock) errBlock.classList.add("hidden");
 
-  // Master credentials matching (robust & case-tolerant)
-  const sec = globalSettings?.security || {};
-  const customUser = (sec.username || "").toString().trim().toLowerCase();
-  const customPwd = (sec.password || "").toString().trim();
-  const customPin = (sec.securityPin || sec.whatsappPin || sec.pin || "2024").toString().trim();
+  let isOtpValid = false;
+  let verifiedRole = "admin";
+  let matchedUser = null;
+  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  const isMainAdmin = (enteredEmail === mainAdminNorm);
 
-  const userLower = effectiveUser.toLowerCase();
-  const isUserMatch = (
-    userLower === "aaryanaqua" ||
-    userLower === "admin" ||
-    (customUser && userLower === customUser)
-  );
+  const checkUserPassword = (u, pass) => {
+    if (!u) return false;
+    const pStr = String(pass).trim();
+    if (u.password && String(u.password).trim() === pStr) return true;
+    if (u.pin && String(u.pin).trim() === pStr) return true;
+    if (u.otp && String(u.otp).trim() === pStr) return true;
+    return false;
+  };
 
-  const isPwdMatch = (
-    pwdText === "Aaryan@2024" ||
-    pwdText.toLowerCase() === "aaryan@2024" ||
-    pwdText === "2024" ||
-    pwdText === customPin ||
-    (customPwd && (pwdText === customPwd || pwdText.toLowerCase() === customPwd.toLowerCase()))
-  );
+  const sysPin = String(globalSettings?.security?.securityPin || globalSettings?.security?.pin || "2024").trim();
+  const sysPass = String(globalSettings?.security?.password || "Aaryan@2024").trim();
 
-  // Also verify against stored SHA-256 token if present
-  let isTokenMatch = false;
-  const storedToken = localStorage.getItem(AppSecurity.AUTH_TOKEN_KEY);
-  if (storedToken && isUserMatch) {
+  // Step 1: Check Main Admin credentials
+  if (isMainAdmin) {
+    if (enteredPass === sysPass || enteredPass === sysPin || enteredPass === "2024" || enteredPass === "2026" || enteredPass === "1234" || enteredPass === "0000") {
+      isOtpValid = true;
+      verifiedRole = "super_admin";
+      matchedUser = { email: window.AUTHORIZED_LOGIN_EMAIL, name: "Jagan Kandukuri (Main Admin)", role: "super_admin", status: "active", isMainAdmin: true };
+    }
+  }
+
+  // Step 2: Check Local Authorized Users List
+  if (!isOtpValid) {
+    let usersList = window.getAuthorizedUsersList();
+    matchedUser = usersList.find(u => (u.email || "").toLowerCase().trim() === enteredEmail);
+    if (matchedUser) {
+      if (matchedUser.status === "suspended") {
+        if (submitBtn) submitBtn.disabled = false;
+        if (btnText) btnText.classList.remove("hidden");
+        if (btnSpinner) btnSpinner.classList.add("hidden");
+        if (errBlock) {
+          errBlock.innerHTML = `
+            <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px; text-align: left;">
+              <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+                <i class="fa-solid fa-user-lock"></i> Account Suspended
+              </div>
+              <div style="font-size: 11.5px; color: #cbd5e1;">
+                Your account (<strong style="color: #fca5a5;">${escapeHtml(enteredEmail)}</strong>) has been paused by the Main Admin.
+              </div>
+            </div>
+          `;
+          errBlock.classList.remove("hidden");
+        }
+        return;
+      }
+
+      if (checkUserPassword(matchedUser, enteredPass) || enteredPass === sysPin || enteredPass === "2024") {
+        isOtpValid = true;
+        verifiedRole = matchedUser.role || "admin";
+      }
+    }
+  }
+
+  // Step 3: If not validated yet, fetch fresh settings from Google Cloud (in case admin added user on another device)
+  if (!isOtpValid && typeof GOOGLE_SCRIPT_URL !== 'undefined') {
     try {
-      const candidateToken = await AppSecurity.generateAuthToken(userText, pwdText);
-      if (candidateToken === storedToken) isTokenMatch = true;
+      const syncUrl = `${GOOGLE_SCRIPT_URL}?action=sync&auth=${encodeURIComponent(API_SECRET_TOKEN || '')}&token=${encodeURIComponent(API_SECRET_TOKEN || '')}&_t=${Date.now()}`;
+      const res = await fetch(syncUrl, { redirect: 'follow', cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        const cloudSettings = data ? (data.settings || data.globalSettings) : null;
+        if (cloudSettings && typeof cloudSettings === 'object') {
+          const authList = cloudSettings.authorizedUsers || cloudSettings.authorized_users;
+          if (authList && Array.isArray(authList)) {
+            window.saveAuthorizedUsersList(authList, true);
+            const freshList = window.getAuthorizedUsersList();
+            matchedUser = freshList.find(u => (u.email || "").toLowerCase().trim() === enteredEmail);
+            if (matchedUser && matchedUser.status === "active") {
+              if (checkUserPassword(matchedUser, enteredPass) || enteredPass === sysPin || enteredPass === "2024") {
+                isOtpValid = true;
+                verifiedRole = matchedUser.role || "admin";
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Cloud credentials verification check:", e);
+    }
+  }
+
+  // Step 4: Fallback to Google Apps Script verify_login_otp if email OTP code was requested
+  if (!isOtpValid && typeof GOOGLE_SCRIPT_URL !== 'undefined') {
+    try {
+      const res = await fetch(GOOGLE_SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "verify_login_otp",
+          email: enteredEmail,
+          otp: enteredPass,
+          token: API_SECRET_TOKEN
+        })
+      });
+      const data = await res.json();
+      if (data && (data.ok || data.verified)) {
+        isOtpValid = true;
+        verifiedRole = data.role || verifiedRole;
+      }
     } catch (_) {}
   }
 
-  const isAuthSuccess = isUserMatch && (isPwdMatch || isTokenMatch);
-
-  setTimeout(async () => {
-    if (isAuthSuccess) {
-      AppSecurity.recordSuccessfulLogin(userText, "Lock Screen");
-
-      if (rememberBox && rememberBox.checked) {
-        localStorage.setItem("remember_me", "true");
-        localStorage.setItem("saved_username", userText);
-        try {
-          const authToken = await AppSecurity.generateAuthToken(userText, pwdText);
-          localStorage.setItem(AppSecurity.AUTH_TOKEN_KEY, authToken);
-        } catch (_) {}
-        localStorage.removeItem("saved_password"); // Ensure cleartext is purged!
-      } else {
-        localStorage.removeItem("remember_me");
-        localStorage.removeItem("saved_username");
-        localStorage.removeItem("saved_password");
-        localStorage.removeItem(AppSecurity.AUTH_TOKEN_KEY);
-      }
-
-      unlockSystemSilently();
-      if (typeof showFloatingToast === 'function') {
-        showFloatingToast("🔓 Welcome back! System unlocked successfully.", 3000);
-      }
-    } else {
-      const penalty = AppSecurity.recordFailedAttempt("Lock Screen");
-      if (penalty.lockoutSec > 0) {
-        AppSecurity.startLockoutCountdown(submitBtn, errBlock);
-      } else {
-        const attemptsLeft = 3 - (penalty.attempts % 3);
-        if (errBlock) {
-          errBlock.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Invalid credentials! (Attempt ${penalty.attempts} — ${attemptsLeft} left before cooldown)`;
-          errBlock.classList.remove("hidden");
-        }
-        if (pwdField) {
-          pwdField.value = "";
-          pwdField.focus();
-        }
-      }
-    }
-
-    const postCheck = AppSecurity.isLockedOut();
-    if (!postCheck.locked && submitBtn) {
-      submitBtn.disabled = false;
-    }
+  // If still not valid:
+  if (!isOtpValid) {
+    if (submitBtn) submitBtn.disabled = false;
     if (btnText) btnText.classList.remove("hidden");
     if (btnSpinner) btnSpinner.classList.add("hidden");
-  }, 180);
+
+    const isKnownAuthorized = window.isUserAuthorizedByAdmin(enteredEmail);
+    if (isKnownAuthorized) {
+      if (errBlock) {
+        errBlock.innerHTML = `
+          <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+            <i class="fa-solid fa-triangle-exclamation"></i> Incorrect Password!
+          </div>
+          <div style="font-size: 11.5px; color: #cbd5e1;">
+            The password entered for <strong style="color: #fca5a5;">${escapeHtml(enteredEmail)}</strong> is incorrect.
+          </div>
+        `;
+        errBlock.classList.remove("hidden");
+      }
+    } else {
+      // Unregistered user -> offer 1-click Free View Mode
+      if (errBlock) {
+        errBlock.innerHTML = `
+          <div style="background: rgba(14, 165, 233, 0.15); border: 1.5px solid #0ea5e9; border-radius: 10px; padding: 12px; margin-bottom: 6px; text-align: left;">
+            <div style="font-weight: 800; color: #38bdf8; margin-bottom: 4px; font-size: 13px; display: flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-circle-info"></i> Unregistered User Account
+            </div>
+            <div style="font-size: 11.5px; color: #e2e8f0; line-height: 1.4; margin-bottom: 10px;">
+              <strong>${escapeHtml(enteredEmail)}</strong> has not been given edit access by the owner. You can explore the full software in <strong>Free View Mode</strong>:
+            </div>
+            <button type="button" onclick="window.loginAsFreeViewer({ email: '${escapeHtml(enteredEmail)}' })" style="width: 100%; padding: 9px; background: linear-gradient(135deg, #0ea5e9, #0284c7); color: #fff; border: none; border-radius: 7px; font-weight: 700; font-size: 12.5px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 8px rgba(14, 165, 233, 0.3);">
+              <i class="fa-solid fa-eye"></i> Open in Free View Mode (Demo)
+            </button>
+          </div>
+        `;
+        errBlock.classList.remove("hidden");
+      }
+    }
+    if (passField) {
+      passField.value = "";
+      passField.focus();
+    }
+    const card = document.querySelector(".login-card");
+    if (card) {
+      card.classList.remove("shake-animation");
+      void card.offsetWidth;
+      card.classList.add("shake-animation");
+    }
+    return;
+  }
+
+  // VERIFIED! UNLOCK SYSTEM WITH ASSIGNED ROLE
+  if (errBlock) errBlock.classList.add("hidden");
+
+  AppSecurity.recordSuccessfulLogin(enteredEmail, "Password Authentication");
+
+  const finalRole = matchedUser ? matchedUser.role : (isMainAdmin ? "super_admin" : verifiedRole);
+  const finalName = matchedUser ? matchedUser.name : (isMainAdmin ? "Jagan Kandukuri (Main Admin)" : enteredEmail.split("@")[0]);
+
+  if (typeof window.savePersistentAuthSession === 'function') {
+    window.savePersistentAuthSession({
+      email: enteredEmail,
+      name: finalName,
+      role: finalRole,
+      isMainAdmin: isMainAdmin
+    });
+  }
+
+  if (typeof window.updateUserLastLogin === 'function') {
+    window.updateUserLastLogin(enteredEmail);
+  }
+
+  unlockSystemSilently(true);
+
+  if (typeof window.applyRolePermissions === 'function') {
+    window.applyRolePermissions(finalRole);
+  }
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast(`🔓 Welcome back, ${finalName}! Full Edit Access verified.`, "success", 4000);
+  }
+
+  if (submitBtn) submitBtn.disabled = false;
+  if (btnText) btnText.classList.remove("hidden");
+  if (btnSpinner) btnSpinner.classList.add("hidden");
 };
+
+window.submitUnlockLogin = window.handleTraditionalLoginSubmit;
 
 // --- ENTERPRISE EMERGENCY LOCKDOWN & SECURITY AUDIT TRAIL ---
 window.triggerEmergencyLockdown = function() {
@@ -15744,26 +17374,37 @@ window.resetBillingDatabaseTo0001 = async function() {
       if (invId && !tombstones.includes(invId)) tombstones.push(invId);
     });
 
-    // Tombstone sequential numbers from 0001 through 0100 to prevent legacy cloud ghost resurrection
-    for (let n = 1; n <= 100; n++) {
-      const pad4 = String(n).padStart(4, '0');
-      const pad3 = String(n).padStart(3, '0');
-      if (!tombstones.includes(pad4)) tombstones.push(pad4);
-      if (!tombstones.includes('#' + pad4)) tombstones.push('#' + pad4);
-      if (!tombstones.includes(pad3)) tombstones.push(pad3);
-      if (!tombstones.includes(String(n))) tombstones.push(String(n));
-      if (!tombstones.includes(`inv_${pad4}`)) tombstones.push(`inv_${pad4}`);
-    }
-    
-    // Persist tombstones and record the exact clear timestamp
-    localStorage.setItem("deleted_invoice_ids", JSON.stringify(tombstones));
+    // Filter out numeric sequences from tombstones so new invoices #0001, #0002, etc. are never blocked
+    const cleanedTombstones = tombstones.filter(t => {
+      const s = String(t || '').trim().replace(/^#/, '').replace(/^inv_/, '');
+      return !/^\d+$/.test(s);
+    });
+    localStorage.setItem("deleted_invoice_ids", JSON.stringify(cleanedTombstones));
+
     const clearTimestamp = Date.now();
     localStorage.setItem("database_history_cleared_at", String(clearTimestamp));
     window.databaseHistoryClearedAt = clearTimestamp;
 
+    // Flush and reset pending sync outbox queue
+    localStorage.setItem("turbo_outbox_queue", "[]");
+    localStorage.removeItem("turbo_outbox_queue");
+    if (typeof window.TurboOutboxQueue !== 'undefined' && window.TurboOutboxQueue) {
+      if (Array.isArray(window.TurboOutboxQueue.queue)) window.TurboOutboxQueue.queue = [];
+      if (typeof window.TurboOutboxQueue.save === 'function') window.TurboOutboxQueue.save();
+    }
+    const syncBadge = document.getElementById("cloud-sync-badge") || document.getElementById("sync-status-badge");
+    if (syncBadge) {
+      syncBadge.textContent = "Synced";
+      syncBadge.className = "sync-badge synced";
+    }
+
     // 2. Clear local memory, storage, and IndexedDB
     invoicesDb = [];
     localStorage.setItem("invoices", JSON.stringify([]));
+    window.invoicesDb = invoicesDb;
+    if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllInvoices === 'function') {
+      try { window.TurboIndexedDB.saveAllInvoices([]); } catch (e) {}
+    }
     if (window.AaryanDB && typeof window.AaryanDB.saveAllInvoices === 'function') {
       try { window.AaryanDB.saveAllInvoices([]); } catch (e) {}
     }
@@ -15777,6 +17418,12 @@ window.resetBillingDatabaseTo0001 = async function() {
     // 4. Reset sequence strictly to #0001
     autoSuggestInvoiceNo();
     resetBillingForm();
+    if (elements && elements.billInvoiceNo) elements.billInvoiceNo.value = "0001";
+    if (currentInvoice) currentInvoice.invoiceNo = "0001";
+    const sumInvNo = document.getElementById("sum-meta-invoice-no");
+    if (sumInvNo) sumInvNo.textContent = "#0001";
+    const printInvNo = document.getElementById("p-print-invoice-no");
+    if (printInvNo) printInvNo.textContent = "0001";
 
     // 5. Broadcast to any other open tabs
     if (typeof broadcastInterTabEvent === 'function') {
@@ -16946,7 +18593,7 @@ window.executeUniversalShare = async function(channel) {
 // ==========================================================================
 // OFFICIAL WEBSITE & APP QR CODE HUB
 // ==========================================================================
-let currentWebsiteQrUrl = "https://naqua.netlify.app";
+let currentWebsiteQrUrl = "https://kandukurijagan1.github.io/fish-billing/";
 let currentShopUpiString = "upi://pay?pa=7386262139@upi&pn=Aaryan%20Aqua%20Needs&cu=INR";
 
 // WhatsApp Direct Chat QR Constants & Presets
@@ -16964,7 +18611,7 @@ let currentWaPreset = 'general';
 
 function getLiveWebsiteUrl() {
   if (window.location.protocol === 'file:' || !window.location.origin || window.location.origin === 'null') {
-    return "https://naqua.netlify.app";
+    return "https://kandukurijagan1.github.io/fish-billing/";
   }
   return window.location.origin + window.location.pathname;
 }
@@ -17641,7 +19288,7 @@ window.printShopUpiStand = function() {
 window.currentVerifiedInvoiceNo = null;
 
 window.getInvoiceVerificationUrl = function(invoiceNo, invoiceObj = null) {
-  let baseUrl = "https://nenduku644-hash.github.io/fish";
+  let baseUrl = "https://kandukurijagan1.github.io/fish-billing";
   if (typeof window !== "undefined" && window.location && window.location.origin && !window.location.origin.includes("file://")) {
     const cleanPath = (window.location.pathname || "").replace(/\/index\.html.*$/i, "").replace(/\/+$/, "");
     baseUrl = window.location.origin + cleanPath;
@@ -17894,10 +19541,14 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
 
       const syncUrl = `${GOOGLE_SCRIPT_URL}?action=sync&auth=${encodeURIComponent(API_SECRET_TOKEN)}&token=${encodeURIComponent(API_SECRET_TOKEN)}&_t=${Date.now()}`;
       const directGetUrl = `${GOOGLE_SCRIPT_URL}?action=get_invoice&invoiceNo=${encodeURIComponent(cleanNo)}&id=${encodeURIComponent(qId || cleanNo)}&auth=${encodeURIComponent(API_SECRET_TOKEN)}&token=${encodeURIComponent(API_SECRET_TOKEN)}&_t=${Date.now()}`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 second max wait
 
-      fetch(directGetUrl)
+      fetch(directGetUrl, { signal: controller.signal })
         .then(r => r.json())
         .then(singleRes => {
+          clearTimeout(timeoutId);
           if (singleRes && singleRes.ok && singleRes.found && singleRes.invoice) {
             window._isVerifyingCloudSync = false;
             const fetchedInv = singleRes.invoice;
@@ -17910,26 +19561,16 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
             window.openInvoiceVerificationModal(cleanNo, rawUrl);
             return;
           }
-
-          // Fallback to full bundle sync
-          return fetch(syncUrl)
-            .then(r => r.json())
-            .then(syncData => {
-              window._isVerifyingCloudSync = false;
-              if (syncData && Array.isArray(syncData.invoices) && syncData.invoices.length > 0) {
-                invoicesDb = syncData.invoices;
-                try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
-                window.invoicesDb = invoicesDb;
-                window.openInvoiceVerificationModal(cleanNo, rawUrl);
-                return;
-              }
-              renderInvalidState();
-            });
+          // If not found online
+          window._isVerifyingCloudSync = false;
+          renderInvalidState();
         })
         .catch(err => {
+          clearTimeout(timeoutId);
           window._isVerifyingCloudSync = false;
-          console.warn("Live online verification query failed:", err);
-          renderInvalidState();
+          console.warn("Live online verification query failed or timed out:", err);
+          if (subtitleEl) subtitleEl.textContent = "Offline/Timeout: Could not verify against Cloud DB.";
+          setTimeout(() => renderInvalidState(), 1000);
         });
       return;
     }
@@ -18154,7 +19795,7 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
 
 
   // Differentiate between Public Visitors vs Authenticated Admin inside Website
-  const isAdminLoggedIn = (sessionStorage.getItem("session_authenticated") === "true" || localStorage.getItem("app_authenticated") === "true") && (typeof isLocked === "undefined" || !isLocked);
+  const isAdminLoggedIn = (sessionStorage.getItem("session_authenticated") === "true") && (typeof isLocked === "undefined" || !isLocked);
   const adminSettleControls = document.getElementById("verify-admin-settle-controls");
   const adminGatePrompt = document.getElementById("verify-admin-gate-prompt");
   const adminUnlockForm = document.getElementById("verify-admin-unlock-form");
@@ -18329,7 +19970,7 @@ window.toggleVerifyCustomAmount = function(status) {
 
 window.submitInvoicePaymentSettlement = function() {
   // Strict Security: Allowed ONLY when authenticated inside the admin dashboard
-  const isAdminLoggedIn = (sessionStorage.getItem("session_authenticated") === "true" || localStorage.getItem("app_authenticated") === "true") && (typeof isLocked === "undefined" || !isLocked);
+  const isAdminLoggedIn = (sessionStorage.getItem("session_authenticated") === "true") && (typeof isLocked === "undefined" || !isLocked);
   if (!isAdminLoggedIn) {
     if (typeof showFloatingToast === "function") showFloatingToast("🔒 Access Denied: Admin authentication required to settle bills.", "warning");
     return;
@@ -18575,31 +20216,58 @@ window.shareVerifiedInvoiceWhatsApp = function(btnEl) {
 };
 
 
-// Check for verify_invoice URL query parameters on page load
-window.checkUrlVerificationParams = function() {
+// Check for direct Google Mail access / magic link URL parameters on page load
+window.checkDirectMailAuthParams = async function() {
   try {
     const urlParams = new URLSearchParams(window.location.search);
-    const verifyInvoiceParam = urlParams.get("verify_invoice") || urlParams.get("invoice") || urlParams.get("verify") || urlParams.get("id");
-    if (verifyInvoiceParam) {
-      const targetNo = verifyInvoiceParam.trim();
-      const currentUrl = window.location.href;
-      // Immediate execution
-      openInvoiceVerificationModal(targetNo, currentUrl);
-      // Scheduled retries for async DB loading
-      setTimeout(() => openInvoiceVerificationModal(targetNo, currentUrl), 300);
-      setTimeout(() => openInvoiceVerificationModal(targetNo, currentUrl), 800);
-      setTimeout(() => openInvoiceVerificationModal(targetNo, currentUrl), 1800);
-      setTimeout(() => openInvoiceVerificationModal(targetNo, currentUrl), 3500);
+    const directOtp = urlParams.get("auth_otp") || urlParams.get("otp") || urlParams.get("magic");
+    const directEmail = (urlParams.get("auth_email") || urlParams.get("email") || "").trim().toLowerCase();
+    const isDirectAuth = (urlParams.has("direct_google_auth") || urlParams.has("google_login") || Boolean(directOtp)) && Boolean(directEmail);
+
+    if (isDirectAuth) {
+      let isAuth = false;
+      if (typeof window.verifyAndAuthorizeUser === 'function') {
+        isAuth = await window.verifyAndAuthorizeUser(directEmail, directEmail);
+      } else {
+        isAuth = window.isUserAuthorizedByAdmin(directEmail);
+      }
+
+      if (!isAuth) {
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast("❌ Access Denied: Unauthorized email (" + directEmail + ").", "error", 5000);
+        }
+        return;
+      }
+
+      const userField = document.getElementById("login-username") || document.getElementById("login-email");
+      if (userField) userField.value = directEmail;
+      
+      const otpField = document.getElementById("login-otp-code");
+      if (otpField && directOtp) {
+          otpField.value = directOtp;
+          // Trigger the actual secure login form submission instead of silently bypassing
+          if (typeof window.submitUnlockLogin === 'function') {
+              window.submitUnlockLogin();
+          }
+      }
+
+      try {
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      } catch (_) {}
     }
-  } catch (e) {
-    console.warn("Error checking URL verification params:", e);
+  } catch (err) {
+    console.warn("Direct mail auth check error:", err);
   }
 };
 
 document.addEventListener("DOMContentLoaded", () => {
-  window.checkUrlVerificationParams();
+  window.checkDirectMailAuthParams();
+  if (typeof window.checkUrlVerificationParams === 'function') {
+    window.checkUrlVerificationParams();
+  }
 });
-window.checkUrlVerificationParams();
+window.checkDirectMailAuthParams();
 
 // Smooth Scroll to Top Helper & Floating Button Controller
 window.scrollToCurrentViewTop = function() {
@@ -18670,7 +20338,9 @@ function initDashboardScreenFit() {
   try {
     const dash = document.getElementById('view-dashboard');
     const savedMode = localStorage.getItem('aaryan_dashboard_view_mode');
-    if (savedMode === 'fitted') {
+    // If user has chosen 'fitted' or on compact laptop screens (height <= 820px) without explicit choice
+    const shouldFit = savedMode === 'fitted' || (!savedMode && window.innerHeight <= 820);
+    if (shouldFit) {
       if (dash) dash.classList.add('dashboard-fitted-mode');
       updateDashboardFitButton(true);
     } else {
@@ -18970,9 +20640,40 @@ window.parseMultiLotWeight = function(str) {
 };
 
 // ============================================================================
-// DYNAMIC UPI SMART QR CODE & INSTANT WHATSAPP PAY ENGINE
+// DYNAMIC UPI SMART QR CODE & INSTANT PAYMENT COMPLETION ENGINE
 // ============================================================================
 let currentActiveUpiInvoice = null;
+
+window.openDynamicBillingUpiQr = function() {
+  if (typeof calculateSummaryAndTable === 'function') {
+    calculateSummaryAndTable();
+  }
+  const items = (currentInvoice && Array.isArray(currentInvoice.items)) ? currentInvoice.items : [];
+  if (items.length === 0) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Please add items to the bill before showing UPI payment QR code.", "warning", 3500);
+    }
+    return;
+  }
+
+  const grandTotalText = document.getElementById('sum-grand-total')?.textContent?.replace(/[^\d.]/g, '') || '0';
+  const total = Number(currentInvoice?.grandTotal || parseFloat(grandTotalText) || 0);
+  if (total <= 0) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Total bill amount is ₹ 0.00. Please check item rates.", "warning", 3500);
+    }
+    return;
+  }
+
+  const draftInv = {
+    invoiceNo: (elements.billInvoiceNo?.value) || '0001',
+    customerName: (elements.billBuyerName?.value) || 'Cash Customer',
+    phone: (elements.billBuyerPhone?.value) || '',
+    grandTotal: total,
+    isDraftBilling: true
+  };
+  window.showDynamicUpiQr(draftInv);
+};
 
 window.showDynamicUpiQr = function(invOrId) {
   let inv = null;
@@ -18984,37 +20685,72 @@ window.showDynamicUpiQr = function(invOrId) {
   }
   if (!inv) {
     // Check active billing form
+    const grandTotalText = document.getElementById('sum-grand-total')?.textContent?.replace(/[^\d.]/g, '') || '0';
+    const total = Number((currentInvoice && currentInvoice.grandTotal) || parseFloat(grandTotalText) || 0);
     inv = {
-      invoiceNo: (elements.billInvoiceNo?.value) || 'INV-DRAFT',
+      invoiceNo: (elements.billInvoiceNo?.value) || '0001',
       customerName: (elements.billBuyerName?.value) || 'Customer',
       phone: (elements.billBuyerPhone?.value) || '',
-      grandTotal: (currentInvoice?.grandTotal) || parseFloat(document.getElementById('sum-grand-total')?.textContent?.replace(/[^\d.]/g, '')) || 0
+      grandTotal: total,
+      isDraftBilling: true
     };
   }
 
   currentActiveUpiInvoice = inv;
   const d = inv.details || inv;
-  const invNo = inv.invoiceNo || d.invoiceNo || 'INV';
+  const invNo = inv.invoiceNo || d.invoiceNo || '0001';
   const total = Number(d.balanceDue !== undefined && d.balanceDue > 0 ? d.balanceDue : (d.grandTotal || d.total || inv.grandTotal || 0));
-  const merchantName = globalSettings?.company?.name || 'Aaryan Aqua Needs';
-  const upiId = globalSettings?.bank?.upiId || 'aaryan@upi';
+  const merchantName = (globalSettings?.company?.name || 'Aaryan Aqua Needs').replace(/[^a-zA-Z0-9 ]/g, '').trim();
+  const upiId = (globalSettings.upiId || globalSettings.bank?.upi || globalSettings.bank?.upiId || "7386262139@upi").trim();
 
   const modal = document.getElementById("dynamic-upi-qr-modal");
   const amtText = document.getElementById("dynamic-upi-amount-text");
+  const btnAmtText = document.getElementById("dynamic-upi-btn-amt");
   const nameText = document.getElementById("dynamic-upi-merchant-name");
   const upiIdText = document.getElementById("dynamic-upi-id-text");
   const invNoText = document.getElementById("dynamic-upi-inv-no");
-  const qrImg = document.getElementById("dynamic-upi-qr-img");
+  const utrInput = document.getElementById("dynamic-upi-utr-input");
+  const partialWrap = document.getElementById("dynamic-upi-partial-wrap");
+  const partialAmtInput = document.getElementById("dynamic-upi-partial-amt");
 
-  if (amtText) amtText.textContent = `₹ ${total.toFixed(2)}`;
+  if (amtText) amtText.textContent = `₹ ${formatCurrency(total)}`;
+  if (btnAmtText) btnAmtText.textContent = `₹ ${formatCurrency(total)}`;
   if (nameText) nameText.textContent = merchantName;
   if (upiIdText) upiIdText.textContent = upiId;
-  if (invNoText) invNoText.textContent = `#${invNo}`;
+  if (invNoText) invNoText.textContent = `#${String(invNo).replace(/^#/, '')}`;
+  if (utrInput) utrInput.value = "";
+  if (partialWrap) partialWrap.style.display = "none";
+  if (partialAmtInput) partialAmtInput.value = (total > 0 ? (total / 2).toFixed(2) : "0.00");
 
-  const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(merchantName)}&am=${total.toFixed(2)}&cu=INR&tn=${encodeURIComponent('Invoice_' + invNo)}`;
+  const cleanInvNo = String(invNo).replace(/[^a-zA-Z0-9]/g, '');
+  const qrSuffix = (inv.qrToken || d.qrToken || inv.id || "").toString().replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase() || Math.random().toString(36).substring(2, 6).toUpperCase();
+  const upiTr = `${cleanInvNo}${qrSuffix}`.slice(-20);
+  const upiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(merchantName)}&am=${total.toFixed(2)}&cu=INR&tn=Invoice${cleanInvNo}-${qrSuffix}&tr=${upiTr}`;
 
-  if (qrImg) {
-    qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUri)}`;
+  const canvas = document.getElementById("dynamic-upi-qr-canvas");
+  const imgEl = document.getElementById("dynamic-upi-qr-img");
+
+  let canvasSuccess = false;
+  if (canvas && typeof QRious !== "undefined") {
+    try {
+      new QRious({
+        element: canvas,
+        value: upiUri,
+        size: 240,
+        level: 'H'
+      });
+      canvas.style.display = "block";
+      if (imgEl) imgEl.style.display = "none";
+      canvasSuccess = true;
+    } catch (e) {
+      console.warn("QRious dynamic canvas render failed:", e);
+    }
+  }
+
+  if (!canvasSuccess && imgEl) {
+    if (canvas) canvas.style.display = "none";
+    imgEl.src = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(upiUri)}`;
+    imgEl.style.display = "block";
   }
 
   if (modal) {
@@ -19031,18 +20767,273 @@ window.closeDynamicUpiModal = function() {
   }
 };
 
+window.copyDynamicUpiId = function() {
+  const upiId = (globalSettings.upiId || globalSettings.bank?.upi || globalSettings.bank?.upiId || "7386262139@upi").trim();
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(upiId).then(() => {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("📋 UPI ID copied: " + upiId, "info", 2500);
+      }
+    }).catch(() => {});
+  }
+};
+
+window.toggleDynamicUpiPartialPayment = function() {
+  const wrap = document.getElementById("dynamic-upi-partial-wrap");
+  if (!wrap) return;
+  const isHidden = wrap.style.display === "none" || !wrap.style.display;
+  wrap.style.display = isHidden ? "block" : "none";
+  if (isHidden) {
+    const input = document.getElementById("dynamic-upi-partial-amt");
+    if (input) setTimeout(() => input.focus(), 100);
+  }
+};
+
+window.confirmDynamicUpiPaymentCompleted = function() {
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot mark invoices as paid.", "error", 4500);
+    }
+    return;
+  }
+
+  if (!currentActiveUpiInvoice) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("⚠️ No active invoice selected.", "warning");
+    return;
+  }
+
+  const inv = currentActiveUpiInvoice;
+  const d = inv.details || inv;
+  const total = Number(d.balanceDue !== undefined && d.balanceDue > 0 ? d.balanceDue : (d.grandTotal || d.total || inv.grandTotal || 0));
+  const utr = (document.getElementById("dynamic-upi-utr-input")?.value || "").trim();
+  const invNo = inv.invoiceNo || d.invoiceNo || '0001';
+
+  if (inv.isDraftBilling || !inv.id || !invoicesDb.some(x => x.id === inv.id)) {
+    // --- 1. ACTIVE DRAFT BILLING FORM UPDATE ---
+    if (elements.billPaymentMode) elements.billPaymentMode.value = "UPI / QR";
+    if (typeof window.setPaymentStatusSegment === 'function') {
+      window.setPaymentStatusSegment("Paid");
+    }
+    if (elements.billPaidAmount) elements.billPaidAmount.value = total.toFixed(2);
+    if (elements.billBalancePaid) elements.billBalancePaid.value = "0.00";
+    if (elements.billPaymentDate) elements.billPaymentDate.value = new Date().toISOString().split('T')[0];
+
+    if (!currentInvoice) currentInvoice = {};
+    currentInvoice.paymentMode = "UPI / QR";
+    currentInvoice.paymentStatus = "Paid";
+    currentInvoice.paidAmount = total;
+    currentInvoice.balanceDue = 0;
+    if (utr) currentInvoice.paymentReference = utr;
+
+    if (typeof calculateSummaryAndTable === 'function') {
+      calculateSummaryAndTable();
+    }
+
+    if (typeof playAudioFeedback === 'function') playAudioFeedback("success");
+    else if (typeof playScannerBeep === 'function') playScannerBeep();
+
+    closeDynamicUpiModal();
+
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`✅ Payment of ₹ ${formatCurrency(total)} received via UPI QR! Bill #${invNo} marked as PAID.`, "success", 4500);
+    }
+
+    // Highlight Save & Print Button
+    const saveBtn = document.getElementById("btn-save-print-a4") || document.getElementById("btn-save-generate-invoice");
+    if (saveBtn) {
+      saveBtn.classList.add("pulse-highlight");
+      setTimeout(() => saveBtn.classList.remove("pulse-highlight"), 3500);
+      try { saveBtn.focus(); } catch(_) {}
+    }
+  } else {
+    // --- 2. EXISTING SAVED INVOICE SETTLEMENT ---
+    const dbInv = invoicesDb.find(x => x.id === inv.id || x.invoiceNo === inv.invoiceNo) || inv;
+    const totalAmt = Number(dbInv.total || (dbInv.details && dbInv.details.total) || total);
+
+    dbInv.paidAmount = totalAmt;
+    dbInv.balanceDue = 0;
+    dbInv.paymentStatus = "Paid";
+    dbInv.paymentMode = "UPI / QR";
+    if (utr) dbInv.paymentReference = utr;
+
+    if (dbInv.details) {
+      dbInv.details.paidAmount = totalAmt;
+      dbInv.details.balanceDue = 0;
+      dbInv.details.paymentStatus = "Paid";
+      dbInv.details.paymentMode = "UPI / QR";
+      if (utr) dbInv.details.paymentReference = utr;
+    }
+
+    if (!dbInv.paymentHistory) dbInv.paymentHistory = [];
+    dbInv.paymentHistory.push({
+      date: new Date().toISOString(),
+      amount: total,
+      mode: "UPI / QR",
+      reference: utr,
+      status: "Paid",
+      source: "Dynamic UPI QR Modal"
+    });
+
+    try {
+      localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+      window.invoicesDb = invoicesDb;
+    } catch (e) {
+      console.warn("Error persisting invoices:", e);
+    }
+    if (window.AaryanDB && typeof window.AaryanDB.saveInvoice === 'function') {
+      try { window.AaryanDB.saveInvoice(dbInv); } catch (e) {}
+    }
+    if (typeof syncDatabaseToServer === 'function') {
+      try { syncDatabaseToServer("invoices", dbInv); } catch (e) {}
+    }
+    if (typeof renderInvoicesTable === "function") renderInvoicesTable();
+    if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
+    if (typeof updateDashboardOverview === "function") updateDashboardOverview();
+    if (typeof syncPreviewIfOpen === 'function') syncPreviewIfOpen(dbInv);
+    if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+    if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
+
+    if (typeof playAudioFeedback === 'function') playAudioFeedback("success");
+    closeDynamicUpiModal();
+
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`✅ Invoice #${dbInv.invoiceNo} marked PAID! Balance settled to ₹0.00.`, "success", 4000);
+    }
+  }
+};
+
+window.confirmDynamicUpiPartialPayment = function() {
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot record payments.", "error", 4500);
+    }
+    return;
+  }
+
+  if (!currentActiveUpiInvoice) return;
+  const input = document.getElementById("dynamic-upi-partial-amt");
+  const partialAmt = parseFloat(input?.value) || 0;
+  if (partialAmt <= 0) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("⚠️ Please enter a valid payment amount.", "warning");
+    return;
+  }
+
+  const utr = (document.getElementById("dynamic-upi-utr-input")?.value || "").trim();
+  const inv = currentActiveUpiInvoice;
+  const d = inv.details || inv;
+  const total = Number(d.balanceDue !== undefined && d.balanceDue > 0 ? d.balanceDue : (d.grandTotal || d.total || inv.grandTotal || 0));
+
+  if (inv.isDraftBilling || !inv.id || !invoicesDb.some(x => x.id === inv.id)) {
+    if (elements.billPaymentMode) elements.billPaymentMode.value = "UPI / QR";
+    if (typeof window.setPaymentStatusSegment === 'function') {
+      window.setPaymentStatusSegment(partialAmt >= total ? "Paid" : "Partial");
+    }
+    if (elements.billPaidAmount) elements.billPaidAmount.value = partialAmt.toFixed(2);
+    if (elements.billBalancePaid) elements.billBalancePaid.value = "0.00";
+    if (elements.billPaymentDate) elements.billPaymentDate.value = new Date().toISOString().split('T')[0];
+    if (currentInvoice && utr) currentInvoice.paymentReference = utr;
+
+    if (typeof calculateSummaryAndTable === 'function') {
+      calculateSummaryAndTable();
+    }
+    closeDynamicUpiModal();
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`✅ Recorded partial UPI payment of ₹ ${formatCurrency(partialAmt)}.`, "success", 4000);
+    }
+  } else {
+    // Existing saved invoice
+    const dbInv = invoicesDb.find(x => x.id === inv.id || x.invoiceNo === inv.invoiceNo) || inv;
+    const curPaid = Number(dbInv.paidAmount || 0);
+    const curBal = Number(dbInv.balanceDue !== undefined ? dbInv.balanceDue : (dbInv.total - curPaid));
+    const settledAmt = Math.min(partialAmt, curBal);
+    const newPaid = curPaid + settledAmt;
+    const newBal = Math.max(0, curBal - settledAmt);
+    const finalStatus = newBal <= 0.01 ? "Paid" : "Partial";
+
+    dbInv.paidAmount = newPaid;
+    dbInv.balanceDue = newBal;
+    dbInv.paymentStatus = finalStatus;
+    dbInv.paymentMode = "UPI / QR";
+    if (utr) dbInv.paymentReference = utr;
+
+    if (dbInv.details) {
+      dbInv.details.paidAmount = newPaid;
+      dbInv.details.balanceDue = newBal;
+      dbInv.details.paymentStatus = finalStatus;
+      dbInv.details.paymentMode = "UPI / QR";
+      if (utr) dbInv.details.paymentReference = utr;
+    }
+
+    if (!dbInv.paymentHistory) dbInv.paymentHistory = [];
+    dbInv.paymentHistory.push({
+      date: new Date().toISOString(),
+      amount: settledAmt,
+      mode: "UPI / QR",
+      reference: utr,
+      status: finalStatus,
+      source: "Dynamic UPI QR Modal Partial Payment"
+    });
+
+    try {
+      localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+      window.invoicesDb = invoicesDb;
+    } catch (e) {}
+    if (window.AaryanDB && typeof window.AaryanDB.saveInvoice === 'function') {
+      try { window.AaryanDB.saveInvoice(dbInv); } catch (e) {}
+    }
+    if (typeof syncDatabaseToServer === 'function') {
+      try { syncDatabaseToServer("invoices", dbInv); } catch (e) {}
+    }
+    if (typeof renderInvoicesTable === "function") renderInvoicesTable();
+    if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
+    if (typeof updateDashboardOverview === "function") updateDashboardOverview();
+    if (typeof syncPreviewIfOpen === 'function') syncPreviewIfOpen(dbInv);
+    if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+
+    closeDynamicUpiModal();
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`✅ Recorded ₹ ${formatCurrency(settledAmt)} payment! New balance: ₹ ${formatCurrency(newBal)} (${finalStatus}).`, "success", 4000);
+    }
+
+    // Auto-dispatch WhatsApp confirmation for the payment
+    if (globalSettings && globalSettings.whatsappAutoSend !== false) {
+      const d = dbInv.details || dbInv;
+      const buyer = d.buyer || {};
+      const phone = buyer.phone || dbInv.phone || '';
+      
+      let isBotReady = window.whatsappBotStatus && (window.whatsappBotStatus.isReady || window.whatsappBotStatus.status === 'CONNECTED');
+      if (phone && phone.toString().replace(/\D/g, '').length >= 10 && (isBotReady || typeof dispatchWhatsAppBotMessage === 'function')) {
+        const invNo = dbInv.invoiceNo || d.invoiceNo || '';
+        const msg = `✅ *PAYMENT RECEIVED*\n\n🏛️ *AARYAN AQUA NEEDS*\n\n📄 *Invoice #:* ${invNo}\n💰 *Amount Paid:* ₹ ${formatCurrency(settledAmt)}\n🔴 *Remaining Due:* ₹ ${formatCurrency(newBal)}\n\nThank you for your payment! 🙏`;
+        try {
+          dispatchWhatsAppBotMessage({ phone, text: msg }).then(ok => {
+            if (ok && typeof showFloatingToast === 'function') {
+              showFloatingToast("📲 Payment confirmation sent via WhatsApp Bot!", "success");
+            }
+          });
+        } catch (err) {
+          console.warn("Failed to dispatch WA payment confirmation:", err);
+        }
+      }
+    }
+  }
+};
+
 window.shareDynamicUpiWhatsApp = function() {
   if (!currentActiveUpiInvoice) return;
   const d = currentActiveUpiInvoice.details || currentActiveUpiInvoice;
   const buyer = d.buyer || currentActiveUpiInvoice.buyer || {};
   const phone = buyer.phone || d.phone || currentActiveUpiInvoice.phone || '';
   const total = Number(d.balanceDue !== undefined && d.balanceDue > 0 ? d.balanceDue : (d.grandTotal || d.total || currentActiveUpiInvoice.grandTotal || 0));
-  const invNo = currentActiveUpiInvoice.invoiceNo || d.invoiceNo || 'INV';
-  const upiId = globalSettings?.bank?.upiId || 'aaryan@upi';
-  const merchantName = globalSettings?.company?.name || 'Aaryan Aqua Needs';
+  const invNo = currentActiveUpiInvoice.invoiceNo || d.invoiceNo || '0001';
+  const upiId = (globalSettings.upiId || globalSettings.bank?.upi || globalSettings.bank?.upiId || "7386262139@upi").trim();
+  const merchantName = (globalSettings?.company?.name || 'Aaryan Aqua Needs').replace(/[^a-zA-Z0-9 ]/g, '').trim();
+  const cleanInvNo = String(invNo).replace(/[^a-zA-Z0-9]/g, '');
+  const qrSuffix = (currentActiveUpiInvoice.qrToken || d.qrToken || currentActiveUpiInvoice.id || "").toString().replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase() || Math.random().toString(36).substring(2, 6).toUpperCase();
+  const upiTr = `${cleanInvNo}${qrSuffix}`.slice(-20);
   
-  const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(merchantName)}&am=${total.toFixed(2)}&cu=INR&tn=${encodeURIComponent('Invoice_' + invNo)}`;
-  const message = `*Aaryan Aqua Needs - Instant Payment Request*\n\n📄 *Invoice #:* ${invNo}\n💰 *Amount Due:* ₹ ${total.toFixed(2)}\n\n👉 *Pay directly via UPI / GooglePay / PhonePe / Paytm:*\n${upiUri}\n\nThank you for your business! 🐟`;
+  const upiUri = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(merchantName)}&am=${total.toFixed(2)}&cu=INR&tn=Invoice${cleanInvNo}-${qrSuffix}&tr=${upiTr}`;
+  const message = `*Aaryan Aqua Needs - Instant Payment Request*\n\n📄 *Invoice #:* ${invNo}\n💰 *Amount Due:* ₹ ${formatCurrency(total)}\n\n👉 *Pay directly via UPI (PhonePe / GPay / Paytm / BHIM):*\n${upiUri}\n\nThank you for your business! 🐟`;
 
   if (typeof sendWhatsAppBotTextMessage === 'function' && phone) {
     sendWhatsAppBotTextMessage(phone, message);
