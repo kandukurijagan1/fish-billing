@@ -8,7 +8,7 @@
     "start": "node server.js",
     "web": "node server.js",
     "start:electron": "electron .",
-    "test:syntax": "node -c electron-main.js preload.js invoice_utils_v5.js index_v5.js whatsapp-bot.js",
+    "test:syntax": "node -c electron-main.js preload.js invoice_utils_v5.js index_v5.js whatsapp-bot.js customer-timeline.js",
     "test:cases": "node test_scenarios.js",
     "test": "npm run test:syntax && npm run test:cases",
     "build:icons": "node build_icons.js",

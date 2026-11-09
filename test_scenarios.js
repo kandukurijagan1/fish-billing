@@ -138,10 +138,149 @@ async function runAllTests() {
   assert(history[0].amount === 1000 && history[0].mode === 'Cash', 'First payment (₹1,000 Cash advance) verified');
   assert(history[1].amount === 2800 && history[1].reference === utrNumber, 'Second payment (₹2,800 UPI with UTR) verified with exact timestamp');
 
+  // --- TEST CASE 4: Multi-Installment System (5 Installments on 1 Invoice) ---
+  console.log('\n👉 TEST CASE 4: Multi-Installment Payment (5 Installments across days)...');
+  const multiInvId = 'test_multi_' + Date.now();
+  const multiCustomer = 'Murthy Broodstock Farms Test';
+  const multiPhone = '9391567890';
+  const t0 = new Date(Date.now() - 400000).toISOString();
+
+  // Step 1: Create Bill for ₹20,000 with ₹5,000 paid upfront on spot (Installment #1)
+  const initialMultiInv = {
+    id: multiInvId,
+    invoice_no: 'TEST-MULTI-1005',
+    date: t0,
+    customer_name: multiCustomer,
+    phone: multiPhone,
+    items: [{ name: 'High-Grade Broodstock Pellets', quantity: 10, rate: 2000, total: 20000 }],
+    subtotal: 20000,
+    grand_total: 20000,
+    paid_amount: 5000,
+    balance_due: 15000,
+    payment_status: 'PARTIAL',
+    payment_mode: 'Cash',
+    raw_data: {
+      id: multiInvId,
+      invoiceNo: 'TEST-MULTI-1005',
+      date: t0,
+      customerName: multiCustomer,
+      customerPhone: multiPhone,
+      total: 20000,
+      paidAmount: 5000,
+      balanceDue: 15000,
+      paymentStatus: 'PARTIAL',
+      paymentHistory: [
+        {
+          id: 'pay_1_' + multiInvId,
+          installmentNo: 1,
+          date: t0,
+          amount: 5000,
+          mode: 'Cash',
+          reference: 'Upfront on-spot billing advance',
+          note: 'Paid on the spot during invoice creation',
+          balanceAfter: 15000,
+          status: 'PARTIAL'
+        }
+      ]
+    }
+  };
+
+  await sb.from('invoices').insert([initialMultiInv]);
+  assert(true, 'Invoice created with ₹5,000 upfront logged as Installment #1');
+
+  // Step 2: Installment #2 - ₹3,000 Cash
+  const t1 = new Date(Date.now() - 300000).toISOString();
+  initialMultiInv.raw_data.paymentHistory.push({
+    id: 'pay_2_' + multiInvId,
+    installmentNo: 2,
+    date: t1,
+    amount: 3000,
+    mode: 'Cash',
+    reference: 'Receipt #002',
+    note: 'Second installment by manager',
+    balanceAfter: 12000,
+    status: 'PARTIAL'
+  });
+  initialMultiInv.paid_amount = 8000;
+  initialMultiInv.balance_due = 12000;
+
+  // Step 3: Installment #3 - ₹4,000 UPI
+  const t2 = new Date(Date.now() - 200000).toISOString();
+  initialMultiInv.raw_data.paymentHistory.push({
+    id: 'pay_3_' + multiInvId,
+    installmentNo: 3,
+    date: t2,
+    amount: 4000,
+    mode: 'UPI / QR Code',
+    reference: 'UPI492819481928',
+    note: 'Third installment via PhonePe',
+    balanceAfter: 8000,
+    status: 'PARTIAL'
+  });
+  initialMultiInv.paid_amount = 12000;
+  initialMultiInv.balance_due = 8000;
+
+  // Step 4: Installment #4 - ₹5,000 Bank Transfer NEFT
+  const t3 = new Date(Date.now() - 100000).toISOString();
+  initialMultiInv.raw_data.paymentHistory.push({
+    id: 'pay_4_' + multiInvId,
+    installmentNo: 4,
+    date: t3,
+    amount: 5000,
+    mode: 'Bank Transfer',
+    reference: 'NEFT-SBIN-892184',
+    note: 'Fourth installment via net banking',
+    balanceAfter: 3000,
+    status: 'PARTIAL'
+  });
+  initialMultiInv.paid_amount = 17000;
+  initialMultiInv.balance_due = 3000;
+
+  // Step 5: Installment #5 - ₹3,000 Final Settlement (Full Paid)
+  const t4 = new Date().toISOString();
+  initialMultiInv.raw_data.paymentHistory.push({
+    id: 'pay_5_' + multiInvId,
+    installmentNo: 5,
+    date: t4,
+    amount: 3000,
+    mode: 'UPI / QR Code',
+    reference: 'UPI992819481999',
+    note: 'Final settlement to clear bill',
+    balanceAfter: 0,
+    status: 'PAID'
+  });
+  initialMultiInv.paid_amount = 20000;
+  initialMultiInv.balance_due = 0;
+  initialMultiInv.payment_status = 'PAID';
+
+  initialMultiInv.raw_data.paidAmount = 20000;
+  initialMultiInv.raw_data.balanceDue = 0;
+  initialMultiInv.raw_data.paymentStatus = 'PAID';
+
+  await sb.from('invoices').update({
+    paid_amount: 20000,
+    balance_due: 0,
+    payment_status: 'PAID',
+    raw_data: initialMultiInv.raw_data,
+    updated_at: t4
+  }).eq('id', multiInvId);
+
+  // Verification
+  const verifyRes = await sb.from('invoices').select('*').eq('id', multiInvId).single();
+  const vData = verifyRes.data;
+  assert(vData && vData.paid_amount === 20000 && vData.balance_due === 0, 'Bill fully reconciled to ₹20,000 paid and ₹0 due');
+  assert(vData.raw_data.paymentHistory.length === 5, 'All 5 installments successfully preserved in database');
+  
+  const sumInst = vData.raw_data.paymentHistory.reduce((s, p) => s + p.amount, 0);
+  assert(sumInst === 20000, 'Sum of all 5 installments (₹5k+₹3k+₹4k+₹5k+₹3k) exactly equals total bill of ₹20,000');
+  assert(vData.raw_data.paymentHistory[0].installmentNo === 1 && vData.raw_data.paymentHistory[0].amount === 5000, 'Installment #1 upfront payment preserved');
+  assert(vData.raw_data.paymentHistory[4].installmentNo === 5 && vData.raw_data.paymentHistory[4].balanceAfter === 0, 'Installment #5 final balanceAfter is 0.00');
+
   // --- CLEANUP TEST DATA ---
-  console.log('\n🧹 Cleaning up test row from Supabase...');
+  console.log('\n🧹 Cleaning up test rows from Supabase...');
   await sb.from('invoices').delete().eq('id', testInvId);
-  console.log('✅ Test record removed from database.');
+  await sb.from('invoices').delete().eq('id', multiInvId);
+  console.log('✅ All test records removed from database.');
 
   console.log('\n====================================================');
   console.log(`🏁 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

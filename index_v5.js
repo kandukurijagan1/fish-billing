@@ -9776,6 +9776,34 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       existingIdx = invoicesDb.findIndex(inv => inv && inv.invoiceNo === invoiceRecord.invoiceNo);
     }
 
+    // MULTI-INSTALLMENT & UPFRONT PAYMENT PRESERVATION:
+    let effectiveHistory = [];
+    if (existingIdx > -1 && Array.isArray(invoicesDb[existingIdx]?.paymentHistory) && invoicesDb[existingIdx].paymentHistory.length > 0) {
+      effectiveHistory = invoicesDb[existingIdx].paymentHistory;
+    } else if (Array.isArray(currentInvoice.paymentHistory) && currentInvoice.paymentHistory.length > 0) {
+      effectiveHistory = currentInvoice.paymentHistory;
+    }
+
+    const upfrontPaid = Number(currentInvoice.paidAmount || 0);
+    if (effectiveHistory.length === 0 && upfrontPaid > 0) {
+      effectiveHistory = [{
+        id: "pay_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+        installmentNo: 1,
+        date: currentInvoice.invoiceDate ? new Date(currentInvoice.invoiceDate).toISOString() : new Date().toISOString(),
+        amount: upfrontPaid,
+        mode: currentInvoice.paymentMode || "Cash",
+        reference: currentInvoice.paymentReference || "Upfront Bill Settlement",
+        note: "Paid on the spot during billing",
+        balanceAfter: Number(currentInvoice.balanceDue || 0),
+        status: currentInvoice.paymentStatus || (Number(currentInvoice.balanceDue || 0) <= 0.01 ? "Paid" : "Partial")
+      }];
+    }
+
+    invoiceRecord.paymentHistory = effectiveHistory;
+    if (invoiceRecord.details) {
+      invoiceRecord.details.paymentHistory = effectiveHistory;
+    }
+
     let stockDeltas = [];
     if (existingIdx > -1) {
       stockDeltas = reconcileProductInventoryStock(invoicesDb[existingIdx]?.details, currentInvoice) || [];
@@ -12882,6 +12910,19 @@ window.submitCustomPartialPayment = function() {
   const ref = document.getElementById("bal-custom-ref-input")?.value?.trim() || "";
 
   const settledAmt = Math.min(partialAmt, curBal);
+  if (typeof window.recordPostInvoicePayment === "function") {
+    const res = window.recordPostInvoicePayment(inv.id || inv.invoiceNo, {
+      amount: settledAmt,
+      mode: mode,
+      reference: ref,
+      note: "Balance QR Modal Partial Payment"
+    });
+    closeBalanceQrModal();
+    if (res && res.ok && typeof showFloatingToast === "function") {
+      showFloatingToast(`✅ Recorded Installment of ₹ ${formatCurrency(settledAmt)} for #${inv.invoiceNo}!`, "success", 4000);
+    }
+    return;
+  }
   const newPaid = curPaid + settledAmt;
   const newBal = Math.max(0, curBal - settledAmt);
   const finalStatus = newBal <= 0.01 ? "Paid" : "Partial";
@@ -13030,6 +13071,19 @@ window.markBalanceQrPaidAndSendWhatsApp = function() {
   const settledAmount = Number(payInfo.balance || inv.balanceDue || (inv.total - (inv.paidAmount || 0)));
   const totalAmt = Number(payInfo.total || inv.total || 0);
 
+  if (typeof window.recordPostInvoicePayment === "function") {
+    const res = window.recordPostInvoicePayment(inv.id || inv.invoiceNo, {
+      amount: settledAmount,
+      mode: inv.paymentMode || "UPI / QR",
+      reference: inv.paymentReference || "Full Settlement",
+      note: "Balance QR Modal Mark Paid"
+    });
+    closeBalanceQrModal();
+    if (res && res.ok && typeof showFloatingToast === "function") {
+      showFloatingToast(`✅ Invoice #${inv.invoiceNo} marked as Paid!`, "success", 4000);
+    }
+    return;
+  }
   // Update Invoice Record to 100% Paid
   inv.paidAmount = totalAmt;
   inv.balanceDue = 0;
