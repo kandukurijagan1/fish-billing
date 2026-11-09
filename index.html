@@ -464,9 +464,9 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=live_v45">
+  <link rel="stylesheet" href="index.css?v=live_v46">
 
-  <script src="invoice_utils_v5.js?v=live_v45"></script>
+  <script src="invoice_utils_v5.js?v=live_v46"></script>
 
 </head>
 
@@ -700,6 +700,14 @@
 
         </button>
 
+        <button type="button" class="nav-item btn-custom-service-nav" onclick="window.openServiceInquiryModal()" title="Hire Developer / Request Custom Business App or Website">
+
+          <i class="fa-solid fa-laptop-code" style="color: #38bdf8;"></i> Hire Developer / Apps
+
+          <span class="custom-dev-pill-badge">Hire</span>
+
+        </button>
+
         <button type="button" id="btn-pwa-install-sidebar" class="nav-item pwa-sidebar-install-item hidden" style="display: none !important;" onclick="window.triggerPwaInstall()">
 
           <i class="fa-solid fa-mobile-screen-button" style="color: #06b6d4;"></i> Install App
@@ -757,6 +765,8 @@
         </div>
 
         <div class="demo-banner-actions">
+
+          <button type="button" class="btn-demo-custom-lead" onclick="window.openServiceInquiryModal()"><i class="fa-solid fa-laptop-code"></i> Request Custom App / Website</button>
 
           <button type="button" class="btn-demo-buy" onclick="window.showProductBuyModal('banner')">
 
@@ -10678,6 +10688,21 @@
 
 
 
+        <div class="buy-custom-solution-banner" onclick="window.closeProductBuyModal(); window.openServiceInquiryModal();" style="cursor: pointer; margin-bottom: 18px; background: linear-gradient(135deg, rgba(14, 165, 233, 0.15) 0%, rgba(99, 102, 241, 0.15) 100%); border: 1.5px dashed rgba(56, 189, 248, 0.5); border-radius: 12px; padding: 14px 16px; display: flex; align-items: center; gap: 14px; transition: all 0.2s ease;">
+          <div style="width: 40px; height: 40px; border-radius: 10px; background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; display: flex; align-items: center; justify-content: center; color: #38bdf8; font-size: 18px; flex-shrink: 0;">
+            <i class="fa-solid fa-laptop-code"></i>
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-weight: 800; font-size: 13.5px; color: #ffffff; display: flex; align-items: center; gap: 8px;">
+              <span>Looking for a Custom Business App or Website?</span>
+              <span style="background: #38bdf8; color: #0f172a; font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 10px;">HIRE ME</span>
+            </div>
+            <div style="font-size: 12px; color: #94a3b8; margin-top: 2px;">
+              Get custom billing software, mobile apps, or business websites engineered for your workflow. <u>Click here to submit project requirements &rarr;</u>
+            </div>
+          </div>
+        </div>
+
         <div class="buy-contact-card">
 
           <div class="buy-contact-label">DIRECT SOFTWARE DEVELOPER &amp; LICENSING:</div>
@@ -10732,15 +10757,204 @@
 
   </div>
 
+  <!-- CLIENT CUSTOM SERVICE & INQUIRY MODAL (1-SUBMISSION PER EMAIL ENFORCED) -->
+  <div id="client-service-inquiry-modal" class="modal-overlay hidden no-print" style="display: none;" onclick="if(event.target === this) window.closeServiceInquiryModal()">
+    <div class="modal-box service-inquiry-modal-box" onclick="event.stopPropagation()">
+      
+      <!-- Modal Header -->
+      <div class="inquiry-modal-header">
+        <div class="inquiry-header-left">
+          <div class="inquiry-modal-icon">
+            <i class="fa-solid fa-laptop-code"></i>
+          </div>
+          <div>
+            <h3 class="inquiry-header-title">Hire Developer / Custom Apps &amp; Websites</h3>
+            <span class="inquiry-header-subtitle">Kandukuri Jagan • Software Architect &amp; Full-Stack Engineer</span>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" onclick="window.closeServiceInquiryModal()" aria-label="Close modal">&times;</button>
+      </div>
+
+      <!-- Notice Banner: Strictly 1 Inquiry Per Email -->
+      <div class="inquiry-policy-banner">
+        <i class="fa-solid fa-shield-halved"></i>
+        <span><strong>1-Inquiry Constraint:</strong> Only one project inquiry can be submitted per email address. Your submission is recorded directly in developer records and receives prioritized personal review.</span>
+      </div>
+
+      <!-- State 1: Fresh Inquiry Form -->
+      <div id="inquiry-state-form" class="inquiry-state-container">
+        <form id="client-service-inquiry-form" onsubmit="window.submitClientServiceInquiry(event)">
+          
+          <div id="inquiry-error-alert" class="inquiry-alert-banner" style="display: none;"></div>
+
+          <div class="inquiry-form-grid">
+            
+            <!-- Full Name -->
+            <div class="inquiry-form-group">
+              <label for="inquiry-name"><i class="fa-solid fa-user"></i> Your Full Name <span class="req-star">*</span></label>
+              <input type="text" id="inquiry-name" name="name" placeholder="e.g., Murthy Raju / Anudeep" required autocomplete="name">
+            </div>
+
+            <!-- Email Address (Key for 1-submission restriction) -->
+            <div class="inquiry-form-group">
+              <label for="inquiry-email"><i class="fa-solid fa-envelope"></i> Email Address <span class="req-star">*</span> <small class="field-pill-note">1 submission per email</small></label>
+              <input type="email" id="inquiry-email" name="email" placeholder="e.g., yourname@gmail.com" required autocomplete="email">
+            </div>
+
+            <!-- WhatsApp Phone -->
+            <div class="inquiry-form-group">
+              <label for="inquiry-phone"><i class="fa-brands fa-whatsapp" style="color: #22c55e;"></i> WhatsApp Phone (10-Digit) <span class="req-star">*</span></label>
+              <input type="tel" id="inquiry-phone" name="phone" placeholder="e.g., 9876543210" pattern="[0-9]{10}" maxlength="10" required autocomplete="tel">
+            </div>
+
+            <!-- Business / Company / Farm Name -->
+            <div class="inquiry-form-group">
+              <label for="inquiry-business"><i class="fa-solid fa-building"></i> Business / Organization / Farm Name</label>
+              <input type="text" id="inquiry-business" name="business" placeholder="e.g., Sri Venkateswara Aqua Feeds &amp; Hatchery">
+            </div>
+
+            <!-- Service Requested -->
+            <div class="inquiry-form-group">
+              <label for="inquiry-service"><i class="fa-solid fa-cubes"></i> Service / Software You Need <span class="req-star">*</span></label>
+              <select id="inquiry-service" name="service" required>
+                <option value="Custom Business Billing &amp; ERP (like Aaryan Aqua)" selected>Custom Business Billing Software (like Aaryan Aqua)</option>
+                <option value="Business Website &amp; Online Store">Business Website &amp; Online Store</option>
+                <option value="Android &amp; iOS Mobile Application">Android &amp; iOS Mobile Application</option>
+                <option value="Aquaculture / Farm Automation &amp; IoT System">Aquaculture / Farm Automation &amp; IoT System</option>
+                <option value="Cloud Database Synchronization &amp; Web API">Cloud Database Synchronization &amp; Web API</option>
+                <option value="Desktop Offline-First POS &amp; Inventory Software">Desktop Offline-First POS &amp; Inventory Software</option>
+                <option value="Other Custom Software Solution">Other Custom Software Solution</option>
+              </select>
+            </div>
+
+            <!-- Industry Sector -->
+            <div class="inquiry-form-group">
+              <label for="inquiry-industry"><i class="fa-solid fa-industry"></i> Your Business Industry</label>
+              <select id="inquiry-industry" name="industry">
+                <option value="Aquaculture / Hatcheries / Seafood" selected>Aquaculture / Hatchery / Seafood</option>
+                <option value="Retail, Wholesale &amp; Distribution">Retail, Wholesale &amp; Distribution</option>
+                <option value="Agriculture, Feeds &amp; Agro-Chemicals">Agriculture, Feeds &amp; Agro-Chemicals</option>
+                <option value="Manufacturing &amp; Logistics">Manufacturing &amp; Logistics</option>
+                <option value="Healthcare &amp; Pharmacy">Healthcare &amp; Pharmacy</option>
+                <option value="Restaurant, Food &amp; Hospitality">Restaurant, Food &amp; Hospitality</option>
+                <option value="Other Industry">Other Industry</option>
+              </select>
+            </div>
+
+            <!-- Project Timeline / Urgency -->
+            <div class="inquiry-form-group inquiry-grid-full">
+              <label for="inquiry-timeline"><i class="fa-solid fa-calendar-days"></i> Project Timeline / Budget Urgency</label>
+              <select id="inquiry-timeline" name="timeline">
+                <option value="Ready to start immediately (Within 1 week)" selected>Ready to start immediately (Within 1 week)</option>
+                <option value="Planning stage (Within 2 to 4 weeks)">Planning stage (Within 2 to 4 weeks)</option>
+                <option value="1 to 2 months out">1 to 2 months out</option>
+                <option value="Exploring options &amp; seeking price quote">Exploring options &amp; seeking price quote</option>
+              </select>
+            </div>
+
+            <!-- Detailed Requirements / Scope -->
+            <div class="inquiry-form-group inquiry-grid-full">
+              <label for="inquiry-requirements"><i class="fa-solid fa-align-left"></i> Project Scope &amp; Custom Requirements <span class="req-star">*</span></label>
+              <textarea id="inquiry-requirements" name="requirements" rows="4" placeholder="Describe your workflow, required features, hardware requirements (e.g. thermal printers, mobile view, offline sync), or any questions for the developer..." required></textarea>
+            </div>
+
+          </div>
+
+          <!-- Actions -->
+          <div class="inquiry-form-actions">
+            <button type="button" class="btn btn-secondary" onclick="window.closeServiceInquiryModal()">Cancel</button>
+            <button type="submit" id="btn-submit-inquiry" class="btn-submit-inquiry">
+              <i class="fa-solid fa-paper-plane"></i>
+              <span id="btn-submit-inquiry-text">Submit Project Requirements</span>
+              <span id="btn-submit-inquiry-spinner" class="spinner-border-sm hidden"></span>
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- State 2: Already Submitted Screen (Enforces 1-time per email) -->
+      <div id="inquiry-state-already-submitted" class="inquiry-state-container" style="display: none;">
+        <div class="inquiry-already-box">
+          <div class="inquiry-already-icon">
+            <i class="fa-solid fa-clock-rotate-left"></i>
+          </div>
+          <h3 class="inquiry-already-title">Inquiry Already on File</h3>
+          <p class="inquiry-already-desc" id="already-submitted-notice-msg">
+            An inquiry associated with email <strong id="already-submitted-email-text" class="email-highlight">yourname@gmail.com</strong> has already been received.
+          </p>
+          
+          <div class="inquiry-status-card">
+            <div class="status-pill-row">
+              <span class="status-pill status-pill-active"><i class="fa-solid fa-spinner fa-spin"></i> UNDER DEVELOPER REVIEW</span>
+              <span class="status-time" id="already-submitted-time-text"></span>
+            </div>
+            <p class="status-note">
+              To guarantee high quality and dedicated engineering support, submissions are restricted to <strong>one per client email</strong>.
+              Developer <strong>Kandukuri Jagan</strong> is already evaluating your requirements and will reach out directly on WhatsApp or Phone within 24 hours.
+            </p>
+          </div>
+
+          <div class="inquiry-already-actions">
+            <a id="btn-inquiry-direct-whatsapp" href="https://wa.me/918367047947" target="_blank" rel="noopener noreferrer" class="btn-inquiry-wa-direct">
+              <i class="fa-brands fa-whatsapp"></i> Chat Directly with Jagan on WhatsApp (+91 8367047947)
+            </a>
+            <div class="switch-email-wrap">
+              <button type="button" class="btn-switch-email-link" onclick="window.resetInquirySubmissionState()">
+                <i class="fa-solid fa-arrows-rotate"></i> Need to submit with a different email address? Click here
+              </button>
+            </div>
+            <button type="button" class="btn btn-secondary btn-close-inquiry-bottom" onclick="window.closeServiceInquiryModal()">Close</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- State 3: Celebratory Success Screen -->
+      <div id="inquiry-state-success" class="inquiry-state-container" style="display: none;">
+        <div class="inquiry-success-box">
+          <div class="inquiry-success-icon">
+            <i class="fa-solid fa-circle-check"></i>
+          </div>
+          <h3 class="inquiry-success-title">Project Inquiry Received!</h3>
+          <p class="inquiry-success-desc">
+            Thank you, <strong id="success-client-name" class="name-highlight">Client</strong>! Your project requirements have been safely delivered to developer Kandukuri Jagan.
+          </p>
+
+          <div class="inquiry-success-card">
+            <div class="success-row">
+              <span class="success-label">Service:</span>
+              <span class="success-val" id="success-summary-service">Custom Software</span>
+            </div>
+            <div class="success-row">
+              <span class="success-label">Confirmation Sent To:</span>
+              <span class="success-val" id="success-client-email">email@domain.com</span>
+            </div>
+            <div class="success-row">
+              <span class="success-label">Next Step:</span>
+              <span class="success-val text-green">Personal Review &amp; Direct WhatsApp / Phone Contact within 24h</span>
+            </div>
+          </div>
+
+          <div class="inquiry-success-actions">
+            <a id="success-whatsapp-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-inquiry-wa-direct">
+              <i class="fa-brands fa-whatsapp"></i> Connect Instantly on WhatsApp (+91 8367047947)
+            </a>
+            <button type="button" class="btn btn-secondary btn-close-inquiry-bottom" onclick="window.closeServiceInquiryModal()">Return to App</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v45"></script>
+<script src="supabase-adapter.js?v=live_v46"></script>
 
-<script src="initial_db.js?v=live_v45"></script>
+<script src="initial_db.js?v=live_v46"></script>
 
-<script src="customer-timeline.js?v=live_v45"></script>
+<script src="customer-timeline.js?v=live_v46"></script>
 
-<script src="index_v5.js?v=live_v45"></script>
+<script src="index_v5.js?v=live_v46"></script>
 
 </body>
 

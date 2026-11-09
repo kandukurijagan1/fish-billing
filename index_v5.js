@@ -4077,6 +4077,284 @@ window.closeProductBuyModal = function() {
   modal.style.setProperty("pointer-events", "none", "important");
 };
 
+// ============================================================================
+// CUSTOM CLIENT SERVICE & INQUIRY CONTROLLER (Strict 1-Submission Per Email)
+// ============================================================================
+
+window.openServiceInquiryModal = function(prefillService = "") {
+  const modal = document.getElementById("client-service-inquiry-modal");
+  if (!modal) return;
+
+  const formState = document.getElementById("inquiry-state-form");
+  const alreadySubmittedState = document.getElementById("inquiry-state-already-submitted");
+  const successState = document.getElementById("inquiry-state-success");
+  const errorAlert = document.getElementById("inquiry-error-alert");
+
+  if (errorAlert) {
+    errorAlert.style.display = "none";
+    errorAlert.textContent = "";
+  }
+
+  // Check if client has already submitted an inquiry from this browser session/storage
+  const submittedEmail = (localStorage.getItem("submitted_inquiry_email") || "").trim();
+  const submittedTime = localStorage.getItem("submitted_inquiry_time");
+
+  if (submittedEmail) {
+    // Show already submitted screen
+    if (formState) formState.style.display = "none";
+    if (successState) successState.style.display = "none";
+    if (alreadySubmittedState) {
+      alreadySubmittedState.style.display = "block";
+      const emailEl = document.getElementById("already-submitted-email-text");
+      if (emailEl) emailEl.textContent = submittedEmail;
+
+      const timeEl = document.getElementById("already-submitted-time-text");
+      if (timeEl && submittedTime) {
+        try {
+          timeEl.textContent = new Date(submittedTime).toLocaleString("en-IN", {
+            dateStyle: "medium",
+            timeStyle: "short"
+          });
+        } catch (_) {
+          timeEl.textContent = submittedTime;
+        }
+      }
+
+      // Configure direct WhatsApp button with prefilled message
+      const waBtn = document.getElementById("btn-inquiry-direct-whatsapp");
+      if (waBtn) {
+        waBtn.href = "https://wa.me/918367047947?text=" + encodeURIComponent(
+          "Hello Jagan, I previously submitted a project inquiry with email " + submittedEmail + ". I would like to check the status and discuss my requirements."
+        );
+      }
+    }
+  } else {
+    // Show fresh inquiry form
+    if (alreadySubmittedState) alreadySubmittedState.style.display = "none";
+    if (successState) successState.style.display = "none";
+    if (formState) formState.style.display = "block";
+
+    if (prefillService) {
+      const serviceSelect = document.getElementById("inquiry-service");
+      if (serviceSelect) {
+        for (let i = 0; i < serviceSelect.options.length; i++) {
+          if (serviceSelect.options[i].value.toLowerCase().includes(prefillService.toLowerCase())) {
+            serviceSelect.selectedIndex = i;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  modal.classList.remove("hidden");
+  modal.style.setProperty("display", "flex", "important");
+  modal.style.setProperty("visibility", "visible", "important");
+  modal.style.setProperty("opacity", "1", "important");
+  modal.style.setProperty("pointer-events", "auto", "important");
+};
+
+window.closeServiceInquiryModal = function() {
+  const modal = document.getElementById("client-service-inquiry-modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.style.setProperty("display", "none", "important");
+  modal.style.setProperty("visibility", "hidden", "important");
+  modal.style.setProperty("opacity", "0", "important");
+  modal.style.setProperty("pointer-events", "none", "important");
+};
+
+window.resetInquirySubmissionState = function() {
+  // Allows user to submit with a different email if needed
+  localStorage.removeItem("submitted_inquiry_email");
+  localStorage.removeItem("submitted_inquiry_time");
+  localStorage.removeItem("submitted_inquiry_data");
+
+  const emailField = document.getElementById("inquiry-email");
+  if (emailField) {
+    emailField.value = "";
+    emailField.focus();
+  }
+
+  const formState = document.getElementById("inquiry-state-form");
+  const alreadySubmittedState = document.getElementById("inquiry-state-already-submitted");
+  const successState = document.getElementById("inquiry-state-success");
+  const errorAlert = document.getElementById("inquiry-error-alert");
+
+  if (alreadySubmittedState) alreadySubmittedState.style.display = "none";
+  if (successState) successState.style.display = "none";
+  if (errorAlert) errorAlert.style.display = "none";
+  if (formState) formState.style.display = "block";
+};
+
+window.submitClientServiceInquiry = async function(e) {
+  if (e && e.preventDefault) e.preventDefault();
+
+  const name = (document.getElementById("inquiry-name")?.value || "").trim();
+  const email = (document.getElementById("inquiry-email")?.value || "").trim().toLowerCase();
+  const phone = (document.getElementById("inquiry-phone")?.value || "").trim();
+  const business = (document.getElementById("inquiry-business")?.value || "").trim();
+  const service = document.getElementById("inquiry-service")?.value || "Custom Software Solution";
+  const industry = document.getElementById("inquiry-industry")?.value || "Aquaculture / Hatchery";
+  const timeline = document.getElementById("inquiry-timeline")?.value || "Immediate (Within 1 week)";
+  const requirements = (document.getElementById("inquiry-requirements")?.value || "").trim();
+
+  const errorAlert = document.getElementById("inquiry-error-alert");
+  const submitBtn = document.getElementById("btn-submit-inquiry");
+  const btnText = document.getElementById("btn-submit-inquiry-text");
+  const btnSpinner = document.getElementById("btn-submit-inquiry-spinner");
+
+  const showError = (msg) => {
+    if (errorAlert) {
+      errorAlert.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> <span>' + (typeof escapeHtml === "function" ? escapeHtml(msg) : msg) + '</span>';
+      errorAlert.style.display = "flex";
+      errorAlert.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } else if (typeof showFloatingToast === "function") {
+      showFloatingToast(msg, "warning", 6000);
+    }
+  };
+
+  if (errorAlert) errorAlert.style.display = "none";
+
+  // Client-side validations
+  if (!name) {
+    showError("Please enter your name or contact person name.");
+    document.getElementById("inquiry-name")?.focus();
+    return;
+  }
+
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!email || !emailPattern.test(email)) {
+    showError("Please enter a valid email address.");
+    document.getElementById("inquiry-email")?.focus();
+    return;
+  }
+
+  const cleanPhone = phone.replace(/[^0-9]/g, "");
+  if (cleanPhone.length < 10) {
+    showError("Please enter a valid 10-digit WhatsApp / phone number.");
+    document.getElementById("inquiry-phone")?.focus();
+    return;
+  }
+
+  // Pre-check localStorage for this email
+  const existingStoredEmail = (localStorage.getItem("submitted_inquiry_email") || "").toLowerCase().trim();
+  if (existingStoredEmail && existingStoredEmail === email) {
+    showError("An inquiry with this email address has already been submitted. Each email is restricted to 1 inquiry.");
+    setTimeout(() => {
+      window.openServiceInquiryModal();
+    }, 1500);
+    return;
+  }
+
+  // Set loading state
+  if (submitBtn) submitBtn.disabled = true;
+  if (btnText) btnText.textContent = "Submitting Inquiry...";
+  if (btnSpinner) btnSpinner.classList.remove("hidden");
+
+  try {
+    const payload = {
+      action: "submit_client_inquiry",
+      name: name,
+      email: email,
+      phone: cleanPhone,
+      businessName: business,
+      service: service,
+      industry: industry,
+      timeline: timeline,
+      requirements: requirements,
+      device: navigator.userAgent || "Desktop Web",
+      submittedAt: new Date().toISOString()
+    };
+
+    const targetUrl = typeof GOOGLE_SCRIPT_URL !== "undefined"
+      ? GOOGLE_SCRIPT_URL
+      : "https://script.google.com/macros/s/AKfycbyNkALvgRbXAXtN4rdbe6dEHwO27MgRbcqxUDQqs5Y25BHbem3K1TbgJLH19_nLJ-LAkQ/exec";
+
+    const res = await fetch(targetUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await res.json();
+
+    if (result && result.duplicate) {
+      // DUPLICATE EMAIL DETECTED BY BACKEND!
+      // Enforce the one-time restriction!
+      localStorage.setItem("submitted_inquiry_email", email);
+      localStorage.setItem("submitted_inquiry_time", new Date().toISOString());
+
+      const formState = document.getElementById("inquiry-state-form");
+      const alreadySubmittedState = document.getElementById("inquiry-state-already-submitted");
+      if (formState) formState.style.display = "none";
+      if (alreadySubmittedState) {
+        alreadySubmittedState.style.display = "block";
+        const emailEl = document.getElementById("already-submitted-email-text");
+        if (emailEl) emailEl.textContent = email;
+        const noticeEl = document.getElementById("already-submitted-notice-msg");
+        if (noticeEl && result.message) {
+          noticeEl.textContent = result.message;
+        }
+        const waBtn = document.getElementById("btn-inquiry-direct-whatsapp");
+        if (waBtn) {
+          waBtn.href = "https://wa.me/918367047947?text=" + encodeURIComponent(
+            "Hello Jagan, I tried submitting an inquiry with " + email + ". Can we connect directly regarding my project?"
+          );
+        }
+      }
+      if (typeof showFloatingToast === "function") {
+        showFloatingToast("Notice: An inquiry with this email already exists on file.", "info", 6000);
+      }
+      return;
+    }
+
+    if (result && (result.ok || result.success)) {
+      // SUCCESS!
+      // Record locally to prevent further submissions with this email
+      localStorage.setItem("submitted_inquiry_email", email);
+      localStorage.setItem("submitted_inquiry_time", new Date().toISOString());
+      localStorage.setItem("submitted_inquiry_data", JSON.stringify(payload));
+
+      // Transition to celebratory success state
+      const formState = document.getElementById("inquiry-state-form");
+      const successState = document.getElementById("inquiry-state-success");
+      if (formState) formState.style.display = "none";
+      if (successState) {
+        successState.style.display = "block";
+        const clientNameEl = document.getElementById("success-client-name");
+        if (clientNameEl) clientNameEl.textContent = name;
+        const clientEmailEl = document.getElementById("success-client-email");
+        if (clientEmailEl) clientEmailEl.textContent = email;
+        const summaryServiceEl = document.getElementById("success-summary-service");
+        if (summaryServiceEl) summaryServiceEl.textContent = service;
+
+        const waLink = document.getElementById("success-whatsapp-link");
+        if (waLink) {
+          waLink.href = "https://wa.me/918367047947?text=" + encodeURIComponent(
+            "Hello Jagan, I just submitted my project requirements for " + service + " (" + (business || name) + ") from email " + email + ". Excited to connect!"
+          );
+        }
+      }
+
+      if (typeof showFloatingToast === "function") {
+        showFloatingToast("🚀 Project inquiry sent! Jagan will contact you within 24 hours.", "success", 8000);
+      }
+    } else {
+      showError(result?.error || result?.message || "Failed to submit inquiry. Please try again or chat directly on WhatsApp.");
+    }
+
+  } catch (err) {
+    console.error("submitClientServiceInquiry error:", err);
+    showError("Could not reach cloud server. You can message Jagan directly on WhatsApp (+91 8367047947).");
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+    if (btnText) btnText.textContent = "Submit Project Requirements";
+    if (btnSpinner) btnSpinner.classList.add("hidden");
+  }
+};
+
+
 // Legacy helper replacement
 window.isCustomerAccountOriginal = function() {
   const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();

@@ -1208,7 +1208,8 @@ var ALLOWED_ACTIONS = [
   "save_settings",
   "upload_pdf",
   "send_login_otp",
-  "verify_login_otp"
+  "verify_login_otp",
+  "submit_client_inquiry"
 ];
 
 function computeSyncDataHash(invs, prods, parts) {
@@ -1465,6 +1466,11 @@ function handleApiPost(e) {
       }
     }
 
+    // 1.6 Prospective Client Service Inquiries (Authentication-exempt)
+    if (action === "submit_client_inquiry") {
+      return handleClientInquirySubmission(data);
+    }
+
     // 2. Authentication Enforcement
     var auth = authenticateRequest(e, data);
     if (!auth.ok) {
@@ -1681,6 +1687,273 @@ function writeSettingsToSheet(settingsObj, ss) {
     }
   } catch (e) {
     Logger.log("Failed to write settings to sheet: " + e.message);
+  }
+}
+
+/**
+ * Handles prospective client service / project inquiries.
+ * Strictly enforces 1-inquiry per email address across the entire lifetime of the sheet.
+ * If the email has already submitted, rejects with duplicate flag and informative message.
+ * If unique, records the inquiry in "Client Inquiries" sheet, sends an instant notification email
+ * to Jagan with rich lead details & 1-click WhatsApp shortcut, and sends a professional confirmation email to the client.
+ */
+function handleClientInquirySubmission(data) {
+  try {
+    var rawName = String(data.name || "").trim();
+    var rawEmail = String(data.email || "").trim().toLowerCase();
+    var rawPhone = String(data.phone || "").trim();
+    var rawBusiness = String(data.businessName || data.business || "").trim();
+    var rawService = String(data.service || "").trim();
+    var rawIndustry = String(data.industry || "").trim();
+    var rawTimeline = String(data.timeline || "").trim();
+    var rawRequirements = String(data.requirements || data.message || "").trim();
+    var clientDevice = String(data.device || data.userAgent || "Web Browser").trim();
+
+    // 1. Basic Validation
+    if (!rawName) {
+      return ContentService.createTextOutput(JSON.stringify({
+        ok: false,
+        error: "Please provide your full name."
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var emailPattern = /^[^s@]+@[^s@]+.[^s@]+$/;
+    if (!rawEmail || !emailPattern.test(rawEmail)) {
+      return ContentService.createTextOutput(JSON.stringify({
+        ok: false,
+        error: "Please provide a valid email address."
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Clean phone number (strip spaces, hyphens, etc.)
+    var cleanPhone = rawPhone.replace(/[^0-9]/g, "");
+    if (cleanPhone.length < 10) {
+      return ContentService.createTextOutput(JSON.stringify({
+        ok: false,
+        error: "Please enter a valid 10-digit WhatsApp / phone number."
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    var tenDigitPhone = cleanPhone.length > 10 ? cleanPhone.slice(-10) : cleanPhone;
+
+    var ss = getMasterSpreadsheet();
+    if (!ss) {
+      return ContentService.createTextOutput(JSON.stringify({
+        ok: false,
+        error: "Database spreadsheet unavailable."
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var sheetName = "Client Inquiries";
+    var sheet = ss.getSheetByName(sheetName);
+
+    // If sheet doesn't exist, create and initialize it
+    if (!sheet) {
+      sheet = ss.insertSheet(sheetName);
+      var headers = [
+        "Submission Timestamp",
+        "Client Name",
+        "Email Address",
+        "WhatsApp Phone",
+        "Business / Farm Name",
+        "Service Requested",
+        "Industry Sector",
+        "Project Timeline",
+        "Detailed Requirements / Scope",
+        "Lead Status",
+        "Client Notes / Device"
+      ];
+      sheet.appendRow(headers);
+      var headerRange = sheet.getRange(1, 1, 1, headers.length);
+      headerRange.setFontWeight("bold");
+      headerRange.setBackground("#0f172a");
+      headerRange.setFontColor("#ffffff");
+      headerRange.setHorizontalAlignment("center");
+      sheet.setFrozenRows(1);
+      try {
+        sheet.setColumnWidth(1, 170); // Timestamp
+        sheet.setColumnWidth(2, 160); // Client Name
+        sheet.setColumnWidth(3, 220); // Email
+        sheet.setColumnWidth(4, 140); // Phone
+        sheet.setColumnWidth(5, 180); // Business Name
+        sheet.setColumnWidth(6, 200); // Service
+        sheet.setColumnWidth(7, 150); // Industry
+        sheet.setColumnWidth(8, 150); // Timeline
+        sheet.setColumnWidth(9, 320); // Requirements
+        sheet.setColumnWidth(10, 160); // Status
+        sheet.setColumnWidth(11, 180); // Notes / Device
+      } catch (_) {}
+    }
+
+    // 2. Strict One-Time Submission Enforcement per Email
+    var lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+      // Column C (3rd column) contains Email Address
+      var emailColumnValues = sheet.getRange(2, 3, lastRow - 1, 1).getValues();
+      for (var r = 0; r < emailColumnValues.length; r++) {
+        var existingEmail = String(emailColumnValues[r][0] || "").trim().toLowerCase();
+        if (existingEmail === rawEmail) {
+          var prevTime = "";
+          try {
+            prevTime = sheet.getRange(r + 2, 1).getValue();
+          } catch (_) {}
+          var timeNotice = prevTime ? " on " + prevTime : "";
+
+          // Return duplicate rejection - DO NOT add another row!
+          return ContentService.createTextOutput(JSON.stringify({
+            ok: false,
+            duplicate: true,
+            error: "duplicate_submission",
+            message: "An inquiry from '" + rawEmail + "' was already received" + timeNotice + ". Each email is restricted to one project submission. Software Engineer Kandukuri Jagan is already reviewing your requirements and will contact you via WhatsApp / Phone shortly!"
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+    }
+
+    // 3. Append New Unique Inquiry Row
+    var nowTimestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Kolkata", "dd-MMM-yyyy hh:mm:ss a");
+    var rowData = [
+      nowTimestamp,
+      rawName,
+      rawEmail,
+      tenDigitPhone,
+      rawBusiness || "Individual / Not Specified",
+      rawService || "Custom Software / Web Application",
+      rawIndustry || "General Business",
+      rawTimeline || "Standard Timeline",
+      rawRequirements || "Detailed discussion requested.",
+      "New Lead (Pending Contact)",
+      clientDevice
+    ];
+    sheet.appendRow(rowData);
+
+    // 4. Send Email Notification to Developer (kandukurijagan99@gmail.com)
+    var developerEmail = "kandukurijagan99@gmail.com";
+    var whatsappUrl = "https://wa.me/91" + tenDigitPhone + "?text=" + encodeURIComponent(
+      "Hello " + rawName + ", this is Kandukuri Jagan. I received your project inquiry for " + (rawService || "software development") + " (" + (rawBusiness || "") + "). Let's discuss your project requirements!"
+    );
+
+    var devEmailSubject = "🚀 [NEW LEAD] Project Inquiry from " + rawName + " (" + (rawBusiness || "Custom Software") + ")";
+    var devEmailBody = 
+      "<div style='font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: #0f172a; padding: 32px 16px; color: #f8fafc;'>" +
+        "<div style='max-width: 620px; margin: 0 auto; background: #1e293b; border: 1px solid #334155; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5);'>" +
+          "<div style='background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); padding: 24px 28px; text-align: left;'>" +
+            "<span style='background: rgba(255,255,255,0.2); color: #ffffff; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 4px 10px; border-radius: 20px; display: inline-block;'>New Client Lead</span>" +
+            "<h2 style='margin: 10px 0 4px 0; color: #ffffff; font-size: 22px; font-weight: 800;'>New Project Requirement Submitted</h2>" +
+            "<p style='margin: 0; color: #e0f2fe; font-size: 13px;'>Received via Portfolio / Aqua Billing Client Intake on " + nowTimestamp + "</p>" +
+          "</div>" +
+
+          "<div style='padding: 24px 28px;'>" +
+            "<table style='width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px;'>" +
+              "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; width: 140px; font-weight: 600;'>Client Name:</td><td style='padding: 10px 0; color: #f8fafc; font-weight: 700; font-size: 16px;'>" + rawName + "</td></tr>" +
+              "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>Email Address:</td><td style='padding: 10px 0; color: #38bdf8;'><a href='mailto:" + rawEmail + "' style='color: #38bdf8; text-decoration: none;'>" + rawEmail + "</a></td></tr>" +
+              "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>WhatsApp / Phone:</td><td style='padding: 10px 0; color: #22c55e; font-weight: 700;'>+91 " + tenDigitPhone + "</td></tr>" +
+              "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>Business / Farm:</td><td style='padding: 10px 0; color: #f8fafc;'>" + (rawBusiness || "Individual") + "</td></tr>" +
+              "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>Service Needed:</td><td style='padding: 10px 0; color: #f59e0b; font-weight: 700;'>" + rawService + "</td></tr>" +
+              "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>Industry:</td><td style='padding: 10px 0; color: #f8fafc;'>" + rawIndustry + "</td></tr>" +
+              "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>Timeline / Urgency:</td><td style='padding: 10px 0; color: #a855f7; font-weight: 600;'>" + rawTimeline + "</td></tr>" +
+            "</table>" +
+
+            "<div style='margin-bottom: 24px;'>" +
+              "<div style='color: #94a3b8; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;'>Detailed Requirements / Scope:</div>" +
+              "<div style='background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 16px; color: #e2e8f0; font-size: 14px; line-height: 1.6; white-space: pre-wrap;'>" +
+                (rawRequirements ? rawRequirements : "<em>No additional details provided.</em>") +
+              "</div>" +
+            "</div>" +
+
+            "<div style='text-align: center; margin-top: 28px; padding-top: 20px; border-top: 1px solid #334155;'>" +
+              "<a href='" + whatsappUrl + "' target='_blank' style='display: inline-block; background: #22c55e; color: #ffffff; font-weight: 700; font-size: 15px; text-decoration: none; padding: 14px 28px; border-radius: 10px; margin-right: 12px; box-shadow: 0 4px 12px rgba(34,197,94,0.3);'>💬 Chat with " + rawName + " on WhatsApp</a>" +
+              "<a href='mailto:" + rawEmail + "?subject=" + encodeURIComponent("Regarding your inquiry: " + rawService) + "' style='display: inline-block; background: #38bdf8; color: #0f172a; font-weight: 700; font-size: 15px; text-decoration: none; padding: 14px 24px; border-radius: 10px;'>✉️ Reply via Email</a>" +
+            "</div>" +
+          "</div>" +
+
+          "<div style='background: #090d16; padding: 16px 28px; text-align: center; color: #64748b; font-size: 12px; border-top: 1px solid #1e293b;'>" +
+            "Device Info: " + clientDevice + " • Sheet: Client Inquiries (Row " + (lastRow + 1) + ")" +
+          "</div>" +
+        "</div>" +
+      "</div>";
+
+    try {
+      MailApp.sendEmail({
+        to: developerEmail,
+        subject: devEmailSubject,
+        htmlBody: devEmailBody
+      });
+    } catch (e1) {
+      Logger.log("Failed to send lead email to developer: " + e1.message);
+    }
+
+    // 5. Send Polite Confirmation Email to Client
+    var clientEmailSubject = "Inquiry Received: Custom Software Development - Kandukuri Jagan";
+    var clientEmailBody =
+      "<div style='font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; padding: 32px 16px; color: #1e293b;'>" +
+        "<div style='max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.06);'>" +
+          "<div style='background: #0284c7; padding: 24px 28px; text-align: center; color: #ffffff;'>" +
+            "<h2 style='margin: 0; font-size: 22px; font-weight: 800; color: #ffffff;'>Kandukuri Jagan</h2>" +
+            "<p style='margin: 4px 0 0 0; color: #e0f2fe; font-size: 14px;'>Full-Stack Developer &amp; Software Architect</p>" +
+          "</div>" +
+
+          "<div style='padding: 28px;'>" +
+            "<h3 style='margin-top: 0; color: #0f172a; font-size: 18px;'>Hello " + rawName + ",</h3>" +
+            "<p style='color: #475569; font-size: 14px; line-height: 1.6;'>" +
+              "Thank you for reaching out! Your project inquiry for <strong>" + rawService + "</strong> has been safely received." +
+            "</p>" +
+            "<p style='color: #475569; font-size: 14px; line-height: 1.6;'>" +
+              "I am personally reviewing your requirements and will connect with you directly on WhatsApp / Phone (<strong>+91 " + tenDigitPhone + "</strong>) within <strong>24 hours</strong> to discuss your workflow, technical specifications, and timeline." +
+            "</p>" +
+
+            "<div style='background: #f1f5f9; border-left: 4px solid #0284c7; border-radius: 8px; padding: 16px; margin: 20px 0; font-size: 13.5px; color: #334155;'>" +
+              "<strong>Summary of your submission:</strong><br>" +
+              "• <strong>Business / Farm:</strong> " + (rawBusiness || "Individual") + "<br>" +
+              "• <strong>Service:</strong> " + rawService + "<br>" +
+              "• <strong>Timeline:</strong> " + rawTimeline + "<br>" +
+              "• <strong>Registered Email:</strong> " + rawEmail + "<br>" +
+              "• <strong>Submitted On:</strong> " + nowTimestamp +
+            "</div>" +
+
+            "<p style='color: #475569; font-size: 13.5px; line-height: 1.6;'>" +
+              "Need immediate assistance or have urgent project details? Feel free to message me directly on WhatsApp:" +
+            "</p>" +
+
+            "<div style='text-align: center; margin: 24px 0;'>" +
+              "<a href='https://wa.me/918367047947?text=" + encodeURIComponent("Hello Jagan, I submitted an inquiry with email " + rawEmail + ". Can we talk?") + "' target='_blank' style='display: inline-block; background: #22c55e; color: #ffffff; font-weight: 700; font-size: 14px; text-decoration: none; padding: 12px 24px; border-radius: 8px; box-shadow: 0 4px 10px rgba(34,197,94,0.3);'>💬 Direct WhatsApp (+91 8367047947)</a>" +
+            "</div>" +
+
+            "<p style='color: #64748b; font-size: 12px; margin-top: 24px; border-top: 1px solid #f1f5f9; padding-top: 16px; text-align: center;'>" +
+              "To ensure personalized attention, submissions are limited to one per client email. We look forward to building your software solution!<br>" +
+              "<strong>Kandukuri Jagan</strong> • Software Development Services" +
+            "</p>" +
+          "</div>" +
+        "</div>" +
+      "</div>";
+
+    try {
+      MailApp.sendEmail({
+        to: rawEmail,
+        subject: clientEmailSubject,
+        htmlBody: clientEmailBody
+      });
+    } catch (e2) {
+      Logger.log("Failed to send acknowledgment email to client: " + e2.message);
+    }
+
+    try {
+      appendAuditLog("CLIENT_INQUIRY", rawEmail, rawPhone, "SUCCESS", "Client inquiry for: " + rawService, ss);
+    } catch (_) {}
+
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: true,
+      success: true,
+      email: rawEmail,
+      timestamp: nowTimestamp,
+      message: "Thank you, " + rawName + "! Your project inquiry has been successfully submitted. Kandukuri Jagan will reach out to you within 24 hours."
+    })).setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
+    Logger.log("handleClientInquirySubmission error: " + err.message);
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: false,
+      error: "Failed to process inquiry: " + err.message
+    })).setMimeType(ContentService.MimeType.JSON);
   }
 }
 
