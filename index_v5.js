@@ -4587,18 +4587,14 @@ function initializeApp() {
     AppSecurity.purgePlaintextPasswords();
   }
 
-  // Restore Counter Privacy Shield if previously active
-  const sec = globalSettings?.security || {};
-  const isPrivacyActive = localStorage.getItem("counter_privacy_mode") === "true" || sec.counterPrivacyMode === true;
-  if (isPrivacyActive) {
-    document.body.classList.add("counter-privacy-active");
-    const pPill = document.getElementById("live-privacy-shield-pill");
-    const pIcon = document.getElementById("privacy-shield-icon");
-    const pText = document.getElementById("privacy-shield-text");
-    if (pPill) pPill.classList.add("active");
-    if (pIcon) pIcon.className = "fa-solid fa-eye-slash";
-    if (pText) pText.textContent = "Privacy ON";
-  }
+  // Counter Privacy Shield: Always UNBLURRED by default to guarantee 100% financial clarity
+  document.body.classList.remove("counter-privacy-active", "strict-privacy-enabled");
+  try {
+    localStorage.setItem("counter_privacy_mode", "false");
+    if (globalSettings && globalSettings.security) {
+      globalSettings.security.counterPrivacyMode = false;
+    }
+  } catch (e) {}
 
   if (canStayUnlocked) {
     unlockSystemSilently(false);
@@ -7749,13 +7745,26 @@ function populateBillingSelectors() {
   const receivers = [];
   const consignees = [];
 
+  const seenReceiverNames = new Set();
+  const seenConsigneeNames = new Set();
+
   (partiesDb || []).forEach(p => {
     if (!p) return;
-    if (p.name) custSet.add(p.name.trim());
+    const pName = String(p.name || '').trim();
+    if (!pName) return; // Skip empty or blank records
+    if (pName.toLowerCase().includes('(sample)') || String(p.id || '').startsWith('demo_party_')) return;
+    
+    custSet.add(pName);
     if (p.type === 'consignee') {
-      consignees.push(p);
+      if (!seenConsigneeNames.has(pName.toLowerCase())) {
+        seenConsigneeNames.add(pName.toLowerCase());
+        consignees.push(p);
+      }
     } else {
-      receivers.push(p);
+      if (!seenReceiverNames.has(pName.toLowerCase())) {
+        seenReceiverNames.add(pName.toLowerCase());
+        receivers.push(p);
+      }
     }
   });
 
@@ -18544,13 +18553,13 @@ window.clearSecurityAuditTrail = function() {
 
 // --- COUNTER PRIVACY SHIELD (FINANCIAL FIGURE MASKING) ---
 window.toggleCounterPrivacyShield = function() {
-  const isCurrentlyActive = document.body.classList.contains("counter-privacy-active");
+  const isCurrentlyActive = document.body.classList.contains("counter-privacy-active") && document.body.classList.contains("strict-privacy-enabled");
   const newActive = !isCurrentlyActive;
   
   if (newActive) {
-    document.body.classList.add("counter-privacy-active");
+    document.body.classList.add("counter-privacy-active", "strict-privacy-enabled");
   } else {
-    document.body.classList.remove("counter-privacy-active");
+    document.body.classList.remove("counter-privacy-active", "strict-privacy-enabled");
   }
   
   try {
@@ -22906,3 +22915,21 @@ if (typeof document !== 'undefined') {
     setTimeout(initializeApp, 0);
   }
 }
+
+
+/* Auto-Unblur Stat Cards on Click */
+document.addEventListener("click", function(e) {
+  if (e.target && e.target.closest("#stat-total-amount, #stat-total-collected, #stat-total-balance, #stat-total-profit, .maskable-financial, .stat-card")) {
+    if (document.body.classList.contains("counter-privacy-active") || document.body.classList.contains("strict-privacy-enabled")) {
+      document.body.classList.remove("counter-privacy-active", "strict-privacy-enabled");
+      try {
+        localStorage.setItem("counter_privacy_mode", "false");
+        if (typeof globalSettings !== 'undefined' && globalSettings && globalSettings.security) {
+          globalSettings.security.counterPrivacyMode = false;
+        }
+        const cb = document.getElementById("set-counter-privacy-mode");
+        if (cb) cb.checked = false;
+      } catch(_) {}
+    }
+  }
+});

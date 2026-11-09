@@ -1169,22 +1169,34 @@ body {
   box-shadow: 0 0 10px rgba(99, 102, 241, 0.35) !important;
 }
 
+/* Counter Privacy Shield: Always UNBLURRED by default to ensure 100% financial visibility */
 body.counter-privacy-active #stat-total-amount,
 body.counter-privacy-active #stat-total-collected,
 body.counter-privacy-active #stat-total-balance,
 body.counter-privacy-active #stat-total-profit,
 body.counter-privacy-active .maskable-financial {
+  filter: none !important;
+  user-select: text !important;
+  cursor: default !important;
+}
+
+/* Strict Privacy Shield is only applied if user explicitly toggles it via Settings or Alt+P */
+body.counter-privacy-active.strict-privacy-enabled #stat-total-amount,
+body.counter-privacy-active.strict-privacy-enabled #stat-total-collected,
+body.counter-privacy-active.strict-privacy-enabled #stat-total-balance,
+body.counter-privacy-active.strict-privacy-enabled #stat-total-profit,
+body.counter-privacy-active.strict-privacy-enabled .maskable-financial {
   filter: blur(7px) !important;
   user-select: none !important;
-  transition: filter 0.25s ease !important;
+  transition: filter 0.2s ease !important;
   cursor: pointer !important;
 }
 
-body.counter-privacy-active #stat-total-amount:hover,
-body.counter-privacy-active #stat-total-collected:hover,
-body.counter-privacy-active #stat-total-balance:hover,
-body.counter-privacy-active #stat-total-profit:hover,
-body.counter-privacy-active .maskable-financial:hover {
+body.counter-privacy-active.strict-privacy-enabled #stat-total-amount:hover,
+body.counter-privacy-active.strict-privacy-enabled #stat-total-collected:hover,
+body.counter-privacy-active.strict-privacy-enabled #stat-total-balance:hover,
+body.counter-privacy-active.strict-privacy-enabled #stat-total-profit:hover,
+body.counter-privacy-active.strict-privacy-enabled .maskable-financial:hover {
   filter: blur(0px) !important;
 }
 
@@ -8022,46 +8034,70 @@ section.content-view.hidden {
   border-radius: 6px !important;
 }
 
-/* 8-Card Stat Grid: Sleek 8-column single row on desktop / 4x2 on laptop */
+/* 8-Card Stat Grid in Fitted Mode: Symmetrical 4x2 Grid (4 Financial, 4 Operational) */
 @media (min-width: 1080px) {
   #view-dashboard.dashboard-fitted-mode .stats-grid {
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important;
-    gap: 5px !important;
-    margin-bottom: 6px !important;
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    margin-bottom: 10px !important;
   }
   #view-dashboard.dashboard-fitted-mode .stat-card {
-    padding: 4px 6px !important;
-    gap: 6px !important;
-    border-radius: 7px !important;
+    padding: 8px 12px !important;
+    gap: 10px !important;
+    border-radius: 8px !important;
+    min-height: 54px !important;
   }
   #view-dashboard.dashboard-fitted-mode .stat-icon {
-    width: 22px !important;
-    height: 22px !important;
-    font-size: 9.5px !important;
-    border-radius: 5px !important;
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 13.5px !important;
+    border-radius: 7px !important;
+    flex-shrink: 0 !important;
   }
   #view-dashboard.dashboard-fitted-mode .stat-label {
-    font-size: 7.5px !important;
+    font-size: 9.5px !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.4px !important;
+    line-height: 1.2 !important;
+    white-space: nowrap !important;
   }
   #view-dashboard.dashboard-fitted-mode .stat-details h3 {
-    font-size: 12px !important;
+    font-size: 15.5px !important;
+    font-weight: 800 !important;
+    color: #0f172a !important;
+    margin: 1px 0 !important;
+    line-height: 1.2 !important;
   }
   #view-dashboard.dashboard-fitted-mode .stat-trend {
-    font-size: 7.5px !important;
+    font-size: 9.5px !important;
+    font-weight: 600 !important;
+    line-height: 1.2 !important;
   }
 }
 
 @media (max-width: 1079px) and (min-width: 601px) {
   #view-dashboard.dashboard-fitted-mode .stats-grid {
+    display: grid !important;
     grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-    gap: 5px !important;
-    margin-bottom: 6px !important;
+    gap: 6px !important;
+    margin-bottom: 8px !important;
   }
   #view-dashboard.dashboard-fitted-mode .stat-card {
-    padding: 4px 8px !important;
+    padding: 6px 10px !important;
+    gap: 8px !important;
+  }
+  #view-dashboard.dashboard-fitted-mode .stat-icon {
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 12px !important;
+  }
+  #view-dashboard.dashboard-fitted-mode .stat-label {
+    font-size: 8.5px !important;
   }
   #view-dashboard.dashboard-fitted-mode .stat-details h3 {
-    font-size: 12px !important;
+    font-size: 14px !important;
   }
 }
 
