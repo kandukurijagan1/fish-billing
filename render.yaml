@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: aaryan-aqua-billing
+    runtime: docker
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        value: https://tfncblvaaemkbtvqnpdn.supabase.co
+      - key: SUPABASE_ANON_KEY
+        value: sb_publishable_D7LL7bdXwN1kEUeV3JEygQ_AdM_366s
+      - key: PORT
+        value: 5000
+    disk:
+      name: aaryan-session-storage
+      mountPath: /app/data
+      sizeGB: 1

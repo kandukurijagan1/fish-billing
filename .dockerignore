@@ -1,0 +1,17 @@
+node_modules/
+.git/
+.github/
+.gemini/
+dist/
+build/
+Ready_To_Share_Apps/
+*.exe
+*.dmg
+*.zip
+*.log
+.wwebjs_cache/
+.wwebjs_auth/
+scratch/
+check_resources.js
+test_scenarios.js
+generate_test_bills.js

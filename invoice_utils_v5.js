@@ -147,7 +147,7 @@
   }
 
   function getNextInvoiceNumber(existingInvoices = [], options = {}) {
-    const { fillGaps = true, preferInvoiceNo = null } = (typeof options === 'object' && options !== null) ? options : {};
+    const { fillGaps = true, preferInvoiceNo = null, allowDemo = false } = (typeof options === 'object' && options !== null) ? options : {};
     
     const parsedNums = [];
     const numSet = new Set();
@@ -158,6 +158,14 @@
       const rawStr = String(inv?.invoiceNo || (inv?.details && inv?.details.invoiceNo) || '').trim();
       if (!rawStr) return;
       
+      // If we are in real-world / production mode, strictly filter out demo records
+      const isDemo = /^(DEMO|SAMPLE|TEST)[-_]?/i.test(rawStr) || 
+                     String(inv?.id || '').toLowerCase().startsWith('demo_') ||
+                     inv?.isDemo === true;
+      if (isDemo && !allowDemo) {
+        return;
+      }
+
       const match = rawStr.match(/^(.*?)(\d+)$/);
       if (match) {
         const prefix = match[1];
@@ -166,7 +174,9 @@
         if (!Number.isNaN(num) && num > 0) {
           parsedNums.push(num);
           numSet.add(num);
-          if (prefix && !detectedPrefix) detectedPrefix = prefix;
+          if (prefix && !detectedPrefix && !/^(DEMO|SAMPLE|TEST)[-_]?/i.test(prefix)) {
+            detectedPrefix = prefix;
+          }
           if (padLen > maxPadding) maxPadding = padLen;
         }
       } else {
@@ -186,14 +196,16 @@
         const prefNum = parseInt(prefMatch[2], 10);
         if (!Number.isNaN(prefNum) && !numSet.has(prefNum)) {
           const prefPrefix = prefMatch[1] || detectedPrefix;
+          const cleanPrefPrefix = /^(DEMO|SAMPLE|TEST)[-_]?/i.test(prefPrefix) ? '' : prefPrefix;
           const prefPad = Math.max(prefMatch[2].length, maxPadding);
-          return prefPrefix + prefNum.toString().padStart(prefPad, '0');
+          return cleanPrefPrefix + prefNum.toString().padStart(prefPad, '0');
         }
       }
     }
 
     if (parsedNums.length === 0) {
-      return detectedPrefix + (1).toString().padStart(maxPadding, '0');
+      const cleanPrefix = /^(DEMO|SAMPLE|TEST)[-_]?/i.test(detectedPrefix) ? '' : detectedPrefix;
+      return cleanPrefix + (1).toString().padStart(maxPadding, '0');
     }
 
     const sortedNums = Array.from(numSet).sort((a, b) => a - b);
@@ -216,7 +228,8 @@
       nextNum = maxNum + 1;
     }
 
-    return detectedPrefix + nextNum.toString().padStart(maxPadding, '0');
+    const cleanPrefix = /^(DEMO|SAMPLE|TEST)[-_]?/i.test(detectedPrefix) ? '' : detectedPrefix;
+    return cleanPrefix + nextNum.toString().padStart(maxPadding, '0');
   }
 
   global.InvoiceUtils = {

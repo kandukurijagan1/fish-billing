@@ -1,17 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
         xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
         http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
   <url>
-    <loc>https://aaryanaqua.netlify.app/</loc>
-    <lastmod>2026-09-20</lastmod>
+    <loc>https://kandukurijagan1.github.io/fish-billing/</loc>
+    <lastmod>2026-11-07</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://kandukurijagan1.github.io/fish-billing/rallis_logo.png</image:loc>
+      <image:title>Aaryan Aqua Needs - GST Billing &amp; Aquaculture Management Hub</image:title>
+      <image:caption>Official logo and application interface of Aaryan Aqua Needs.</image:caption>
+    </image:image>
   </url>
   <url>
-    <loc>https://aaryanaqua.netlify.app/index.html</loc>
-    <lastmod>2026-09-20</lastmod>
+    <loc>https://kandukurijagan1.github.io/fish-billing/index.html</loc>
+    <lastmod>2026-11-07</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>

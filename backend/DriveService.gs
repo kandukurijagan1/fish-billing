@@ -76,7 +76,8 @@ function saveInvoicePdfSecure(data) {
 
   // 2. Validate Base64 Payload & PDF Header
   var cleanBase64 = pdfBase64.replace(/^data:application\/pdf;base64,/, "").replace(/\s/g, '');
-  if (cleanBase64.length > (MAX_PDF_SIZE_BYTES * 1.37)) {
+  // Base64 increases size by ~33% (4/3 ratio). Use exact ratio for 15MB limit.
+  if (cleanBase64.length > (MAX_PDF_SIZE_BYTES * 4 / 3)) {
     return { ok: false, error: "Upload rejected: File size exceeds 15MB limit" };
   }
 

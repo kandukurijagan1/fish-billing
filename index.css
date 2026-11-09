@@ -3505,19 +3505,19 @@ body.app-is-locked #live-session-timer-pill {
 .tally-invoice-container {
   width: 210mm;
   max-width: 210mm;
-  height: 288mm;
-  max-height: 288mm;
-  padding: 4.5mm 7mm;
   box-sizing: border-box;
+  padding: 4mm 6.5mm;
   background: #ffffff;
-  font-family: 'Inter', Arial, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
   font-size: 8pt;
   color: #1e293b;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  line-height: 1.35;
-  overflow: hidden;
+  gap: 4px;
+  line-height: 1.32;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 /* Header layout */
@@ -3777,18 +3777,17 @@ body.app-is-locked #live-session-timer-pill {
 /* Items Table */
 .tally-items-wrapper {
   margin-top: 6px;
-  border: 1px solid #b4c6d0;
-  border-radius: 8px;
+  border: 1.5px solid #003d5e;
+  border-radius: 6px;
   overflow: hidden;
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
+  display: block;
+  background: #ffffff;
 }
 
 .tally-items-table {
   width: 100%;
   border-collapse: collapse;
-  flex-grow: 1;
+  table-layout: fixed;
 }
 
 .tally-items-table th {
@@ -3796,10 +3795,13 @@ body.app-is-locked #live-session-timer-pill {
   color: #ffffff;
   font-size: 8pt;
   font-weight: 700;
-  padding: 5px 6px;
+  padding: 8px 6px;
   text-align: center;
-  border-bottom: 1px solid #004b73;
-  border-right: 1px solid rgba(255,255,255,0.15);
+  border-bottom: 1.5px solid #003d5e;
+  border-right: 1px solid rgba(255, 255, 255, 0.25);
+  letter-spacing: 0.2px;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 .tally-items-table th:last-child {
@@ -3807,17 +3809,19 @@ body.app-is-locked #live-session-timer-pill {
 }
 
 .tally-items-table th i {
-  font-size: 8pt;
-  margin-right: 3px;
+  font-size: 7.5pt;
+  margin-right: 4px;
+  opacity: 0.95;
 }
 
 .tally-items-table td {
-  padding: 4px 6px;
-  font-size: 7.8pt;
-  color: #1e293b;
-  border-bottom: 1px solid #eef2f6;
-  border-right: 1px solid #e2e8f0;
+  padding: 10px 8px;
+  font-size: 8.5pt;
+  color: #0f172a;
+  border-bottom: 1px solid #cbd5e1;
+  border-right: 1px solid #cbd5e1;
   vertical-align: middle;
+  line-height: 1.35;
 }
 
 .tally-items-table td:last-child {
@@ -3825,8 +3829,15 @@ body.app-is-locked #live-session-timer-pill {
 }
 
 .tally-items-table tbody tr.filler-row td {
-  border-bottom: none;
-  height: 14px;
+  height: 25px;
+  padding: 4px 8px;
+  border-bottom: 1px solid #f1f5f9;
+  border-right: 1px solid #cbd5e1;
+  background: #ffffff;
+}
+
+.tally-items-table tbody tr.filler-row td:last-child {
+  border-right: none;
 }
 
 .tally-total-row td {
@@ -3834,8 +3845,15 @@ body.app-is-locked #live-session-timer-pill {
   color: #ffffff !important;
   font-size: 8.5pt !important;
   font-weight: 700 !important;
-  border: none !important;
-  padding: 5px 8px !important;
+  border-top: 1.5px solid #003d5e !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-bottom: none !important;
+  padding: 8px 8px !important;
+  vertical-align: middle;
+}
+
+.tally-total-row td:last-child {
+  border-right: none !important;
 }
 
 /* Lower Section breakdown and declaration */
@@ -4140,13 +4158,13 @@ body.app-is-locked #live-session-timer-pill {
     display: block !important;
     width: 210mm !important;
     max-width: 210mm !important;
-    height: 288mm !important;
-    max-height: 288mm !important;
+    height: auto !important;
+    max-height: none !important;
     margin: 0 auto !important;
     padding: 0 !important;
     box-sizing: border-box !important;
     background: #ffffff !important;
-    overflow: hidden !important;
+    overflow: visible !important;
     page-break-before: avoid !important;
     page-break-after: avoid !important;
     break-after: avoid !important;
@@ -4161,16 +4179,14 @@ body.app-is-locked #live-session-timer-pill {
   body:not(.printing-thermal) .tally-invoice-container {
     width: 210mm !important;
     max-width: 210mm !important;
-    height: 286mm !important;
-    max-height: 286mm !important;
     margin: 0 auto !important;
     padding: 4mm 6.5mm !important;
     box-sizing: border-box !important;
     background: #ffffff !important;
     display: flex !important;
     flex-direction: column !important;
-    justify-content: space-between !important;
-    overflow: hidden !important;
+    gap: 4px !important;
+    overflow: visible !important;
     page-break-before: avoid !important;
     page-break-after: avoid !important;
     break-after: avoid !important;
@@ -11873,4 +11889,20 @@ section.content-view.hidden {
 .buy-modal-footer {
   padding: 12px 22px 18px 22px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* HARD RESTRICTION FOR VIEW-ONLY / FREE VIEW MODE */
+body.view-only-mode #customer-details-modal,
+body[data-role="viewer"] #customer-details-modal,
+body[data-role="demo"] #customer-details-modal,
+body[data-role="guest"] #customer-details-modal,
+body.app-is-locked #customer-details-modal,
+body.view-only-mode #balance-qr-modal,
+body[data-role="viewer"] #balance-qr-modal,
+body[data-role="demo"] #balance-qr-modal {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  z-index: -99999 !important;
 }

@@ -5,7 +5,12 @@
   "author": "Aaryan Aqua Needs",
   "main": "electron-main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "node server.js",
+    "web": "node server.js",
+    "start:electron": "electron .",
+    "test:syntax": "node -c electron-main.js preload.js invoice_utils_v5.js index_v5.js whatsapp-bot.js",
+    "test:cases": "node test_scenarios.js",
+    "test": "npm run test:syntax && npm run test:cases",
     "build:icons": "node build_icons.js",
     "build:win": "electron-builder --win",
     "build:win-portable": "electron-builder --win portable",
@@ -17,6 +22,7 @@
     "build:all": "electron-builder -mw"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "mqtt": "^5.15.2",
@@ -25,7 +31,8 @@
   },
   "devDependencies": {
     "electron": "^30.5.1",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "serve": "^14.2.7"
   },
   "build": {
     "appId": "com.aaryanaqua.billing",
@@ -58,11 +65,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico"
@@ -83,11 +94,19 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["universal", "x64", "arm64"]
+          "arch": [
+            "universal",
+            "x64",
+            "arm64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["universal", "x64", "arm64"]
+          "arch": [
+            "universal",
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "icon": "build/icon.png",

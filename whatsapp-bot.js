@@ -118,10 +118,26 @@ function broadcastStatus() {
 }
 
 function killLingeringChromeProcesses() {
+  const pidFile = path.join(__dirname, 'data', 'chrome_bot.pid');
+  try {
+    if (fs.existsSync(pidFile)) {
+      const savedPid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
+      if (savedPid && !isNaN(savedPid)) {
+        if (process.platform === 'win32') {
+          const { execSync } = require('child_process');
+          try { execSync(`taskkill /F /T /PID ${savedPid}`, { stdio: 'ignore', timeout: 3000 }); } catch (e) {}
+        } else {
+          try { process.kill(savedPid, 'SIGKILL'); } catch (e) {}
+        }
+      }
+      try { fs.unlinkSync(pidFile); } catch (e) {}
+    }
+  } catch (e) {}
+
   if (process.platform === 'win32') {
     try {
       const { execSync } = require('child_process');
-      const psScript = `Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and ($_.CommandLine -like '*wwebjs*' -or $_.CommandLine -like '*test_auth*') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
+      const psScript = "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'chrome|msedge' -and $_.CommandLine -like '*wwebjs*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }";
       execSync(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript}"`, { stdio: 'ignore', timeout: 4000 });
     } catch (e) {}
   }
@@ -135,7 +151,15 @@ function cleanChromiumLocks(dir) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         cleanChromiumLocks(fullPath);
-      } else if (entry.name.startsWith('Singleton') || entry.name === 'SingletonLock' || entry.name === 'SingletonCookie' || entry.name === 'SingletonSocket' || entry.name === 'lockfile' || entry.name === 'LOCK') {
+      } else if (
+        entry.name.startsWith('Singleton') || 
+        entry.name === 'SingletonLock' || 
+        entry.name === 'SingletonCookie' || 
+        entry.name === 'SingletonSocket' || 
+        entry.name === 'lockfile' || 
+        entry.name === 'LOCK' ||
+        entry.name === 'DevToolsActivePort'
+      ) {
         try { fs.unlinkSync(fullPath); } catch (e) {}
       }
     }
@@ -565,17 +589,25 @@ function sanitizeCaption(str) {
 function getChromeVersion() {
   try {
     const cp = findChromeExecutable();
-    if (cp && process.platform === 'win32') {
-      const { execSync } = require('child_process');
-      const out = execSync(`powershell -NoProfile -Command "(Get-Item '${cp}').VersionInfo.ProductVersion"`, { timeout: 2500 }).toString().trim();
-      if (out && /^\d+/.test(out)) return out;
+    if (cp) {
+      const chromeDir = path.dirname(cp);
+      if (fs.existsSync(chromeDir)) {
+        const entries = fs.readdirSync(chromeDir);
+        const verDir = entries.find(e => /^\d+\.\d+\.\d+\.\d+$/.test(e));
+        if (verDir) return verDir;
+      }
     }
   } catch (e) {}
-  return '153.0.8010.48';
+  return '156.0.8078.81';
 }
 
 function findChromeExecutable() {
   const candidates = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
     path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
@@ -929,20 +961,31 @@ async function initClient(options = {}) {
       const me = client.info || {};
       clientInfo = {
         pushname: me.pushname || 'Admin',
-        phone: me.wid?.user || 'Connected'
+        phone: me.wid?.user || '918367047947'
       };
       logActivity({ type: 'STATUS', status: 'CONNECTED', desc: 'Bot linked successfully' });
       broadcastStatus();
+
+      // Persist browser process PID for clean lifecycle management on exit & restart
+      try {
+        if (client && client.pupBrowser) {
+          const proc = client.pupBrowser.process();
+          if (proc?.pid) {
+            fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
+            fs.writeFileSync(path.join(__dirname, 'data', 'chrome_bot.pid'), String(proc.pid), 'utf8');
+          }
+        }
+      } catch (e) {}
     });
 
     client.on('auth_failure', (msg) => {
-      console.error('❌ Auth failure:', msg);
+      console.error('❌ Auth failure notice:', msg);
       status = 'AUTH_FAILURE';
       errorMessage = msg || 'Authentication failed';
       isInitializing = false;
       broadcastStatus();
-      console.log('🧹 Cleaning invalid auth session and restarting for fresh QR in 3 seconds...');
-      setTimeout(() => initClient({ forceClean: true }), 3000);
+      console.log('🔄 Auth notice received. Retrying with preserved session in 5s...');
+      setTimeout(() => initClient({ forceClean: false, forceRestart: true }), 5000);
     });
 
     client.on('disconnected', (reason) => {
@@ -952,9 +995,9 @@ async function initClient(options = {}) {
       isInitializing = false;
       logActivity({ type: 'STATUS', status: 'DISCONNECTED', desc: reason });
       broadcastStatus();
-      const shouldClean = (reason === 'LOGOUT' || reason === 'NAVIGATION' || !reason);
-      console.log(`🔄 Attempting automatic reconnection in 4 seconds (clean: ${shouldClean})...`);
-      setTimeout(() => initClient({ forceClean: shouldClean }), 4000);
+      // NEVER wipe session on disk automatically! Reconnect preserving session.
+      console.log(`🔄 Disconnected (${reason || 'idle/network'}). Auto-reconnecting with preserved session in 5s...`);
+      setTimeout(() => initClient({ forceClean: false, forceRestart: true }), 5000);
     });
 
     await client.initialize();
@@ -1161,16 +1204,8 @@ app.get('/api/whatsapp/debug-inspect', async (req, res) => {
   }
 });
 
-app.post('/api/whatsapp/eval', express.json(), async (req, res) => {
-  try {
-    if (!client || !client.pupPage) return res.status(500).json({ error: 'No pupPage' });
-    const fn = new Function('client', req.body.code);
-    const result = await client.pupPage.evaluate(fn);
-    res.json({ ok: true, result });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
+// No remote evaluation endpoint: accepting arbitrary JavaScript here would
+// allow takeover of the authenticated WhatsApp browser session.
 
 // ============================================================================
 // LOCAL MULTI-USER INSTANT SYNC ENGINE (< 2ms LOCAL / LAN SYNC & DISK PERSISTENCE)
@@ -1389,7 +1424,8 @@ app.get('/companion', (req, res) => {
 });
 
 // Start Server & Initialize Client
-const server = app.listen(PORT, () => {
+// This companion is local-only; other network devices must not control it.
+const server = app.listen(PORT, '127.0.0.1', () => {
   console.log(`\n======================================================`);
   console.log(`🚀 AARYAN AQUA NEEDS - WhatsApp Bot Companion Running!`);
   console.log(`📡 Web Dashboard: http://localhost:${PORT}`);
@@ -1429,6 +1465,33 @@ function publishShutdownStatus() {
     } catch (e) {}
   }
 }
-process.on('SIGINT', () => { publishShutdownStatus(); process.exit(0); });
-process.on('SIGTERM', () => { publishShutdownStatus(); process.exit(0); });
+
+async function cleanupOnExit() {
+  publishShutdownStatus();
+  if (client) {
+    try {
+      if (client.pupBrowser) {
+        const proc = client.pupBrowser.process();
+        if (proc?.pid) {
+          try {
+            if (process.platform === 'win32') {
+              const { execSync } = require('child_process');
+              execSync(`taskkill /F /T /PID ${proc.pid}`, { stdio: 'ignore' });
+            } else {
+              process.kill(proc.pid, 'SIGKILL');
+            }
+          } catch(e){}
+        }
+        await client.pupBrowser.close().catch(() => {});
+      }
+    } catch(e){}
+    try { await client.destroy().catch(() => {}); } catch(e){}
+    client = null;
+  }
+  cleanChromiumLocks(authPath);
+}
+
+process.on('SIGINT', async () => { await cleanupOnExit(); process.exit(0); });
+process.on('SIGTERM', async () => { await cleanupOnExit(); process.exit(0); });
+process.on('exit', () => { cleanChromiumLocks(authPath); });
 

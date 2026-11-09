@@ -14,4 +14,4 @@ Disallow: /build/
 Disallow: /.git/
 
 # XML Sitemap
-Sitemap: https://aaryanaqua.netlify.app/sitemap.xml
+Sitemap: https://kandukurijagan1.github.io/fish-billing/sitemap.xml

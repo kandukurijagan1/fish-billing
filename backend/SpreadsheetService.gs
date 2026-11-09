@@ -6,6 +6,21 @@
 
 var SPREADSHEET_NAME = "Aaryan_Aqua_Live_Master_Sheet";
 
+function clearDatabaseCache() {
+  try {
+    var cache = CacheService.getScriptCache();
+    var count = cache.get("db_chunks_count");
+    var keys = ["latest_sync_hash", "db_chunks_count", "cache_sync_bundle"];
+    if (count) {
+      var n = parseInt(count, 10);
+      for (var i = 0; i < n + 10; i++) {
+        keys.push("db_chunk_" + i);
+      }
+    }
+    cache.removeAll(keys);
+  } catch (e) {}
+}
+
 function getMasterSpreadsheet() {
   var props = PropertiesService.getScriptProperties();
   var ss = null;
@@ -237,18 +252,34 @@ function readInventoryFromSheet(ss) {
     var id = String(row[0] || "").trim();
     if (!id && !row[1]) continue;
 
+    // Helper to prevent Date objects from becoming massive negative timestamps
+    function safeNum(val) {
+      if (val instanceof Date) return 0;
+      var n = Number(val);
+      return isNaN(n) ? 0 : n;
+    }
+
+    var sVal = safeNum(row[8]);
+    var rVal = safeNum(row[5]);
+    var dVal = safeNum(row[6]);
+    var pVal = safeNum(row[7] || row[5]);
+    var totVal = safeNum(row[9]);
+    if (sVal === 0 && totVal > 0 && pVal > 0) {
+      sVal = Math.round(totVal / pVal);
+    }
+
     products.push({
       id: id || ("prod_" + i),
       description: String(row[1] || ""),
       hsn: String(row[2] || ""),
       packSize: String(row[3] || ""),
       unit: String(row[4] || "NOS"),
-      rate: Number(row[5] || 0),
-      discount: Number(row[6] || 0),
-      price: Number(row[7] || row[5] || 0),
-      stock: Number(row[8] || 0),
-      totalValue: Number(row[9] || 0),
-      status: String(row[10] || "In Stock"),
+      rate: rVal,
+      discount: dVal,
+      price: pVal,
+      stock: sVal,
+      totalValue: totVal > 0 ? totVal : Math.round(sVal * pVal * 100) / 100,
+      status: sVal <= 0 ? "Out of Stock" : (sVal <= 5 ? "Low Stock" : "In Stock"),
       updatedAt: new Date().toISOString()
     });
   }
@@ -291,10 +322,6 @@ function writeInventoryToSheet(products, ss) {
   });
 
   sheet.getRange(2, 1, rows.length, 11).setValues(rows);
-  sheet.getRange(2, 6, rows.length, 1).setNumberFormat("₹#,##0.00");
-  sheet.getRange(2, 7, rows.length, 1).setNumberFormat("0.00\"%\"");
-  sheet.getRange(2, 8, rows.length, 1).setNumberFormat("₹#,##0.00");
-  sheet.getRange(2, 10, rows.length, 1).setNumberFormat("₹#,##0.00");
 }
 
 // --- CUSTOMERS CRUD FROM AUTHORITATIVE GOOGLE SHEET ---
@@ -378,3 +405,60 @@ function appendAuditLog(action, user, recordId, status, details, ss) {
     Logger.log("Audit log failed: " + e.message);
   }
 }
+
+// --- SETTINGS STORAGE IN AUTHORITATIVE GOOGLE SHEET ---
+
+function readSettingsFromSheet(ss) {
+  try {
+    if (!ss) ss = getMasterSpreadsheet();
+    var sheet = ss.getSheetByName("Settings");
+    if (!sheet) return {};
+
+    var data = sheet.getDataRange().getValues();
+    if (!data || data.length < 2) return {};
+
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0] || "").trim() === "GLOBAL_SETTINGS") {
+        var rawJson = String(data[i][1] || "");
+        if (rawJson) {
+          return JSON.parse(rawJson);
+        }
+      }
+    }
+    return {};
+  } catch (e) {
+    Logger.log("Failed to read settings from sheet: " + e.message);
+    return {};
+  }
+}
+
+function writeSettingsToSheet(settingsObj, ss) {
+  try {
+    if (!settingsObj || typeof settingsObj !== "object") return;
+    if (!ss) ss = getMasterSpreadsheet();
+    var sheet = ss.getSheetByName("Settings");
+    if (!sheet) return;
+
+    var jsonStr = JSON.stringify(settingsObj);
+    var nowIso = new Date().toISOString();
+    var data = sheet.getDataRange().getValues();
+    var rowIdx = -1;
+
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0] || "").trim() === "GLOBAL_SETTINGS") {
+        rowIdx = i + 1;
+        break;
+      }
+    }
+
+    if (rowIdx !== -1) {
+      sheet.getRange(rowIdx, 2).setValue(jsonStr);
+      sheet.getRange(rowIdx, 3).setValue(nowIso);
+    } else {
+      sheet.appendRow(["GLOBAL_SETTINGS", jsonStr, nowIso]);
+    }
+  } catch (e) {
+    Logger.log("Failed to write settings to sheet: " + e.message);
+  }
+}
+

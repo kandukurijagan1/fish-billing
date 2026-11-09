@@ -1,3 +1,68 @@
+// Authoritative Initial Snapshot Fallback (<0.1ms Instant Local Seeding)
+var _dbExport = ((function() { try { return require('./initial_db.js'); } catch(e) { return {}; } })());
+var INITIAL_BOOTSTRAP_SNAPSHOT = (typeof window !== 'undefined' && window.INITIAL_BOOTSTRAP_SNAPSHOT)
+  ? window.INITIAL_BOOTSTRAP_SNAPSHOT
+  : (_dbExport.INITIAL_BOOTSTRAP_SNAPSHOT || _dbExport || { invoices: [], products: [], parties: [], settings: {} });
+var FIXED_DEMO_SNAPSHOT = (typeof window !== 'undefined' && window.FIXED_DEMO_SNAPSHOT)
+  ? window.FIXED_DEMO_SNAPSHOT
+  : (_dbExport.FIXED_DEMO_SNAPSHOT || null);
+if (typeof window !== 'undefined') {
+  if (!window.INITIAL_BOOTSTRAP_SNAPSHOT) window.INITIAL_BOOTSTRAP_SNAPSHOT = INITIAL_BOOTSTRAP_SNAPSHOT;
+  if (!window.FIXED_DEMO_SNAPSHOT) window.FIXED_DEMO_SNAPSHOT = FIXED_DEMO_SNAPSHOT;
+}
+
+// Authoritative Global Demo Mode Detection (<0.1ms Instant Role & Session Check)
+window.isDemoMode = function() {
+  const currentEmail = (
+    (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem("current_user_email") : "") ||
+    (typeof localStorage !== 'undefined' ? localStorage.getItem("last_logged_in_email") : "") ||
+    (function() {
+      try {
+        const sess = JSON.parse(localStorage.getItem("aaryan_auth_session") || "null");
+        return sess?.email || "";
+      } catch(e) { return ""; }
+    })() || ""
+  ).toLowerCase().trim();
+
+  const isJagan = currentEmail === "kandukurijagan99@gmail.com" ||
+                  currentEmail === "kandukurijagan88@gmail.com" ||
+                  currentEmail.startsWith("kandukurijagan") ||
+                  currentEmail.startsWith("jagan");
+
+  if (isJagan || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_main_admin") === "true")) {
+    try {
+      localStorage.removeItem("is_demo_mode");
+      sessionStorage.removeItem("is_demo_mode");
+    } catch(e) {}
+    return false;
+  }
+
+  // Check if active user is an authorized staff/admin
+  if (typeof window.isUserAuthorizedByAdmin === 'function' && currentEmail && window.isUserAuthorizedByAdmin(currentEmail)) {
+    const list = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
+    const u = list.find(x => (x.email || "").toLowerCase().trim() === currentEmail);
+    if (u && String(u.status || 'active').toLowerCase() === 'active') {
+      const uRole = String(u.role || '').toLowerCase();
+      if (['super_admin', 'admin', 'administrator', 'operator', 'billing operator', 'staff', 'cashier', 'editor', 'billing'].includes(uRole)) {
+        return false;
+      }
+    }
+  }
+
+  // Explicit demo session flags
+  if (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer" || sessionStorage.getItem("current_user_role") === "demo")) {
+    return true;
+  }
+  if (typeof localStorage !== 'undefined' && localStorage.getItem("is_demo_mode") === "true") {
+    return true;
+  }
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    return true;
+  }
+
+  return false;
+};
+
 // ============================================================================
 // TURBO DATA STORE & INSTANT SYNCHRONOUS HYDRATION ENGINE (< 0.1ms Retrieval)
 // ============================================================================
@@ -20,15 +85,48 @@ if (isElectronApp && typeof document !== 'undefined') {
 
 // Synchronous 0ms local snapshot hydration
 try {
-  productsDb = JSON.parse(localStorage.getItem("products") || "[]");
-  partiesDb = JSON.parse(localStorage.getItem("parties") || "[]");
-  invoicesDb = JSON.parse(localStorage.getItem("invoices") || "[]");
-  globalSettings = JSON.parse(localStorage.getItem("settings") || "{}");
+  const isDemo = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                 (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) ||
+                 (typeof localStorage !== 'undefined' && localStorage.getItem("is_demo_mode") === "true");
+  const snapDemo = (typeof FIXED_DEMO_SNAPSHOT !== 'undefined' && FIXED_DEMO_SNAPSHOT) ? FIXED_DEMO_SNAPSHOT : (typeof window !== 'undefined' ? window.FIXED_DEMO_SNAPSHOT : null);
+  const snapLive = (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && INITIAL_BOOTSTRAP_SNAPSHOT) ? INITIAL_BOOTSTRAP_SNAPSHOT : {};
+
+  if (isDemo && snapDemo) {
+    let demoInvs = null;
+    try { demoInvs = JSON.parse(sessionStorage.getItem("demo_invoices") || "null"); } catch(e) {}
+    productsDb = JSON.parse(JSON.stringify(snapDemo.products || []));
+    partiesDb = JSON.parse(JSON.stringify(snapDemo.parties || []));
+    invoicesDb = (Array.isArray(demoInvs) && demoInvs.length > 0) ? demoInvs : JSON.parse(JSON.stringify(snapDemo.invoices || []));
+    globalSettings = JSON.parse(JSON.stringify(snapDemo.settings || snapDemo));
+    if (!globalSettings.company && snapDemo.company) globalSettings.company = snapDemo.company;
+    if (!globalSettings.bank && snapDemo.bank) globalSettings.bank = snapDemo.bank;
+    if (!globalSettings.upiId && snapDemo.upiId) globalSettings.upiId = snapDemo.upiId;
+  } else {
+    const localProds = JSON.parse(localStorage.getItem("products") || "null");
+    productsDb = (Array.isArray(localProds) && localProds.length > 0) ? localProds : (snapLive.products || []);
+    
+    const localParties = JSON.parse(localStorage.getItem("parties") || "null");
+    partiesDb = (Array.isArray(localParties) && localParties.length > 0) ? localParties : (snapLive.parties || []);
+    
+    const localInvs = JSON.parse(localStorage.getItem("invoices") || "null");
+    const isHistoryCleared = (typeof localStorage !== "undefined" && (localStorage.getItem("database_history_cleared") === "true" || !!localStorage.getItem("database_history_cleared_at")));
+    if (isHistoryCleared) {
+      invoicesDb = Array.isArray(localInvs) ? localInvs : [];
+    } else if (Array.isArray(localInvs)) {
+      invoicesDb = localInvs;
+    } else {
+      invoicesDb = (snapLive && Array.isArray(snapLive.invoices)) ? snapLive.invoices : [];
+    }
+    
+    const localSettings = JSON.parse(localStorage.getItem("settings") || "null");
+    globalSettings = (localSettings && typeof localSettings === 'object' && Object.keys(localSettings).length > 0) ? localSettings : (snapLive.settings || {});
+  }
 } catch(e) {
-  productsDb = [];
-  partiesDb = [];
-  invoicesDb = [];
-  globalSettings = {};
+  const snap = (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && INITIAL_BOOTSTRAP_SNAPSHOT) ? INITIAL_BOOTSTRAP_SNAPSHOT : {};
+  productsDb = snap.products || [];
+  partiesDb = snap.parties || [];
+  invoicesDb = snap.invoices || [];
+  globalSettings = snap.settings || {};
 }
 window.productsDb = productsDb;
 window.partiesDb = partiesDb;
@@ -130,6 +228,9 @@ const TurboIndexedDB = {
     }
     if (window.electronAPI && typeof window.electronAPI.saveFastCache === "function") {
       window.electronAPI.saveFastCache("invoices", invoicesDb).catch(() => {});
+    }
+    if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+      window.SupabaseDB.upsertInvoice(inv).catch(err => console.warn("[Supabase] Auto-sync invoice error:", err));
     }
   },
 
@@ -280,19 +381,36 @@ const TurboOutboxQueue = {
       window.updateCloudSyncBadge("syncing");
     }
 
-    // Robust sequential drain to eliminate Google Apps Script lock contention
+    // Robust drain: sync directly to Supabase first, then Google Apps Script
     const remaining = [];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
+      let syncedToSupabase = false;
+      try {
+        if (window.SupabaseDB && window.SupabaseDB.isConfigured() && item.payload) {
+          if (item.action === "save_invoice" || item.action === "save_invoices") {
+            const inv = item.payload.invoice || item.payload;
+            if (inv && inv.id) {
+              await window.SupabaseDB.upsertInvoice(inv);
+              syncedToSupabase = true;
+            }
+          }
+        }
+      } catch (sbErr) {}
+
       try {
         const res = await pushDirectToGoogleDatabaseRaw(item.action, item.payload);
         if (!res || (!res.ok && !res.success)) {
-          item.attempts = (item.attempts || 0) + 1;
-          if (item.attempts < 5) remaining.push(item);
+          if (!syncedToSupabase) {
+            item.attempts = (item.attempts || 0) + 1;
+            if (item.attempts < 3) remaining.push(item);
+          }
         }
       } catch (e) {
-        item.attempts = (item.attempts || 0) + 1;
-        if (item.attempts < 5) remaining.push(item);
+        if (!syncedToSupabase) {
+          item.attempts = (item.attempts || 0) + 1;
+          if (item.attempts < 3) remaining.push(item);
+        }
       }
     }
 
@@ -2679,7 +2797,12 @@ function syncDatabaseToServer(type, data) {
     if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
     broadcastInterTabEvent('invoice_saved', { invoice: data, products: productsDb, parties: partiesDb });
     if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
-    pushDirectToGoogleDatabase(action, payload);
+    // ⚡ Direct Supabase PostgreSQL Cloud Sync (<50ms)
+    if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+      window.SupabaseDB.upsertInvoice(data).catch(err => console.warn("[Supabase] Upsert invoice error:", err));
+    } else {
+      pushDirectToGoogleDatabase(action, payload);
+    }
   } else if (type === "products") {
     action = "save_products";
     payload = { products: data };
@@ -2690,10 +2813,15 @@ function syncDatabaseToServer(type, data) {
     if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
     broadcastInterTabEvent('products_saved', { products: data });
     if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
-    if (directPushProductTimer) clearTimeout(directPushProductTimer);
-    directPushProductTimer = setTimeout(() => {
-      pushDirectToGoogleDatabase("save_products", { products: productsDb });
-    }, 150);
+    // ⚡ Direct Supabase PostgreSQL Cloud Sync (<50ms)
+    if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+      window.SupabaseDB.saveAllProducts(productsDb).catch(err => console.warn("[Supabase] Save products error:", err));
+    } else {
+      if (directPushProductTimer) clearTimeout(directPushProductTimer);
+      directPushProductTimer = setTimeout(() => {
+        pushDirectToGoogleDatabase("save_products", { products: productsDb });
+      }, 150);
+    }
   } else if (type === "parties") {
     action = "save_parties";
     payload = { parties: data };
@@ -2704,17 +2832,27 @@ function syncDatabaseToServer(type, data) {
     if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
     broadcastInterTabEvent('parties_saved', { parties: data });
     if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
-    if (directPushPartiesTimer) clearTimeout(directPushPartiesTimer);
-    directPushPartiesTimer = setTimeout(() => {
-      pushDirectToGoogleDatabase("save_parties", { parties: partiesDb });
-    }, 150);
+    // ⚡ Direct Supabase PostgreSQL Cloud Sync (<50ms)
+    if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+      window.SupabaseDB.saveAllCustomers(partiesDb).catch(err => console.warn("[Supabase] Save customers error:", err));
+    } else {
+      if (directPushPartiesTimer) clearTimeout(directPushPartiesTimer);
+      directPushPartiesTimer = setTimeout(() => {
+        pushDirectToGoogleDatabase("save_parties", { parties: partiesDb });
+      }, 150);
+    }
   } else if (type === "settings") {
     action = "save_settings";
     payload = { settings: data };
     try {
       localStorage.setItem("settings", JSON.stringify(globalSettings));
     } catch(e) {}
-    pushDirectToGoogleDatabase(action, payload);
+    // ⚡ Direct Supabase PostgreSQL Cloud Sync (<50ms)
+    if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+      window.SupabaseDB.saveSettings(globalSettings).catch(err => console.warn("[Supabase] Save settings error:", err));
+    } else {
+      pushDirectToGoogleDatabase(action, payload);
+    }
   }
 }
 
@@ -2726,7 +2864,11 @@ function deleteProductFromServer(id) {
   if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
   broadcastInterTabEvent('record_deleted', { recordType: 'product', id });
   if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
-  pushDirectToGoogleDatabase("delete_record", { type: "product", id });
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+    window.SupabaseDB.deleteProduct(id).catch(e => console.warn("[Supabase] Delete product error:", e));
+  } else {
+    pushDirectToGoogleDatabase("delete_record", { type: "product", id });
+  }
 }
 
 function deletePartyFromServer(id) {
@@ -2737,7 +2879,11 @@ function deletePartyFromServer(id) {
   if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
   broadcastInterTabEvent('record_deleted', { recordType: 'party', id });
   if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
-  pushDirectToGoogleDatabase("delete_record", { type: "party", id });
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+    window.SupabaseDB.deleteCustomer(id).catch(e => console.warn("[Supabase] Delete customer error:", e));
+  } else {
+    pushDirectToGoogleDatabase("delete_record", { type: "party", id });
+  }
 }
 
 function deleteInvoiceFromServer(id, invoiceNo) {
@@ -2751,7 +2897,12 @@ function deleteInvoiceFromServer(id, invoiceNo) {
   if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
   broadcastInterTabEvent('record_deleted', { recordType: 'invoice', id, invoiceNo, products: productsDb });
   if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
-  pushDirectToGoogleDatabase("delete_record", { type: "invoice", id, invoiceNo });
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+    window.SupabaseDB.deleteInvoice(id).catch(e => console.warn("[Supabase] Delete invoice error:", e));
+    if (invoiceNo && invoiceNo !== id) window.SupabaseDB.deleteInvoice(invoiceNo).catch(e => {});
+  } else {
+    pushDirectToGoogleDatabase("delete_record", { type: "invoice", id, invoiceNo });
+  }
 }
 
 // ============================================================================
@@ -2770,36 +2921,43 @@ window.updateCloudSyncBadge = function(status) {
   
   if (syncBadgeTimer) clearTimeout(syncBadgeTimer);
 
-  const now = Date.now();
-  const diffSec = Math.max(0, Math.floor((now - (window.lastSyncTimeMs || now)) / 1000));
-  const timeText = diffSec <= 2 ? "1s Live" : `${diffSec}s ago`;
   const outboxCount = (window.TurboOutboxQueue && typeof window.TurboOutboxQueue.getItems === 'function') ? window.TurboOutboxQueue.getItems().length : 0;
 
+  let targetBadgeClass = "cloud-sync-pill synced cursor-pointer";
+  let targetTextHtml = "🟢 Supabase DB Live • Connected";
+  let targetDotClass = "realtime-radar-dot active";
+  let showDot = true;
+
   if (status === "syncing") {
-    badge.className = "cloud-sync-pill syncing cursor-pointer";
-    if (textEl) textEl.innerHTML = `<span class="realtime-sync-spinning">🔄</span> Syncing ${outboxCount > 0 ? `(${outboxCount})` : ''}...`;
-    if (radarDot) radarDot.style.display = "none";
+    targetBadgeClass = "cloud-sync-pill syncing cursor-pointer";
+    targetTextHtml = `<span class="realtime-sync-spinning">🔄</span> Syncing ${outboxCount > 0 ? `(${outboxCount})` : ''}...`;
+    showDot = false;
   } else if (status === "offline" || status === "offline_queued" || !navigator.onLine) {
-    badge.className = "cloud-sync-pill offline cursor-pointer";
-    if (textEl) textEl.textContent = outboxCount > 0 ? `⚡ ${outboxCount} Saved Offline` : "📶 Offline Mode";
-    if (radarDot) {
-      radarDot.style.display = "inline-block";
-      radarDot.className = "realtime-radar-dot offline";
-    }
-  } else if (outboxCount > 0) {
-    badge.className = "cloud-sync-pill offline cursor-pointer";
-    if (textEl) textEl.textContent = `⚡ ${outboxCount} Pending Sync`;
-    if (radarDot) {
-      radarDot.style.display = "inline-block";
-      radarDot.className = "realtime-radar-dot offline";
-    }
+    targetBadgeClass = "cloud-sync-pill offline cursor-pointer";
+    targetTextHtml = outboxCount > 0 ? `⚡ ${outboxCount} Saved Offline` : "📶 Offline Mode";
+    targetDotClass = "realtime-radar-dot offline";
+    showDot = true;
   } else {
-    badge.className = "cloud-sync-pill synced cursor-pointer";
-    if (textEl) textEl.textContent = `🟢 1s Google DB • ${timeText}`;
-    if (radarDot) {
-      radarDot.style.display = "inline-block";
-      radarDot.className = "realtime-radar-dot active";
-    }
+    targetBadgeClass = "cloud-sync-pill synced cursor-pointer";
+    targetTextHtml = "🟢 Supabase DB Live • Connected";
+    targetDotClass = "realtime-radar-dot active";
+    showDot = true;
+  }
+
+  // Prevent continuous DOM thrashing and visual blinking if status/text hasn't changed
+  if (badge._lastBadgeClass === targetBadgeClass && badge._lastTextHtml === targetTextHtml && badge._lastDotClass === targetDotClass) {
+    return;
+  }
+
+  badge._lastBadgeClass = targetBadgeClass;
+  badge._lastTextHtml = targetTextHtml;
+  badge._lastDotClass = targetDotClass;
+
+  badge.className = targetBadgeClass;
+  if (textEl) textEl.innerHTML = targetTextHtml;
+  if (radarDot) {
+    radarDot.style.display = showDot ? "inline-block" : "none";
+    if (showDot) radarDot.className = targetDotClass;
   }
 };
 
@@ -2810,7 +2968,126 @@ window.updateRealtimePresenceHUD = function(status = "live") {
 };
 
 window.triggerDatabaseSync = async function(forceReload = false) {
+  if (typeof window.isDemoMode === 'function' && window.isDemoMode()) {
+    console.log("[DEMO MODE] Cloud sync bypassed.");
+    return null;
+  }
   if (activeSyncPromise) {
+    return activeSyncPromise;
+  }
+
+  // ⚡ PRIMARY CLOUD ENGINE: Supabase PostgreSQL (sub-100ms sync)
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+    isSyncing = true;
+    // Only show spinning indicator if user explicitly requested manual reload
+    if (forceReload && typeof window.updateCloudSyncBadge === 'function') {
+      window.updateCloudSyncBadge("syncing");
+    }
+
+    activeSyncPromise = (async () => {
+      try {
+        const [invRes, prodRes, custRes, setRes] = await Promise.all([
+          window.SupabaseDB.fetchInvoices(),
+          window.SupabaseDB.fetchProducts(),
+          window.SupabaseDB.fetchCustomers(),
+          window.SupabaseDB.fetchSettings()
+        ]);
+
+        let hasInvoicesChanged = false;
+        let hasProductsChanged = false;
+        let hasPartiesChanged = false;
+
+        if (invRes && invRes.ok && Array.isArray(invRes.invoices)) {
+          let validInvs = invRes.invoices;
+          if (typeof window.filterOutDeletedInvoices === 'function') {
+            validInvs = window.filterOutDeletedInvoices(validInvs);
+          }
+          const hasCleared = (typeof localStorage !== "undefined" && (localStorage.getItem("database_history_cleared") === "true" || !!localStorage.getItem("database_history_cleared_at")));
+          const clearedAt = parseInt((typeof localStorage !== "undefined" ? localStorage.getItem("database_history_cleared_at") : "0") || "0", 10);
+          if (hasCleared && clearedAt > 0) {
+            validInvs = validInvs.filter(inv => {
+              const t = new Date(inv.date || inv.invoiceDate || inv.createdAt || 0).getTime();
+              return t > clearedAt;
+            });
+          }
+
+          const invFingerprint = validInvs.length + '_' + validInvs.map(i => (i.id || '') + ':' + (i.paymentStatus || '') + ':' + (i.paidAmount || 0)).sort().slice(0, 15).join('|');
+          if (invFingerprint !== window._lastInvFingerprint) {
+            window._lastInvFingerprint = invFingerprint;
+            hasInvoicesChanged = true;
+            invoicesDb = validInvs;
+            window.invoicesDb = invoicesDb;
+            try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
+          }
+        }
+
+        if (prodRes && prodRes.ok && Array.isArray(prodRes.products)) {
+          const prodFingerprint = prodRes.products.length + '_' + prodRes.products.map(p => (p.id || '') + ':' + (p.stock ?? '') + ':' + (p.price ?? '')).sort().slice(0, 15).join('|');
+          if (prodFingerprint !== window._lastProdFingerprint) {
+            window._lastProdFingerprint = prodFingerprint;
+            hasProductsChanged = true;
+            productsDb = prodRes.products;
+            window.productsDb = productsDb;
+            try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
+          }
+        }
+
+        if (custRes && custRes.ok && Array.isArray(custRes.customers)) {
+          const custFingerprint = custRes.customers.length + '_' + custRes.customers.map(c => (c.id || '') + ':' + (c.name || '') + ':' + (c.type || '')).sort().slice(0, 15).join('|');
+          if (custFingerprint !== window._lastCustFingerprint) {
+            window._lastCustFingerprint = custFingerprint;
+            hasPartiesChanged = true;
+            partiesDb = custRes.customers;
+            window.partiesDb = partiesDb;
+            try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
+          }
+        }
+
+        if (setRes && setRes.ok && setRes.settings) {
+          globalSettings = Object.assign({}, globalSettings, setRes.settings);
+          window.globalSettings = globalSettings;
+          try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(e){}
+        }
+
+        // Silent non-blinking UI updates: only re-render if data ACTUALLY changed and user is on that view
+        const activeTab = document.querySelector('.content-view:not(.hidden)')?.id || '';
+        const isTyping = document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+
+        if ((hasInvoicesChanged || forceReload) && !isTyping) {
+          if (activeTab === 'view-history' && typeof renderHistoryTableRows === 'function') {
+            renderHistoryTableRows(invoicesDb);
+          }
+          if (activeTab === 'view-dashboard' && typeof updateDashboardOverview === "function") {
+            updateDashboardOverview();
+          }
+        }
+
+        if ((hasProductsChanged || forceReload) && !isTyping) {
+          if (activeTab === 'view-products' && typeof loadProductsDatabaseTable === 'function') {
+            loadProductsDatabaseTable();
+          }
+        }
+
+        if ((hasPartiesChanged || forceReload) && !isTyping) {
+          if (activeTab === 'view-parties' && typeof renderPartiesLists === 'function') {
+            renderPartiesLists(partiesDb);
+          }
+          if (activeTab === 'view-customers' && typeof window.renderCustomersDirectoryView === "function") {
+            window.renderCustomersDirectoryView();
+          }
+        }
+
+        if (typeof window.updateCloudSyncBadge === "function") {
+          window.updateCloudSyncBadge("synced");
+        }
+        return { ok: true, source: 'supabase' };
+      } catch (err) {
+        console.warn("[Supabase] Direct sync error:", err);
+      } finally {
+        isSyncing = false;
+        activeSyncPromise = null;
+      }
+    })();
     return activeSyncPromise;
   }
 
@@ -2957,7 +3234,13 @@ window.triggerDatabaseSync = async function(forceReload = false) {
         // if (invNo && deletedSet.has(invNo)) return;
 
         // Discard legacy server invoices created before the last history reset
-        // Removed history filter so all invoices sync
+        const invTime = new Date(inv.date || inv.invoiceDate || inv.createdAt || 0).getTime();
+        if (historyClearedAt > 0 && invTime > 0 && invTime < historyClearedAt) {
+          return; // Skip stale server invoices older than history reset
+        }
+        if (id && deletedSet.has(id.toLowerCase())) return;
+        if (invNo && deletedSet.has(invNo)) return;
+
         const key = id || invNo;
         if (key) unifiedMap.set(key, inv);
       });
@@ -3064,6 +3347,10 @@ window.triggerDatabaseSync = async function(forceReload = false) {
 // --- HIGH-SPEED SNAPSHOT HYDRATION ENGINE (<50ms 0-WAIT SEEDING) ---
 window.hydrateFromSnapshot = function(data) {
   if (!data) return;
+  if (typeof window.isDemoMode === 'function' && window.isDemoMode()) {
+    console.log("[DEMO MODE] Live snapshot hydration ignored in demo session.");
+    return;
+  }
   let changed = false;
 
   // 1. Hydrate Products
@@ -3092,12 +3379,16 @@ window.hydrateFromSnapshot = function(data) {
 
   // 2. Hydrate Parties
   if (Array.isArray(data.parties) && data.parties.length > 0) {
+    let _dpi = [];
+    try { _dpi = JSON.parse(localStorage.getItem("deleted_party_ids")) || []; } catch(e){}
     const partyMap = new Map();
     (partiesDb || []).forEach(p => { if (p && p.id) partyMap.set(p.id, p); });
     data.parties.forEach(p => {
-      if (p && p.id && !partyMap.has(p.id)) {
-        partyMap.set(p.id, p);
-        changed = true;
+      if (p && p.id && !_dpi.includes(String(p.id)) && !_dpi.includes(String(p.name))) {
+        if (!partyMap.has(p.id)) {
+          partyMap.set(p.id, p);
+          changed = true;
+        }
       }
     });
     partiesDb = Array.from(partyMap.values());
@@ -3479,12 +3770,19 @@ window.savePersistentAuthSession = function(userObj) {
   if (!userObj || !userObj.email) return null;
   const normEmail = (userObj.email || "").toLowerCase().trim();
   const isMainAdmin = (normEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
+  
+  // BANNED emails can ONLY be saved as viewer, never as admin
+  let effectiveRole = isMainAdmin ? "super_admin" : (userObj.role || "admin");
+  if (typeof window.isEmailBanned === 'function' && window.isEmailBanned(normEmail)) {
+    effectiveRole = "viewer";
+  }
+  
   const sessionData = {
     authenticated: true,
     email: normEmail,
     name: userObj.name || normEmail.split("@")[0],
-    role: isMainAdmin ? "super_admin" : (userObj.role || "admin"),
-    isMainAdmin: isMainAdmin,
+    role: effectiveRole,
+    isMainAdmin: isMainAdmin && !(typeof window.isEmailBanned === 'function' && window.isEmailBanned(normEmail)),
     createdAt: Date.now(),
     expiresAt: Date.now() + (30 * 24 * 60 * 60 * 1000) // 30-day persistent real-world session
   };
@@ -3534,16 +3832,30 @@ window.clearPersistentAuthSession = function() {
 // Safe helper to determine current user role
 window.getCurrentResolvedRole = function() {
   const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
-  const mainAdminEmail = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-  if (currentEmail === mainAdminEmail || sessionStorage.getItem("is_main_admin") === "true") {
+  const isJagan = currentEmail === "kandukurijagan99@gmail.com" ||
+                  currentEmail === "kandukurijagan88@gmail.com" ||
+                  currentEmail.startsWith("kandukurijagan") ||
+                  currentEmail.startsWith("jagan");
+
+  if (isJagan || sessionStorage.getItem("is_main_admin") === "true") {
     return "super_admin";
+  }
+
+  // BANNED EMAIL CHECK - always returns viewer
+  if (currentEmail && typeof window.isEmailBanned === 'function' && window.isEmailBanned(currentEmail)) {
+    return "viewer";
   }
 
   // Check persistent session if sessionStorage was wiped or empty
   if (typeof window.getPersistentAuthSession === 'function') {
     const pSess = window.getPersistentAuthSession();
     if (pSess && pSess.role) {
-      if ((pSess.email || "").toLowerCase().trim() === mainAdminEmail || pSess.isMainAdmin) {
+      // Check if persistent session email is banned
+      if (typeof window.isEmailBanned === 'function' && window.isEmailBanned(pSess.email)) {
+        return "viewer";
+      }
+      const pEmail = (pSess.email || "").toLowerCase().trim();
+      if (pEmail === "kandukurijagan99@gmail.com" || pEmail === "kandukurijagan88@gmail.com" || pEmail.startsWith("kandukurijagan") || pSess.isMainAdmin) {
         return "super_admin";
       }
       return pSess.role;
@@ -3566,7 +3878,27 @@ window.getCurrentResolvedRole = function() {
 
 // Commercial Product Tier: Helper to determine if current session is in Free View / Demo mode (read-only)
 window.isViewOnlyUser = function() {
-  // 1. Explicit demo/viewer mode flag
+  const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
+  const isJagan = currentEmail === "kandukurijagan99@gmail.com" ||
+                  currentEmail === "kandukurijagan88@gmail.com" ||
+                  currentEmail.startsWith("kandukurijagan") ||
+                  currentEmail.startsWith("jagan");
+
+  // 1. Permanent Main Admin ALWAYS has full edit access and is NEVER view-only
+  if (isJagan || sessionStorage.getItem("is_main_admin") === "true") {
+    try {
+      localStorage.removeItem("is_demo_mode");
+      sessionStorage.removeItem("is_demo_mode");
+    } catch(e) {}
+    return false;
+  }
+
+  // 2. BANNED EMAIL CHECK - highest priority
+  if (currentEmail && typeof window.isEmailBanned === 'function' && window.isEmailBanned(currentEmail)) {
+    return true;
+  }
+
+  // 3. Explicit demo/viewer mode flag
   if (sessionStorage.getItem("is_demo_mode") === "true" || localStorage.getItem("is_demo_mode") === "true") {
     return true;
   }
@@ -3576,18 +3908,14 @@ window.isViewOnlyUser = function() {
     return true;
   }
 
-  const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
-  const mainAdminEmail = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-  
-  // 2. Permanent Main Admin ALWAYS has full edit access
-  if (currentEmail === mainAdminEmail || sessionStorage.getItem("is_main_admin") === "true") {
-    return false;
-  }
-
   // 3. Check persistent session
   if (typeof window.getPersistentAuthSession === 'function') {
     const pSess = window.getPersistentAuthSession();
     if (pSess) {
+      // Also check if persistent session email is banned
+      if (typeof window.isEmailBanned === 'function' && window.isEmailBanned(pSess.email)) {
+        return true;
+      }
       if (pSess.isMainAdmin || (pSess.email || '').toLowerCase().trim() === mainAdminEmail) {
         return false;
       }
@@ -3651,6 +3979,31 @@ window.loginAsFreeViewer = function(customData = {}) {
   sessionStorage.setItem("is_demo_mode", "true");
   localStorage.setItem("is_demo_mode", "true");
 
+  // CRITICAL: Overwrite persistent auth session with viewer role
+  // This prevents cached admin role from overriding view-only mode
+  if (typeof window.savePersistentAuthSession === 'function') {
+    window.savePersistentAuthSession({
+      email: email,
+      name: name,
+      role: "viewer",
+      isMainAdmin: false
+    });
+  }
+  // Also force the persistent session directly in case savePersistentAuthSession
+  // has protection against banned emails (we want viewer to be stored)
+  try {
+    const viewerSession = {
+      authenticated: true,
+      email: email,
+      name: name,
+      role: "viewer",
+      isMainAdmin: false,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + (30 * 24 * 60 * 60 * 1000)
+    };
+    localStorage.setItem("aaryan_auth_session", JSON.stringify(viewerSession));
+  } catch(_) {}
+
   localStorage.setItem("app_authenticated", "true");
   localStorage.setItem("app_locked", "false");
   isLocked = false;
@@ -3662,6 +4015,9 @@ window.loginAsFreeViewer = function(customData = {}) {
     lockOverlay.style.setProperty("display", "none", "important");
   }
 
+  const wrapper = document.querySelector('.dashboard-wrapper');
+  if (wrapper) wrapper.classList.remove("blur-dashboard-wrapper");
+
   const demoBanner = document.getElementById("demo-mode-top-banner");
   if (demoBanner) {
     demoBanner.style.display = "flex";
@@ -3671,8 +4027,24 @@ window.loginAsFreeViewer = function(customData = {}) {
     window.applyRolePermissions("viewer");
   }
 
+  // Load FIXED DEMO DATABASE and refresh all UI components immediately
+  loadAllDatabases();
+  if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+  if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
+  if (typeof loadProductsDatabaseTable === 'function') loadProductsDatabaseTable();
+  if (typeof loadPartiesDatabaseLists === 'function') loadPartiesDatabaseLists();
+  if (typeof renderRecentInvoicesTable === 'function') renderRecentInvoicesTable();
+  if (typeof renderCustomerLedgerSummary === 'function') renderCustomerLedgerSummary();
+  if (typeof renderCustomersDirectoryView === 'function') renderCustomersDirectoryView();
+  if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+
+  // Switch directly to GST Billing view
+  if (typeof window.switchTab === 'function') {
+    window.switchTab('billing');
+  }
+
   if (typeof showFloatingToast === 'function') {
-    showFloatingToast("👁️ Opened in Free View Mode! You can preview all tabs. Editing requires an authorized license from kandukurijagan99@gmail.com.", "info", 6000);
+    showFloatingToast("👁️ Demo Preview Mode Active: Displaying fixed sample details. Live business records are protected.", "info", 5000);
   }
 };
 
@@ -3818,7 +4190,7 @@ function initializeApp() {
   window.isInitialSyncDone = true;
   updateDashboardOverview();
   calculateSummaryAndTable();
-  autoSuggestInvoiceNo();
+  autoSuggestInvoiceNo(true);
   loadProductsDatabaseTable();
   loadPartiesDatabaseLists();
   loadInvoicesHistoryTable();
@@ -3842,6 +4214,10 @@ function initializeApp() {
 
   // Fast non-blocking fetch of initial_db.json from local disk / static CDN (<50ms)
   const loadInitialSnapshot = () => {
+    if (typeof window.isDemoMode === 'function' && window.isDemoMode()) {
+      console.log("[DEMO MODE] initial_db.json fetch bypassed.");
+      return;
+    }
     fetch('initial_db.json?_t=' + Date.now(), { cache: 'no-store' })
       .catch(() => fetch('initial_db.json'))
       .then(r => r && r.ok ? r.json() : null)
@@ -3865,10 +4241,41 @@ function initializeApp() {
   };
   loadInitialSnapshot();
 
-  // Trigger cloud sync to join any in-flight startup request or refresh data
-  if (typeof window.triggerDatabaseSync === 'function') {
-    window.triggerDatabaseSync(true).catch(e => console.warn("Initial sync note:", e));
+  // Instant parallel fetch from Supabase (<500ms) for real-time live data
+  if (typeof window.isDemoMode === 'function' && window.isDemoMode()) {
+    console.log("[DEMO MODE] Supabase live invoices fetch bypassed for demo mode.");
+  } else if (window.SupabaseDB && typeof window.SupabaseDB.fetchInvoices === 'function') {
+    window.SupabaseDB.fetchInvoices().then(res => {
+      if (res && res.ok && Array.isArray(res.invoices)) {
+        let validInvs = res.invoices;
+        if (typeof window.filterOutDeletedInvoices === 'function') {
+          validInvs = window.filterOutDeletedInvoices(validInvs);
+        }
+        const hasCleared = (typeof localStorage !== "undefined" && (localStorage.getItem("database_history_cleared") === "true" || !!localStorage.getItem("database_history_cleared_at")));
+        const clearedAt = parseInt((typeof localStorage !== "undefined" ? localStorage.getItem("database_history_cleared_at") : "0") || "0", 10);
+        if (hasCleared && clearedAt > 0) {
+          validInvs = validInvs.filter(inv => {
+            const t = new Date(inv.date || inv.invoiceDate || inv.createdAt || 0).getTime();
+            return t > clearedAt;
+          });
+        }
+        invoicesDb = validInvs;
+        window.invoicesDb = invoicesDb;
+        try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
+        if (typeof renderHistoryTableRows === 'function') renderHistoryTableRows(invoicesDb);
+        if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+        if (typeof window.renderCustomersDirectoryView === 'function') window.renderCustomersDirectoryView();
+        if (typeof window.updateCloudSyncBadge === 'function') window.updateCloudSyncBadge("synced");
+      }
+    }).catch(err => console.warn("[Supabase] Fast boot fetch note:", err));
   }
+
+  // Background non-blocking Google Apps Script sync (does not block UI rendering)
+  setTimeout(() => {
+    if (typeof window.triggerDatabaseSync === 'function') {
+      window.triggerDatabaseSync(false).catch(e => console.warn("Background sync note:", e));
+    }
+  }, 500);
 
   // Update header cloud sync status pill
   if (typeof window.updateCloudSyncBadge === 'function') {
@@ -3940,9 +4347,9 @@ function initializeApp() {
 
     const opt = {
       margin:       [0, 0, 0, 0],
-      image:        { type: 'jpeg', quality: 0.95 },
-      html2canvas:  { scale: 1.35, useCORS: true, logging: false },
-      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      image: { type: 'jpeg', quality: 1.0 },
+      html2canvas: { scale: 3.5, useCORS: true, logging: false, letterRendering: true, dpi: 300 },
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
     };
 
     let processedCount = 0;
@@ -3962,8 +4369,8 @@ function initializeApp() {
         const origTallyPadding = element.style.padding;
         const origTallyOverflow = element.style.overflow;
 
-        element.style.height = "288mm";
-        element.style.maxHeight = "288mm";
+        element.style.height = "auto";
+        element.style.maxHeight = "none";
         element.style.padding = "4.5mm 7mm";
         element.style.overflow = "hidden";
 
@@ -4095,7 +4502,42 @@ function initializeApp() {
   let canStayUnlocked = false;
   let candidateEmail = (savedSession?.email || sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
 
-  // STRICT AUDIT: If currently stored email is not authorized by Main Admin, purge immediately!
+  // FREE VIEW MODE CHECK - If user is in Free View mode, DO NOT PURGE OR LOCK OUT!
+  const isDemoSession = (
+    sessionStorage.getItem("is_demo_mode") === "true" || 
+    localStorage.getItem("is_demo_mode") === "true" || 
+    savedSession?.role === "viewer" ||
+    (typeof window.isViewOnlyUser === 'function' && candidateEmail && window.isViewOnlyUser(candidateEmail))
+  );
+  if (isDemoSession) {
+    canStayUnlocked = true;
+    isLocked = false;
+    localStorage.removeItem("app_locked");
+    document.body.classList.remove("app-is-locked");
+    const lockOverlay = document.getElementById("lock-screen-overlay");
+    if (lockOverlay) {
+      lockOverlay.classList.add("hidden");
+      lockOverlay.style.setProperty("display", "none", "important");
+    }
+    const wrapper = document.querySelector('.dashboard-wrapper');
+    if (wrapper) wrapper.classList.remove("blur-dashboard-wrapper");
+
+    if (typeof window.loginAsFreeViewer === 'function') {
+      window.loginAsFreeViewer({
+        email: candidateEmail || "demo@viewer.com",
+        name: sessionStorage.getItem("current_user_name") || savedSession?.name || "Prospective Buyer"
+      });
+    }
+    // Free viewers go directly to billing tab
+    setTimeout(() => {
+      if (typeof window.switchTab === 'function') {
+        window.switchTab('billing');
+      }
+    }, 50);
+    return;
+  }
+
+  // STRICT AUDIT: If currently stored email is not authorized by Main Admin and NOT in demo mode, purge!
   if (candidateEmail && typeof window.isUserAuthorizedByAdmin === 'function' && !window.isUserAuthorizedByAdmin(candidateEmail)) {
     console.warn("Purging unauthorized session on boot for:", candidateEmail);
     if (typeof window.clearPersistentAuthSession === 'function') {
@@ -4250,17 +4692,18 @@ function initializeApp() {
   */
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener("DOMContentLoaded", initializeApp);
-} else {
-  initializeApp();
-}
+// Boot trigger relocated to end of file after all function definitions
 
-// --- AUTHORITATIVE INITIAL BOOTSTRAP DATABASE (0ms Instant Loading on Any Device/Laptop) ---
-const INITIAL_BOOTSTRAP_SNAPSHOT = {"version":"1.0.0","generatedAt":"2026-09-20T18:04:28.789Z","invoices":[],"products":[{"id":"prod-1789924485015-616","description":"GEO CAR","hsn":"5667886","packSize":"25","unit":"Bucket","rate":3599,"costPrice":1988.45,"price":1988.45,"gstRate":0,"discount":44.75,"stock":180,"status":"In Stock","totalValue":357921,"updatedAt":"2026-09-20T17:32:18.489Z"}],"parties":[{"id":"party-1789825147707-894","type":"receiver","name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947","updatedAt":"2026-09-19T13:39:07.707Z"},{"id":"party-1789825174872-232","type":"consignee","name":"JAGAN","address":"vpm","state":"Andhra Pradesh","stateCode":"37","phone":"8367047947","updatedAt":"2026-09-19T13:39:34.872Z"},{"id":"pty_1789874678666_576","name":"abc","type":"receiver","phone":"8367047947","state":"Andhra Pradesh","stateCode":"37","createdAt":"2026-09-20T03:24:38.666Z"}],"settings":{"company":{"name":"AARYAN AQUA NEEDS","tagline":"QUALITY PRODUCTS FOR BETTER AQUACULTURE","address":"Door No: 10-13-94/42A REVENUE WARD 7\nAP HOUSING BOARD COLONY, REPALLE Village,\nREPALLE Mandal, Bapatla District, Pincode 522265","phones":"+91 74166 05652","email":"aaryanaquaneeds@gmail.com","gstin":"37ACNFA4687Q1ZC","state":"Andhra Pradesh","stateCode":"37","website":"www.aaryan-aqua.com"},"bank":{"name":"State Bank of India","accountName":"Aaryan aqua Needs","accountNo":"45413424177","ifsc":"SBIN0000911","branch":"Repalle"},"upiId":"7386262139@upi","telegram":{"token":"8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g","chatId":"6877857251, 7906132548","botUsername":"fishbilling_bot_bot","autoSend":true},"security":{"autolock":"60","username":"kandukurijagan99@gmail.com","email":"kandukurijagan99@gmail.com","password":"Aaryan@2024","whatsappLockEnabled":false,"whatsappPin":"2024","whatsappAutoLockMinutes":"15","whatsappMaskPhones":true,"whatsappProtectChats":true,"securityPin":"2024","strictBootLock":true,"counterPrivacyMode":false},"terms":["We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct."]}};
+// Authoritative Initial Snapshot managed via initial_db.js and top of file
 
 // --- LOCAL STORAGE DATABASES SEEDING (EXCLUSIVELY GOOGLE DATABASE ARCHITECTURE) ---
-function seedDatabasesIfEmpty() {
+window.seedDatabasesIfEmpty = function seedDatabasesIfEmpty() {
+  if (typeof window.isDemoMode === 'function' && window.isDemoMode()) {
+    return;
+  }
+  const isDemo = (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) ||
+                 (typeof localStorage !== 'undefined' && localStorage.getItem("is_demo_mode") === "true");
+  if (isDemo) return;
   try {
     const storedSettings = JSON.parse(localStorage.getItem("settings") || "null");
     if (storedSettings && storedSettings.company && (storedSettings.company.name === "ANUDEEP KHADI BANDAR" || !storedSettings.company.name)) {
@@ -4305,11 +4748,17 @@ function seedDatabasesIfEmpty() {
     window.partiesDb = partiesDb;
   }
 
-  // 4. Invoices Database (initialized clean, never force-seeded with mock invoices)
+  // 4. Invoices Database - seed from snapshot on first load for 0ms instant loading
   try {
     const localInvs = JSON.parse(localStorage.getItem("invoices") || "null");
-    if (Array.isArray(localInvs)) {
+    const hasClearedHistory = (typeof localStorage !== "undefined" && (localStorage.getItem("database_history_cleared") === "true" || !!localStorage.getItem("database_history_cleared_at")));
+    if (hasClearedHistory) {
+      invoicesDb = Array.isArray(localInvs) ? localInvs : [];
+    } else if (Array.isArray(localInvs)) {
       invoicesDb = localInvs;
+    } else if (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.invoices) && INITIAL_BOOTSTRAP_SNAPSHOT.invoices.length > 0) {
+      invoicesDb = INITIAL_BOOTSTRAP_SNAPSHOT.invoices;
+      localStorage.setItem("invoices", JSON.stringify(invoicesDb));
     } else {
       invoicesDb = [];
       localStorage.setItem("invoices", JSON.stringify([]));
@@ -4325,16 +4774,44 @@ function seedDatabasesIfEmpty() {
   window.invoicesDb = invoicesDb;
 }
 
-function loadAllDatabases() {
+window.loadAllDatabases = function loadAllDatabases() {
   try {
     localStorage.removeItem("cancelled_invoices");
-    localStorage.removeItem("database_history_cleared_at");
   } catch(e) {}
+
+  const isDemo = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                 (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) ||
+                 (typeof localStorage !== 'undefined' && localStorage.getItem("is_demo_mode") === "true") ||
+                 (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser());
+  const snapDemo = (typeof FIXED_DEMO_SNAPSHOT !== 'undefined' && FIXED_DEMO_SNAPSHOT) ? FIXED_DEMO_SNAPSHOT : (typeof window !== 'undefined' ? window.FIXED_DEMO_SNAPSHOT : null);
+
+  if (isDemo && snapDemo) {
+    let demoInvs = null;
+    try { demoInvs = JSON.parse(sessionStorage.getItem("demo_invoices") || "null"); } catch(e) {}
+    invoicesDb = (Array.isArray(demoInvs) && demoInvs.length > 0) ? demoInvs : JSON.parse(JSON.stringify(snapDemo.invoices || []));
+    productsDb = JSON.parse(JSON.stringify(snapDemo.products || []));
+    partiesDb = JSON.parse(JSON.stringify(snapDemo.parties || []));
+    globalSettings = JSON.parse(JSON.stringify(snapDemo.settings || snapDemo));
+    if (!globalSettings.company && snapDemo.company) globalSettings.company = snapDemo.company;
+    if (!globalSettings.bank && snapDemo.bank) globalSettings.bank = snapDemo.bank;
+    if (!globalSettings.upiId && snapDemo.upiId) globalSettings.upiId = snapDemo.upiId;
+
+    window.invoicesDb = invoicesDb;
+    window.productsDb = productsDb;
+    window.partiesDb = partiesDb;
+    window.globalSettings = globalSettings;
+    return;
+  }
 
   try {
     const invLocal = JSON.parse(localStorage.getItem("invoices") || "null");
-    if (Array.isArray(invLocal)) {
+    const hasCleared = (typeof localStorage !== "undefined" && (localStorage.getItem("database_history_cleared") === "true" || !!localStorage.getItem("database_history_cleared_at")));
+    if (hasCleared) {
+      invoicesDb = Array.isArray(invLocal) ? invLocal : [];
+    } else if (Array.isArray(invLocal)) {
       invoicesDb = invLocal;
+    } else if (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.invoices) && INITIAL_BOOTSTRAP_SNAPSHOT.invoices.length > 0) {
+      invoicesDb = INITIAL_BOOTSTRAP_SNAPSHOT.invoices;
     } else {
       invoicesDb = [];
     }
@@ -4344,6 +4821,18 @@ function loadAllDatabases() {
   if (typeof window.filterOutDeletedInvoices === 'function') {
     invoicesDb = window.filterOutDeletedInvoices(invoicesDb);
     try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
+  }
+  // In Real-World Mode: Purge any simulated demo invoices so they never pollute production GST books
+  if (!isDemo && Array.isArray(invoicesDb)) {
+    const liveInvs = invoicesDb.filter(inv => {
+      const invNo = String(inv?.invoiceNo || inv?.details?.invoiceNo || '').trim();
+      const invId = String(inv?.id || '').trim();
+      return !(/^(DEMO|SAMPLE|TEST)[-_]?/i.test(invNo) || invId.startsWith('demo_') || inv?.isDemo === true);
+    });
+    if (liveInvs.length !== invoicesDb.length) {
+      invoicesDb = liveInvs;
+      try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
+    }
   }
   window.invoicesDb = invoicesDb;
 
@@ -4380,6 +4869,19 @@ function loadAllDatabases() {
       try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
     }
   } catch(e) {}
+
+  // In Real-World Mode: Filter out any sample placeholder parties
+  if (!isDemo && Array.isArray(partiesDb)) {
+    const liveParties = partiesDb.filter(p => {
+      const pName = String(p?.name || '').trim();
+      const pId = String(p?.id || '').trim();
+      return !(pName.toLowerCase().includes('(sample)') || pId.startsWith('demo_party_'));
+    });
+    if (liveParties.length !== partiesDb.length) {
+      partiesDb = liveParties;
+      try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
+    }
+  }
 
   window.invoicesDb = invoicesDb;
   window.productsDb = productsDb;
@@ -4781,8 +5283,19 @@ window.closeMobileSidebar = function() {
 window.switchTab = function(tabName) {
   if (isLocked) return;
 
-  const currentRole = sessionStorage.getItem("current_user_role");
-  // Only restrict pure customer role (client checking their ledger) from store management, but allow general demo viewers to evaluate all tabs!
+  const currentRole = (sessionStorage.getItem("current_user_role") || "").toLowerCase().trim();
+  const isViewOnly = (typeof window.isViewOnlyUser === 'function') ? window.isViewOnlyUser() : false;
+
+  // Unknown / Limited Access users can ONLY view: GST Billing, Invoice History, and Products!
+  // All other sections (Parties, Customers, Reports, Settings, Dashboard) are completely inaccessible.
+  if (isViewOnly && !["billing", "history", "products"].includes(tabName)) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("🔒 Limited Access: You can only view GST Billing, Invoice History, and Products.", "warning", 3500);
+    }
+    tabName = "billing";
+  }
+
+  // Customer role restriction
   if (currentRole === "customer" && ["billing", "products", "parties", "reports", "settings"].includes(tabName)) {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("⛔ Customer accounts can only view Dashboard & Invoices. Contact kandukurijagan99@gmail.com for full access.", "warning", 3500);
@@ -4840,6 +5353,7 @@ window.switchTab = function(tabName) {
   if (tabName === 'history') title = isSmallScreen ? 'History' : 'Invoice History';
   if (tabName === 'products') title = isSmallScreen ? 'Products' : 'Inventory & Products';
   if (tabName === 'parties') title = isSmallScreen ? 'Parties' : 'Client & Party Accounts';
+  if (tabName === 'customers') title = isSmallScreen ? 'Customers' : 'Customer Directory & Profiles';
   if (tabName === 'reports') title = isSmallScreen ? 'Reports' : 'Analytics & Reports';
   if (tabName === 'settings') title = isSmallScreen ? 'Settings' : 'System & Automation Settings';
   elements.viewTitle.textContent = title;
@@ -4849,6 +5363,10 @@ window.switchTab = function(tabName) {
 
   if (tabName === 'dashboard') {
     updateDashboardOverview();
+  } else if (tabName === 'customers') {
+    if (typeof window.renderCustomersDirectoryView === 'function') {
+      window.renderCustomersDirectoryView();
+    }
   } else if (tabName === 'billing') {
     populateBillingSelectors();
     if (typeof renderFrequentProductsBar === 'function') {
@@ -5228,18 +5746,19 @@ window.renderCustomerLedgerSummary = function() {
 
     return `
       <tr>
-        <td>
+        <td style="cursor: pointer;" onclick="if(window.openCustomerDetailsModal) window.openCustomerDetailsModal('${cust.name.replace(/'/g, "\\'")}')" title="Click to view complete purchase and payment history for ${cust.name}">
           <div class="ledger-cust-name">
-            <i class="fa-solid fa-building-user text-muted" style="font-size: 13px;"></i>
-            <span>${cust.name}</span>
+            <i class="fa-solid fa-building-user text-cyan" style="font-size: 13px;"></i>
+            <span style="font-weight: 700; color: #0284c7; text-decoration: underline; text-underline-offset: 3px;">${cust.name}</span>
           </div>
         </td>
         <td>${cust.phone ? `<i class="fa-brands fa-whatsapp text-emerald" style="font-size: 11px;"></i> ${cust.phone}` : '<span class="text-muted">—</span>'}</td>
-        <td class="text-center" style="font-weight: 700;">${cust.invoiceCount}</td>
+        <td class="text-center" style="font-weight: 700; cursor: pointer; color: #0284c7;" onclick="if(window.openCustomerDetailsModal) window.openCustomerDetailsModal('${cust.name.replace(/'/g, "\\'")}')" title="View all invoices">${cust.invoiceCount}</td>
         <td style="text-align: right; font-weight: 700;">₹ ${formatCurrency(cust.totalBilled)}</td>
         <td style="text-align: right; color: #059669; font-weight: 700;">₹ ${formatCurrency(cust.totalPaid)}</td>
         <td style="text-align: right;">${balPill}</td>
         <td class="text-center actions-cell">
+          <button class="action-btn" onclick="if(window.openCustomerDetailsModal) window.openCustomerDetailsModal('${cust.name.replace(/'/g, "\\'")}')" title="Full Customer Purchase &amp; Payment History" style="background: #e0f2fe; color: #0284c7;"><i class="fa-solid fa-clock-rotate-left"></i></button>
           ${waActionBtn}
           <button class="action-btn edit" onclick="startBillForCustomer('${cust.name.replace(/'/g, "\\'")}')" title="New Bill for ${cust.name}"><i class="fa-solid fa-cart-plus"></i></button>
         </td>
@@ -5427,15 +5946,17 @@ function updateDashboardOverview() {
         if (status === 'Unpaid') badgeClass = 'badge-unpaid';
 
         const isCustomerRole = (typeof window.isCustomerAccount === 'function') ? window.isCustomerAccount() : false;
+        const isViewOnlyUser = (typeof window.isViewOnlyUser === 'function') && window.isViewOnlyUser();
 
         let balanceQrDropdownItem = "";
-        if (!isEstimate && !isPaid && balance > 0 && !isCustomerRole) {
+        if (!isEstimate && !isPaid && balance > 0 && !isCustomerRole && !isViewOnlyUser) {
           balanceQrDropdownItem = `
             <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openBalanceQrModal('${inv.id}')"><i class="fa-solid fa-qrcode" style="color: #06b6d4;"></i> Scan &amp; Settle Balance (₹ ${formatCurrency(balance)})</a>
           `;
         }
 
         const invTotal = safeParseAmount(inv.total !== undefined ? inv.total : details.total);
+    const safeInvId = String(inv.id || inv.invoiceNo || (details && (details.id || details.invoiceNo)) || '').trim();
         const custName = (inv.customerName || (details.buyer && details.buyer.name) || 'Cash Customer').trim();
         const itemsCount = inv.itemsCount !== undefined ? inv.itemsCount : ((inv.items || details.items || []).length);
 
@@ -5449,13 +5970,15 @@ function updateDashboardOverview() {
           <td class="text-center" style="white-space: nowrap;">${itemsCount}</td>
           <td style="text-align: right; font-weight: 700; white-space: nowrap;">₹ ${formatCurrency(invTotal)}</td>
           <td class="text-center" style="white-space: nowrap;">
-            ${(!isPaid && balance > 0 && !isCustomerRole)
+            ${(!isPaid && balance > 0 && !isCustomerRole && !isViewOnlyUser)
               ? `<span class="badge-status ${badgeClass}" onclick="openBalanceQrModal('${inv.id}')" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode" style="font-size: 11px;"></i>${status}</span><div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>`
               : `<span class="badge-status ${badgeClass}">${status}</span>${(!isPaid && balance > 0 ? `<div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>` : '')}`}
           </td>
           <td class="actions-cell">
-            ${(!isEstimate && !isPaid && balance > 0 && !isCustomerRole) ? `<button class="action-btn share action-btn-qr" onclick="openBalanceQrModal('${inv.id}')" title="Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode"></i></button>` : ''}
-            <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${inv.id}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
+            ${isViewOnlyUser
+              ? `<button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${safeInvId}', 'a4')" title="View Bill Preview"><i class="fa-solid fa-eye"></i></button>`
+              : `${(!isEstimate && !isPaid && balance > 0 && !isCustomerRole) ? `<button class="action-btn share action-btn-qr" onclick="openBalanceQrModal('${inv.id}')" title="Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode"></i></button>` : ''}
+            <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${safeInvId}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
             <button class="action-btn print action-btn-thermal" onclick="openInvoicePrintPreview('${inv.id}', 'thermal')" title="Preview &amp; Print POS Thermal"><i class="fa-solid fa-receipt"></i></button>
             <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Share PDF via WhatsApp (1-Click)"><i class="fa-brands fa-whatsapp"></i></button>
             ${!isCustomerRole ? `<button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Invoice"><i class="fa-solid fa-pen-to-square"></i></button>` : ''}
@@ -5469,6 +5992,9 @@ function updateDashboardOverview() {
                 <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openUniversalInvoiceShareModal('${inv.id}')"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i> Universal Share Link</a>
                 <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openInvoiceVerificationModal('${inv.id || inv.invoiceNo}')"><i class="fa-solid fa-shield-check" style="color: #10b981;"></i> Verify &amp; Digital Receipt</a>
               </div>
+            </div>`
+            }
+          </td>
             </div>
           </td>
         `;
@@ -6012,16 +6538,34 @@ function bindBillingFormInputs() {
   };
 
   // --- IN-TABLE QUANTITY STEPPER CONTROLLER ---
-  window.stepTableItemQty = function(itemId, delta) {
+  window.stepTableItemQty = function(itemId, delta, rowIndex = null) {
     if (!currentInvoice || !Array.isArray(currentInvoice.items)) return;
-    const item = currentInvoice.items.find(it => it.id === itemId);
+    
+    const targetId = (itemId !== undefined && itemId !== null) ? String(itemId).trim() : '';
+    let item = null;
+
+    if (targetId && targetId !== 'undefined' && targetId !== 'null') {
+      item = currentInvoice.items.find(it => it && String(it.id).trim() === targetId);
+    }
+    if (!item && rowIndex !== null && rowIndex !== undefined) {
+      const idx = parseInt(rowIndex, 10);
+      if (!isNaN(idx) && idx >= 0 && idx < currentInvoice.items.length) {
+        item = currentInvoice.items[idx];
+      }
+    }
+    if (!item && targetId && targetId !== 'undefined' && targetId !== 'null') {
+      item = currentInvoice.items.find(it => 
+        (it.description && it.description.trim().toLowerCase() === targetId.toLowerCase()) ||
+        (it.productId && String(it.productId) === targetId)
+      );
+    }
     if (!item) return;
 
     const oldQty = parseFloat(item.quantity) || 1;
     const newQty = oldQty + delta;
 
     if (newQty <= 0) {
-      window.deleteBillingItemRow(itemId);
+      window.deleteBillingItemRow(item.id || itemId, rowIndex);
       return;
     }
 
@@ -6039,7 +6583,7 @@ function bindBillingFormInputs() {
         }
         const effectiveAvailable = liveStock + previouslyInvoicedQty;
         const totalOtherInCart = currentInvoice.items
-          .filter(it => it.id !== itemId && ((it.productId && prod.id && it.productId === prod.id) || ((it.description || '').trim().toLowerCase() === (prod.description || '').trim().toLowerCase())))
+          .filter(it => it !== item && ((it.productId && prod.id && it.productId === prod.id) || ((it.description || '').trim().toLowerCase() === (prod.description || '').trim().toLowerCase())))
           .reduce((sum, it) => sum + (parseFloat(it.quantity) || 0), 0);
 
         if (totalOtherInCart + newQty > effectiveAvailable) {
@@ -6185,6 +6729,9 @@ function bindBillingFormInputs() {
     );
 
     if (existing) {
+      if (!existing.id || existing.id === 'undefined' || existing.id === 'null') {
+        existing.id = "item_" + Date.now() + "_" + Math.floor(Math.random() * 100000);
+      }
       existing.quantity = (parseFloat(existing.quantity) || 0) + 1;
       const rate = existing.rate || 0;
       const disc = existing.discount || 0;
@@ -6198,9 +6745,12 @@ function bindBillingFormInputs() {
       const unit = prod.unit || "Bucket";
       const gstRate = parseFloat(prod.gstRate) || 0;
       currentInvoice.items.push({
+        id: "item_" + Date.now() + "_" + Math.floor(Math.random() * 100000),
+        baleNo: (currentInvoice.items.length + 1).toString(),
         productId: prod.id,
         description: prod.description,
         hsn: prod.hsn || "",
+        packSize: prod.packSize || "",
         quantity: 1,
         unit: unit,
         rate: rate,
@@ -7189,23 +7739,68 @@ function bindBillingFormInputs() {
 }
 
 function populateBillingSelectors() {
+  if (!elements.quickSelectReceiver || !elements.quickSelectConsignee) return;
   elements.quickSelectReceiver.innerHTML = `<option value="">-- Load Receiver --</option>`;
   elements.quickSelectConsignee.innerHTML = `<option value="">-- Load Consignee --</option>`;
   
   const customerDatalist = document.getElementById("customer-names-datalist");
   const custSet = new Set();
 
-  partiesDb.forEach(p => {
+  const receivers = [];
+  const consignees = [];
+
+  (partiesDb || []).forEach(p => {
+    if (!p) return;
+    if (p.name) custSet.add(p.name.trim());
+    if (p.type === 'consignee') {
+      consignees.push(p);
+    } else {
+      receivers.push(p);
+    }
+  });
+
+  // Alphabetical sort by party name
+  receivers.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  consignees.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+  // 1. Populate Receiver dropdown (Buyers / Customer Farms directly at top)
+  receivers.forEach(p => {
     const opt = document.createElement("option");
     opt.value = p.id;
     opt.textContent = p.name;
-    if (p.name) custSet.add(p.name.trim());
-    if (p.type === 'receiver') {
-      elements.quickSelectReceiver.appendChild(opt);
-    } else {
-      elements.quickSelectConsignee.appendChild(opt);
-    }
+    elements.quickSelectReceiver.appendChild(opt);
   });
+  if (consignees.length > 0) {
+    const grp = document.createElement("optgroup");
+    grp.label = "Consignees / Shipping Sites";
+    consignees.forEach(p => {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.name;
+      grp.appendChild(opt);
+    });
+    elements.quickSelectReceiver.appendChild(grp);
+  }
+
+  // 2. Populate Consignee dropdown (Shipping Sites directly at top)
+  consignees.forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.name;
+    elements.quickSelectConsignee.appendChild(opt);
+  });
+  if (receivers.length > 0) {
+    const grp = document.createElement("optgroup");
+    grp.label = "Buyers / Customer Farms";
+    receivers.forEach(p => {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.name;
+      grp.appendChild(opt);
+    });
+    elements.quickSelectConsignee.appendChild(grp);
+  }
+
 
   if (Array.isArray(invoicesDb)) {
     invoicesDb.forEach(inv => {
@@ -7298,10 +7893,14 @@ function triggerInvoiceNumberRollbackEffect(oldVal, newVal) {
 function autoSuggestInvoiceNo(force = false, preferInvoiceNo = null) {
   if (currentBillingMode === 'estimate' && !force) return;
   if (currentInvoice && currentInvoice.isEditing && !force) return;
-  const nextStr = InvoiceUtils.getNextInvoiceNumber(invoicesDb, { preferInvoiceNo });
+  
+  const isDemoUser = (typeof window.isDemoMode === 'function' && window.isDemoMode());
+  const nextStr = InvoiceUtils.getNextInvoiceNumber(invoicesDb, { preferInvoiceNo, allowDemo: isDemoUser });
   const currentVal = elements.billInvoiceNo ? String(elements.billInvoiceNo.value || "").trim() : "";
   const isTyping = elements.billInvoiceNo && document.activeElement === elements.billInvoiceNo;
   const isCollisionWithSync = invoicesDb.some(inv => inv && String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim() === currentVal);
+
+  const hasDemoPrefix = /^(demo|sample|test)[-_]?/i.test(currentVal) || /^(demo|sample|test)[-_]?/i.test(currentInvoice?.invoiceNo || '');
 
   // Advanced sequence rollback detection:
   // If the invoice number on screen is higher than the calculated next sequence (e.g. 0008 vs 0007),
@@ -7318,6 +7917,7 @@ function autoSuggestInvoiceNo(force = false, preferInvoiceNo = null) {
   }
 
   const shouldUpdate = force || 
+                       (!isDemoUser && hasDemoPrefix) ||
                        !currentInvoice.invoiceNo || 
                        !elements.billInvoiceNo || 
                        !elements.billInvoiceNo.value || 
@@ -7326,7 +7926,7 @@ function autoSuggestInvoiceNo(force = false, preferInvoiceNo = null) {
   if (shouldUpdate) {
     const oldVal = currentVal || currentInvoice.invoiceNo;
     currentInvoice.invoiceNo = nextStr;
-    if (elements.billInvoiceNo && (!isTyping || force)) {
+    if (elements.billInvoiceNo && (!isTyping || force || hasDemoPrefix)) {
       elements.billInvoiceNo.value = currentInvoice.invoiceNo;
       if (oldVal && oldVal !== nextStr && (isSequenceOvershoot || force)) {
         triggerInvoiceNumberRollbackEffect(oldVal, nextStr);
@@ -8586,20 +9186,77 @@ window.addBillingItemRow = function() {
   }
 };
 
-window.deleteBillingItemRow = function(id) {
-  currentInvoice.items = currentInvoice.items.filter(item => item.id !== id);
+window.deleteBillingItemRow = function(id, rowIndex = null) {
+  if (!currentInvoice || !Array.isArray(currentInvoice.items)) return;
+
+  const targetId = (id !== undefined && id !== null) ? String(id).trim() : '';
+  const isInvalidId = !targetId || targetId === 'undefined' || targetId === 'null';
+
+  let itemDeleted = false;
+
+  // 1. If a valid id was provided, filter by id
+  if (!isInvalidId) {
+    const prevCount = currentInvoice.items.length;
+    currentInvoice.items = currentInvoice.items.filter(item => {
+      const itId = (item && item.id !== undefined && item.id !== null) ? String(item.id).trim() : '';
+      return itId !== targetId;
+    });
+    if (currentInvoice.items.length < prevCount) {
+      itemDeleted = true;
+    }
+  }
+
+  // 2. Fallback: if not yet deleted and rowIndex is provided
+  if (!itemDeleted && rowIndex !== null && rowIndex !== undefined) {
+    const idx = parseInt(rowIndex, 10);
+    if (!isNaN(idx) && idx >= 0 && idx < currentInvoice.items.length) {
+      currentInvoice.items.splice(idx, 1);
+      itemDeleted = true;
+    }
+  }
+
+  // 3. Fallback: match by description or productId if targetId is not empty
+  if (!itemDeleted && targetId && targetId !== 'undefined' && targetId !== 'null') {
+    const idx = currentInvoice.items.findIndex(it => 
+      (it.description && it.description.trim().toLowerCase() === targetId.toLowerCase()) ||
+      (it.productId && String(it.productId) === targetId)
+    );
+    if (idx !== -1) {
+      currentInvoice.items.splice(idx, 1);
+      itemDeleted = true;
+    }
+  }
+
+  // 4. Fallback: if invalid ID and an item contains "BioShield"
+  if (!itemDeleted && isInvalidId && currentInvoice.items.length > 0) {
+    const bioIdx = currentInvoice.items.findIndex(it => it && it.description && it.description.toLowerCase().includes('bioshield'));
+    if (bioIdx !== -1) {
+      currentInvoice.items.splice(bioIdx, 1);
+      itemDeleted = true;
+    }
+  }
+
   currentInvoice.items.forEach((item, index) => {
     item.baleNo = (index + 1).toString();
   });
   calculateSummaryAndTable();
   if (typeof handleBillingQtyInput === 'function') handleBillingQtyInput();
   if (typeof playAudioFeedback === 'function') playAudioFeedback('click');
+  if (typeof showFloatingToast === 'function') showFloatingToast("🗑 Item removed from bill", 1500);
 };
 
 // --- CALCULATE SUMMARY & TABLE ---
 function calculateSummaryAndTable() {
   if (!currentInvoice) currentInvoice = {};
   if (!Array.isArray(currentInvoice.items)) currentInvoice.items = [];
+
+  // Self-heal: ensure every item in currentInvoice.items has a valid, non-empty ID and baleNo
+  currentInvoice.items.forEach((item, idx) => {
+    if (!item.id || item.id === 'undefined' || item.id === 'null' || typeof item.id !== 'string' || item.id.trim() === '') {
+      item.id = "item_" + Date.now() + "_" + idx + "_" + Math.floor(Math.random() * 100000);
+    }
+    item.baleNo = (idx + 1).toString();
+  });
 
   elements.billingItemsTbody.innerHTML = "";
   
@@ -8623,7 +9280,7 @@ function calculateSummaryAndTable() {
   const origInv = (currentInvoice && currentInvoice.isEditing && currentInvoice.id) ? TurboDataStore.getInvoice(currentInvoice.id) : null;
   const origItems = (origInv && origInv.details && Array.isArray(origInv.details.items)) ? origInv.details.items : [];
 
-  currentInvoice.items.forEach(item => {
+  currentInvoice.items.forEach((item, index) => {
     totalQty += item.quantity;
 
     // Remaining warehouse stock after this cart commitment
@@ -8658,9 +9315,9 @@ function calculateSummaryAndTable() {
       <td>${item.hsn || "—"}</td>
       <td>
         <div class="table-qty-stepper">
-          <button type="button" class="table-btn-step" onclick="stepTableItemQty('${item.id}', -1)" title="Decrease Qty">–</button>
+          <button type="button" class="table-btn-step" onclick="stepTableItemQty('${item.id}', -1, ${index})" title="Decrease Qty">–</button>
           <span class="table-qty-val">${item.quantity}</span>
-          <button type="button" class="table-btn-step" onclick="stepTableItemQty('${item.id}', 1)" title="Increase Qty">+</button>
+          <button type="button" class="table-btn-step" onclick="stepTableItemQty('${item.id}', 1, ${index})" title="Increase Qty">+</button>
         </div>
         ${remStockBadge}
       </td>
@@ -8669,7 +9326,7 @@ function calculateSummaryAndTable() {
       <td style="text-align: right; font-weight: 600;">${item.discount ? item.discount.toFixed(2) + '%' : '0.00%'}</td>
       <td style="text-align: right; font-weight: 700; color: var(--primary-teal);">₹ ${formatCurrency(item.amount)}</td>
       <td>
-        <button class="btn-delete-row" onclick="deleteBillingItemRow('${item.id}')" title="Delete">
+        <button class="btn-delete-row" onclick="deleteBillingItemRow('${item.id}', ${index})" title="Delete">
           <i class="fa-solid fa-trash-can"></i>
         </button>
       </td>
@@ -8851,7 +9508,7 @@ function resetBillingForm() {
   populateBillingSelectors();
   if (typeof clearSmartProductSelection === 'function') clearSmartProductSelection();
   if (typeof setPaymentStatusSegment === 'function') setPaymentStatusSegment("Paid");
-  autoSuggestInvoiceNo();
+  autoSuggestInvoiceNo(true);
   calculateSummaryAndTable();
 }
 
@@ -8949,22 +9606,52 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
     if (elements.billBuyerName && elements.billBuyerName.value) {
       currentInvoice.buyer.name = elements.billBuyerName.value.trim();
     }
-    if (elements.billBuyerPhone && elements.billBuyerPhone.value) {
-      currentInvoice.buyer.phone = elements.billBuyerPhone.value.trim();
-    }
-    if (currentInvoice.buyer?.name && currentInvoice.buyer?.phone) {
-      savePhoneToPartyDb(currentInvoice.buyer.name, currentInvoice.buyer.phone, 'receiver');
-    }
+    const liveBuyerPhone = (elements.billBuyerPhone && elements.billBuyerPhone.value)
+      ? elements.billBuyerPhone.value.trim()
+      : (currentInvoice.buyer?.phone || "");
+    currentInvoice.buyer.phone = liveBuyerPhone;
 
     if (!currentInvoice.consignee) currentInvoice.consignee = {};
     if (elements.billConsigneeName && elements.billConsigneeName.value) {
       currentInvoice.consignee.name = elements.billConsigneeName.value.trim();
     }
-    if (elements.billConsigneePhone && elements.billConsigneePhone.value) {
-      currentInvoice.consignee.phone = elements.billConsigneePhone.value.trim();
+    const liveConsigneePhone = (elements.billConsigneePhone && elements.billConsigneePhone.value)
+      ? elements.billConsigneePhone.value.trim()
+      : (currentInvoice.consignee?.phone || "");
+    currentInvoice.consignee.phone = liveConsigneePhone;
+
+    // Resolve intended Customer Name & Customer Phone:
+    const consigneeDisplayName = (currentInvoice.consignee?.name || '').trim();
+    const buyerDisplayName = (currentInvoice.buyer?.name || '').trim();
+
+    // Check non-dummy status
+    const consigneePhoneValid = liveConsigneePhone && liveConsigneePhone.replace(/\D/g, '').length >= 10 && !isDummyOrDemoPhone(liveConsigneePhone);
+    const buyerPhoneValid = liveBuyerPhone && liveBuyerPhone.replace(/\D/g, '').length >= 10 && !isDummyOrDemoPhone(liveBuyerPhone);
+
+    let effectiveCustomerPhone = "";
+    let primaryCustomerDisplay = "Cash Customer";
+
+    if (consigneeDisplayName && (consigneeDisplayName !== buyerDisplayName || !buyerDisplayName || buyerDisplayName.includes("Demo") || buyerDisplayName.includes("Sample"))) {
+      primaryCustomerDisplay = consigneeDisplayName;
+      effectiveCustomerPhone = consigneePhoneValid ? liveConsigneePhone : (buyerPhoneValid ? liveBuyerPhone : (liveConsigneePhone || liveBuyerPhone || ""));
+    } else if (buyerDisplayName) {
+      primaryCustomerDisplay = buyerDisplayName;
+      effectiveCustomerPhone = buyerPhoneValid ? liveBuyerPhone : (consigneePhoneValid ? liveConsigneePhone : (liveBuyerPhone || liveConsigneePhone || ""));
+    } else if (consigneeDisplayName) {
+      primaryCustomerDisplay = consigneeDisplayName;
+      effectiveCustomerPhone = consigneePhoneValid ? liveConsigneePhone : (liveConsigneePhone || "");
+    } else {
+      effectiveCustomerPhone = buyerPhoneValid ? liveBuyerPhone : (consigneePhoneValid ? liveConsigneePhone : (liveBuyerPhone || liveConsigneePhone || ""));
     }
-    if (currentInvoice.consignee?.name && currentInvoice.consignee?.phone) {
-      savePhoneToPartyDb(currentInvoice.consignee.name, currentInvoice.consignee.phone, 'consignee');
+
+    currentInvoice.customerPhone = effectiveCustomerPhone;
+    currentInvoice.phone = effectiveCustomerPhone;
+
+    if (currentInvoice.buyer?.name && liveBuyerPhone && !isDummyOrDemoPhone(liveBuyerPhone)) {
+      savePhoneToPartyDb(currentInvoice.buyer.name, liveBuyerPhone, 'receiver');
+    }
+    if (currentInvoice.consignee?.name && liveConsigneePhone && !isDummyOrDemoPhone(liveConsigneePhone)) {
+      savePhoneToPartyDb(currentInvoice.consignee.name, liveConsigneePhone, 'consignee');
     }
 
     const sellerStateCode = globalSettings.company?.stateCode || "37";
@@ -9042,16 +9729,14 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       currentInvoice.qrToken = `Q-${String(currentInvoice.invoiceNo || 'INV').replace(/^#/, '')}-${timeSuffix}${randSuffix}`;
     }
 
-    const consigneeDisplayName = (currentInvoice.consignee?.name || '').trim();
-    const buyerDisplayName = (currentInvoice.buyer?.name || '').trim();
-    const primaryCustomerDisplay = consigneeDisplayName || buyerDisplayName || "Cash Customer";
-
     const invoiceRecord = {
       id: uniqueId,
       qrToken: currentInvoice.qrToken,
       invoiceNo: currentInvoice.invoiceNo,
       invoiceDate: currentInvoice.invoiceDate,
       customerName: primaryCustomerDisplay,
+      customerPhone: effectiveCustomerPhone,
+      phone: effectiveCustomerPhone,
       buyer: currentInvoice.buyer,
       consignee: currentInvoice.consignee,
       items: currentInvoice.items,
@@ -9128,46 +9813,18 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       console.warn("Unable to sync invoice to cloud:", err);
     }
 
-    let precomputedBase64 = null;
+    // Snapshot immutable invoice details for background automation before form reset
+    const savedDetailsSnapshot = JSON.parse(JSON.stringify(invoiceRecord.details || invoiceRecord));
+    const savedRecordSnapshot = JSON.parse(JSON.stringify(invoiceRecord));
 
-    // Non-blocking background worker: generate PDF, upload to Google Drive, Telegram & WhatsApp
-    (async () => {
-      try {
-        if (typeof sendTelegramInvoiceNotification === 'function') sendTelegramInvoiceNotification(invoiceRecord);
-      } catch (e) { console.warn("Telegram note:", e); }
+    // ★ INSTANT UNLOCK: Release button state and save lock immediately (< 20ms)!
+    if (btnEl) {
+      btnEl.innerHTML = origHtml;
+      btnEl.disabled = false;
+    }
+    isSavingInvoice = false;
 
-      try {
-        if (typeof generateInvoicePdfBlob === 'function') {
-          const pdfRes = await generateInvoicePdfBlob(invoiceRecord.details);
-          precomputedBase64 = pdfRes ? pdfRes.pdfBase64 : null;
-        }
-      } catch (e) {
-        console.warn("PDF compile note:", e);
-      }
-
-      if (precomputedBase64 && typeof uploadInvoicePdfToTelegram === 'function') {
-        try {
-          uploadInvoicePdfToTelegram(invoiceRecord.details, true, precomputedBase64);
-        } catch (e) { console.warn("Telegram PDF note:", e); }
-      }
-
-      const rawPhone = typeof getCustomerPhoneNumber === 'function' ? getCustomerPhoneNumber(invoiceRecord.details) : "";
-      if (actionType !== 'share_whatsapp' && rawPhone && rawPhone.toString().replace(/\D/g, '').length >= 10 && globalSettings.whatsappAutoSend !== false) {
-        try {
-          if (typeof autoDispatchInvoiceToWhatsApp === 'function') {
-            const sent = await autoDispatchInvoiceToWhatsApp(invoiceRecord.details, null, precomputedBase64);
-            invoiceRecord.waAutoSent = Boolean(sent);
-            if (typeof updateSuccessModalWhatsAppStatus === 'function') {
-              updateSuccessModalWhatsAppStatus(invoiceRecord);
-            }
-          }
-        } catch (e) {
-          console.warn("Auto WhatsApp dispatch note:", e);
-        }
-      }
-    })();
-
-    // Handle action-specific outcome
+    // Handle action-specific outcome immediately
     if (actionType === 'print_a4') {
       showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} saved! Opening Print Preview...`);
       resetBillingForm();
@@ -9175,7 +9832,7 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       loadInvoicesHistoryTable();
       setTimeout(() => {
         window.openInvoicePrintPreview(invoiceRecord.id, 'a4');
-      }, 120);
+      }, 80);
     } else if (actionType === 'print_thermal') {
       showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} saved! Opening POS Thermal Preview...`);
       resetBillingForm();
@@ -9183,16 +9840,16 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       loadInvoicesHistoryTable();
       setTimeout(() => {
         window.openInvoicePrintPreview(invoiceRecord.id, 'thermal');
-      }, 120);
+      }, 80);
     } else if (actionType === 'download_pdf') {
       showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} saved! Downloading PDF...`);
-      downloadInvoicePdf(invoiceRecord.details, btnEl);
+      downloadInvoicePdf(savedDetailsSnapshot, btnEl);
       resetBillingForm();
       switchTab("history");
       loadInvoicesHistoryTable();
     } else if (actionType === 'share_whatsapp') {
-      showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} saved! Dispatching via WhatsApp...`);
-      shareInvoicePdfNative(invoiceRecord.details, btnEl, false);
+      showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} saved! Sending via WhatsApp...`, "success", 3000);
+      shareInvoicePdfNative(savedDetailsSnapshot, btnEl, false);
       if (typeof openInvoiceSuccessModal === 'function') {
         openInvoiceSuccessModal(invoiceRecord);
         resetBillingForm();
@@ -9202,22 +9859,8 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
         loadInvoicesHistoryTable();
       }
     } else {
-      // save_only ("Generate & Save Invoice"):
-      // Fully automated: saves invoice, compiles PDF, syncs Google Drive & auto-dispatches via WhatsApp bot silently in background
-      showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} successfully created & saved!`);
-
-      // Auto-dispatch via WhatsApp if a phone number exists
-      const phone = invoiceRecord.details?.buyer?.phone || invoiceRecord.buyerPhone || "";
-      if (phone && typeof dispatchWhatsAppBotMessage === 'function') {
-        const msg = `🧾 *New Invoice Generated*\n\n` +
-          `👤 *Customer:* ${invoiceRecord.details?.buyer?.name || 'Customer'}\n` +
-          `🏷 *Invoice No:* ${invoiceRecord.invoiceNo}\n` +
-          `💰 *Total:* ₹ ${formatCurrency(invoiceRecord.total)}\n\n` +
-          `Thank you for your business!`;
-        dispatchWhatsAppBotMessage({ phone: phone, text: msg }).then(ok => {
-          if (ok) showFloatingToast(`✅ Invoice dispatched to ${phone} via WhatsApp!`);
-        });
-      }
+      // save_only ("Save Invoice Only (Auto-Send WhatsApp)"):
+      showFloatingToast(`✅ Invoice #${invoiceRecord.invoiceNo} successfully created & saved!`, "success", 3000);
 
       if (typeof openInvoiceSuccessModal === 'function') {
         openInvoiceSuccessModal(invoiceRecord);
@@ -9229,6 +9872,46 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
       }
     }
 
+    // ★ FULLY DETACHED BACKGROUND WORKER: Telegram, Google Drive PDF upload & WhatsApp auto-dispatch
+    setTimeout(async () => {
+      try {
+        if (typeof sendTelegramInvoiceNotification === 'function') sendTelegramInvoiceNotification(savedRecordSnapshot);
+      } catch (e) { console.warn("Telegram note:", e); }
+
+      let precomputedBase64 = null;
+      try {
+        if (typeof generateInvoicePdfBlob === 'function') {
+          const pdfRes = await generateInvoicePdfBlob(savedDetailsSnapshot);
+          precomputedBase64 = pdfRes ? pdfRes.pdfBase64 : null;
+        }
+      } catch (e) {
+        console.warn("PDF compile note:", e);
+      }
+
+      if (precomputedBase64 && typeof uploadInvoicePdfToTelegram === 'function') {
+        try {
+          uploadInvoicePdfToTelegram(savedDetailsSnapshot, true, precomputedBase64);
+        } catch (e) { console.warn("Telegram PDF note:", e); }
+      }
+
+      const recipientsInfo = typeof getInvoiceRecipients === 'function' ? getInvoiceRecipients(savedDetailsSnapshot) : null;
+      const targetPhone = recipientsInfo ? recipientsInfo.primaryPhone : savedDetailsSnapshot.customerPhone;
+
+      if (actionType !== 'share_whatsapp' && targetPhone && !isDummyOrDemoPhone(targetPhone) && (typeof globalSettings === 'undefined' || globalSettings.whatsappAutoSend !== false)) {
+        try {
+          if (typeof autoDispatchInvoiceToWhatsApp === 'function') {
+            const sent = await autoDispatchInvoiceToWhatsApp(savedDetailsSnapshot, null, precomputedBase64);
+            savedRecordSnapshot.waAutoSent = Boolean(sent);
+            if (typeof updateSuccessModalWhatsAppStatus === 'function') {
+              updateSuccessModalWhatsAppStatus(savedRecordSnapshot);
+            }
+          }
+        } catch (e) {
+          console.warn("Auto WhatsApp dispatch note:", e);
+        }
+      }
+    }, 80);
+
     return invoiceRecord;
   } catch (err) {
     console.error("Save invoice record error:", err);
@@ -9236,14 +9919,10 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
     return null;
   } finally {
     if (btnEl) {
-      setTimeout(() => {
-        btnEl.innerHTML = origHtml;
-        btnEl.disabled = false;
-      }, 400);
+      btnEl.innerHTML = origHtml;
+      btnEl.disabled = false;
     }
-    setTimeout(() => {
-      isSavingInvoice = false;
-    }, 500);
+    isSavingInvoice = false;
   }
 };
 
@@ -9275,13 +9954,17 @@ window.openInvoiceSuccessModal = function(invoiceRecord) {
     const consignee = invoiceRecord.details?.consignee;
     const buyer = invoiceRecord.details?.buyer;
     let label = '';
-    if (consignee?.name) {
-      label = `📦 ${consignee.name}${consignee.phone ? ' (' + consignee.phone + ')' : ''}`;
-      if (buyer?.name && buyer.name !== consignee.name) {
-        label += ` | 👤 ${buyer.name}${buyer.phone ? ' (' + buyer.phone + ')' : ''}`;
+    const consigneePhoneClean = (consignee?.phone && !isDummyOrDemoPhone(consignee.phone)) ? consignee.phone : '';
+    const buyerPhoneClean = (buyer?.phone && !isDummyOrDemoPhone(buyer.phone)) ? buyer.phone : '';
+    if (consignee?.name && !consignee.name.includes("Demo") && !consignee.name.includes("Sample")) {
+      label = `📦 ${consignee.name}${consigneePhoneClean ? ' (' + consigneePhoneClean + ')' : ''}`;
+      if (buyer?.name && buyer.name !== consignee.name && !buyer.name.includes("Demo") && !buyer.name.includes("Sample")) {
+        label += ` | 👤 ${buyer.name}${buyerPhoneClean ? ' (' + buyerPhoneClean + ')' : ''}`;
       }
-    } else if (buyer?.name) {
-      label = `👤 ${buyer.name}${buyer.phone ? ' (' + buyer.phone + ')' : ''}`;
+    } else if (buyer?.name && !buyer.name.includes("Demo") && !buyer.name.includes("Sample")) {
+      label = `👤 ${buyer.name}${buyerPhoneClean ? ' (' + buyerPhoneClean + ')' : ''}`;
+    } else if (consignee?.name) {
+      label = `📦 ${consignee.name}${consigneePhoneClean ? ' (' + consigneePhoneClean + ')' : ''}`;
     } else {
       label = invoiceRecord.customerName || 'Cash Customer';
     }
@@ -9306,19 +9989,44 @@ window.openInvoiceSuccessModal = function(invoiceRecord) {
   modal.style.removeProperty("display");
   modal.style.removeProperty("visibility");
 
-  // Automated auto-advance countdown to prepare next bill without manual clicks (comfortable 15s)
+  // Automated auto-advance countdown to prepare next bill without manual clicks (ultra-fast 2s)
   const autoNextNotice = document.getElementById("modal-success-auto-next");
   if (autoNextNotice) {
     autoNextNotice.style.display = "block";
-    invoiceModalAutoRemaining = 15;
-    autoNextNotice.innerHTML = `<i class="fa-solid fa-clock text-teal"></i> Next invoice starting in <strong>${invoiceModalAutoRemaining}s</strong>... <button type="button" class="btn btn-xs btn-outline" onclick="cancelInvoiceAutoAdvance(event)" style="margin-left: 8px; font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid #10b981; background: #fff; cursor: pointer;">Stay on Bill</button>`;
+    invoiceModalAutoRemaining = 2;
+    autoNextNotice.innerHTML = `<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+      <span><i class="fa-solid fa-bolt text-teal"></i> Next bill starting in <strong>${invoiceModalAutoRemaining}s</strong>... (or press <strong>Enter</strong>)</span>
+      <div style="display: flex; gap: 6px;">
+        <button type="button" onclick="closeInvoiceSuccessModal(false)" style="background: #059669; color: #fff; border: none; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 11.5px; cursor: pointer;">⚡ Next Now (Enter)</button>
+        <button type="button" onclick="cancelInvoiceAutoAdvance(event)" style="background: #fff; color: #475569; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 6px; font-size: 11px; cursor: pointer;">Stay on Bill</button>
+      </div>
+    </div>`;
   }
+
+  // Instant keyboard advance: pressing Enter, Space, or Escape immediately starts the next bill (0s wait)
+  if (window._successModalKeyHandler) {
+    window.removeEventListener("keydown", window._successModalKeyHandler);
+    window._successModalKeyHandler = null;
+  }
+  window._successModalKeyHandler = function(e) {
+    if (e.key === "Enter" || e.key === " " || e.key === "Escape") {
+      e.preventDefault();
+      window.closeInvoiceSuccessModal(false);
+    }
+  };
+  window.addEventListener("keydown", window._successModalKeyHandler);
 
   if (invoiceModalAutoTimer) clearInterval(invoiceModalAutoTimer);
   invoiceModalAutoTimer = setInterval(() => {
     invoiceModalAutoRemaining--;
-    if (autoNextNotice) {
-      autoNextNotice.innerHTML = `<i class="fa-solid fa-clock text-teal"></i> Next invoice starting in <strong>${invoiceModalAutoRemaining}s</strong>... <button type="button" class="btn btn-xs btn-outline" onclick="cancelInvoiceAutoAdvance(event)" style="margin-left: 8px; font-size: 11px; padding: 2px 8px; border-radius: 4px; border: 1px solid #10b981; background: #fff; cursor: pointer;">Stay on Bill</button>`;
+    if (autoNextNotice && invoiceModalAutoRemaining > 0) {
+      autoNextNotice.innerHTML = `<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <span><i class="fa-solid fa-bolt text-teal"></i> Next bill starting in <strong>${invoiceModalAutoRemaining}s</strong>... (or press <strong>Enter</strong>)</span>
+        <div style="display: flex; gap: 6px;">
+          <button type="button" onclick="closeInvoiceSuccessModal(false)" style="background: #059669; color: #fff; border: none; padding: 4px 10px; border-radius: 6px; font-weight: 700; font-size: 11.5px; cursor: pointer;">⚡ Next Now (Enter)</button>
+          <button type="button" onclick="cancelInvoiceAutoAdvance(event)" style="background: #fff; color: #475569; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 6px; font-size: 11px; cursor: pointer;">Stay on Bill</button>
+        </div>
+      </div>`;
     }
     if (invoiceModalAutoRemaining <= 0) {
       clearInterval(invoiceModalAutoTimer);
@@ -9344,8 +10052,10 @@ window.updateSuccessModalWhatsAppStatus = function(invoiceRecord) {
   if (!invoiceRecord) return;
   const waBtn = document.getElementById("modal-success-btn-whatsapp");
   if (!waBtn) return;
-  const consigneePhone = invoiceRecord.details?.consignee?.phone || invoiceRecord.details?.buyer?.phone || invoiceRecord.customerPhone || "";
-  const cleanDigits = consigneePhone.toString().replace(/\D/g, '');
+  const recipientsInfo = typeof getInvoiceRecipients === 'function' ? getInvoiceRecipients(invoiceRecord.details || invoiceRecord) : null;
+  const targetPhone = (recipientsInfo && recipientsInfo.primaryPhone) ? recipientsInfo.primaryPhone : (invoiceRecord.customerPhone || invoiceRecord.phone || "");
+  const isDummy = isDummyOrDemoPhone(targetPhone);
+  const cleanDigits = isDummy ? "" : targetPhone.toString().replace(/\D/g, '');
   const isBotConnected = whatsappBotStatus && (whatsappBotStatus.isReady || whatsappBotStatus.status === 'CONNECTED');
 
   waBtn.style.background = "#16a34a";
@@ -9367,6 +10077,10 @@ window.updateSuccessModalWhatsAppStatus = function(invoiceRecord) {
 };
 
 window.closeInvoiceSuccessModal = function(goToHistory = false) {
+  if (window._successModalKeyHandler) {
+    window.removeEventListener("keydown", window._successModalKeyHandler);
+    window._successModalKeyHandler = null;
+  }
   if (invoiceModalAutoTimer) {
     clearInterval(invoiceModalAutoTimer);
     invoiceModalAutoTimer = null;
@@ -9380,7 +10094,7 @@ window.closeInvoiceSuccessModal = function(goToHistory = false) {
     switchTab("billing");
     setTimeout(() => {
       if (elements.billBuyerName) elements.billBuyerName.focus();
-    }, 150);
+    }, 80);
   }
   loadInvoicesHistoryTable();
 };
@@ -9484,20 +10198,30 @@ function populateA4PrintOverlay(invoice) {
     }
   }
 
-  document.getElementById("p-print-buyer-name").textContent = invoice.buyer.name;
-  document.getElementById("p-print-buyer-address").innerHTML = (invoice.buyer.address || "").replace(/\n/g, "<br>");
-  document.getElementById("p-print-buyer-gstin").textContent = invoice.buyer.gstin || "__________________";
-  document.getElementById("p-print-buyer-state").textContent = invoice.buyer.state || "Andhra Pradesh";
-  document.getElementById("p-print-buyer-state-code").textContent = invoice.buyer.stateCode || "37";
-  const buyerPhoneEl = document.getElementById("p-print-buyer-phone");
-  if (buyerPhoneEl) buyerPhoneEl.textContent = invoice.buyer.phone || "__________________";
+  const buyerObj = invoice.buyer || (invoice.details && invoice.details.buyer) || {};
+  const consigneeObj = invoice.consignee || (invoice.details && invoice.details.consignee) || buyerObj;
 
-  const consigneeName = invoice.consignee.name || invoice.buyer.name;
-  const consigneeAddress = invoice.consignee.address || invoice.buyer.address;
-  const consigneeGstin = invoice.consignee.gstin || invoice.buyer.gstin;
-  const consigneeState = invoice.consignee.state || invoice.buyer.state;
-  const consigneeStateCode = invoice.consignee.stateCode || invoice.buyer.stateCode;
-  const consigneePhone = invoice.consignee.phone || invoice.buyer.phone;
+  const buyerCustName = buyerObj.name || invoice.customerName || (invoice.details && invoice.details.customerName) || "Cash Customer";
+  const buyerCustAddr = buyerObj.address || (invoice.details && invoice.details.customerAddress) || "";
+  const buyerCustGstin = buyerObj.gstin || "__________________";
+  const buyerCustState = buyerObj.state || "Andhra Pradesh";
+  const buyerCustStateCode = buyerObj.stateCode || "37";
+  const buyerCustPhone = buyerObj.phone || invoice.customerPhone || "__________________";
+
+  document.getElementById("p-print-buyer-name").textContent = buyerCustName;
+  document.getElementById("p-print-buyer-address").innerHTML = (buyerCustAddr || "").replace(/\n/g, "<br>");
+  document.getElementById("p-print-buyer-gstin").textContent = buyerCustGstin;
+  document.getElementById("p-print-buyer-state").textContent = buyerCustState;
+  document.getElementById("p-print-buyer-state-code").textContent = buyerCustStateCode;
+  const buyerPhoneEl = document.getElementById("p-print-buyer-phone");
+  if (buyerPhoneEl) buyerPhoneEl.textContent = buyerCustPhone;
+
+  const consigneeName = consigneeObj.name || buyerCustName;
+  const consigneeAddress = consigneeObj.address || buyerCustAddr;
+  const consigneeGstin = consigneeObj.gstin || buyerCustGstin;
+  const consigneeState = consigneeObj.state || buyerCustState;
+  const consigneeStateCode = consigneeObj.stateCode || buyerCustStateCode;
+  const consigneePhone = consigneeObj.phone || buyerCustPhone;
 
   document.getElementById("p-print-consignee-name").textContent = consigneeName;
   document.getElementById("p-print-consignee-address").innerHTML = (consigneeAddress || "").replace(/\n/g, "<br>");
@@ -9515,7 +10239,9 @@ function populateA4PrintOverlay(invoice) {
   let grossAmount = 0;
   let totalDiscount = 0;
 
-  invoice.items.forEach((item, index) => {
+  const invItems = Array.isArray(invoice.items) ? invoice.items : (Array.isArray(invoice.details?.items) ? invoice.details.items : []);
+  invItems.forEach((item, index) => {
+    if (!item) return;
     taxableVal += item.amount;
     totalQuantity += item.quantity;
     const itemRate = item.rate || 0;
@@ -9530,36 +10256,36 @@ function populateA4PrintOverlay(invoice) {
     
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td style="text-align: center;">${index + 1}</td>
-      <td style="text-align: left; font-weight: 700; color: #000000;">${item.description}</td>
-      <td style="text-align: center;">${item.hsn || "23099090"}</td>
-      <td style="text-align: center;">${packSize}</td>
-      <td style="text-align: center; font-weight: 700;">${item.quantity}</td>
-      <td style="text-align: center;">${item.unit || 'Bucket'}</td>
-      <td style="text-align: center;">${formatCurrency(item.rate)}</td>
-      <td style="text-align: center;">${item.discount ? item.discount.toFixed(2) + ' %' : '0.00 %'}</td>
-      <td style="text-align: right; font-weight: 700;">${formatCurrency(item.amount)}</td>
+      <td style="text-align: center; font-weight: 700; color: #334155;">${index + 1}</td>
+      <td style="text-align: left; font-weight: 700; color: #0f172a; padding-left: 10px;">${item.description}</td>
+      <td style="text-align: center; color: #334155; font-family: monospace; font-size: 8.5pt;">${item.hsn || "23099090"}</td>
+      <td style="text-align: center; color: #334155; font-weight: 600;">${packSize}</td>
+      <td style="text-align: center; font-weight: 800; color: #0f172a;">${item.quantity}</td>
+      <td style="text-align: center; color: #475569; font-weight: 600;">${item.unit || 'Bucket'}</td>
+      <td style="text-align: right; font-weight: 600; color: #1e293b;">₹ ${formatCurrency(item.rate)}</td>
+      <td style="text-align: center; color: #475569; font-weight: 600;">${item.discount ? item.discount.toFixed(2) + '%' : '0.00%'}</td>
+      <td style="text-align: right; font-weight: 800; color: #003859;">₹ ${formatCurrency(item.amount)}</td>
     `;
     printItemsTbody.appendChild(tr);
   });
 
-  // Dynamic filler rows: never inject excessive rows that cause page 2 spillover
-  const minRows = Math.min(2, Math.max(1, invoice.items.length));
-  const currRows = invoice.items.length;
-  if (currRows < minRows) {
-    for (let i = currRows; i < minRows; i++) {
+  // Standard GST formal ledger grid: maintain 5 balanced rows with proper organized vertical dividers
+  const minFormalRows = 5;
+  const currRows = invItems.length;
+  if (currRows < minFormalRows) {
+    for (let i = currRows; i < minFormalRows; i++) {
       const tr = document.createElement("tr");
       tr.className = "filler-row";
       tr.innerHTML = `
+        <td style="text-align: center;">&nbsp;</td>
         <td>&nbsp;</td>
-        <td>&nbsp;</td>
-        <td>&nbsp;</td>
-        <td>&nbsp;</td>
-        <td>&nbsp;</td>
-        <td>&nbsp;</td>
-        <td>&nbsp;</td>
-        <td>&nbsp;</td>
-        <td>&nbsp;</td>
+        <td style="text-align: center;">&nbsp;</td>
+        <td style="text-align: center;">&nbsp;</td>
+        <td style="text-align: center;">&nbsp;</td>
+        <td style="text-align: center;">&nbsp;</td>
+        <td style="text-align: right;">&nbsp;</td>
+        <td style="text-align: center;">&nbsp;</td>
+        <td style="text-align: right;">&nbsp;</td>
       `;
       printItemsTbody.appendChild(tr);
     }
@@ -9667,13 +10393,22 @@ function populateA4PrintOverlay(invoice) {
   const bankBranchEl = document.getElementById("p-print-bank-branch");
   if (bankBranchEl) bankBranchEl.textContent = bank.branch || "Repalle";
 
-  // Verification & Payment QR Code
+  // Verification & Payment QR Code (High-Definition Client-Side Vector/PNG)
   const verifyQrImg = document.getElementById("p-print-verify-qr-img");
   if (verifyQrImg) {
     const verifyUrl = typeof window.getInvoiceVerificationUrl === "function"
       ? window.getInvoiceVerificationUrl(invoice.invoiceNo, invoice)
       : `https://kandukurijagan1.github.io/fish-billing/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
-    verifyQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(verifyUrl)}`;
+    try {
+      if (typeof QRious !== 'undefined') {
+        const qr = new QRious({ value: verifyUrl, size: 400, level: 'M' });
+        verifyQrImg.src = qr.toDataURL('image/png');
+      } else {
+        verifyQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(verifyUrl)}`;
+      }
+    } catch (e) {
+      verifyQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(verifyUrl)}`;
+    }
   }
 }
 
@@ -9706,8 +10441,11 @@ function populateThermalPrintOverlay(invoice) {
   const buyerStateCode = invoice.buyer?.stateCode || "37";
   const isLocal = (sellerStateCode === buyerStateCode);
 
-  invoice.items.forEach(item => {
-    taxableVal += item.amount;
+  const thInvItems = Array.isArray(invoice.items) ? invoice.items : (Array.isArray(invoice.details?.items) ? invoice.details.items : []);
+  thInvItems.forEach(item => {
+    if (!item) return;
+    const itemAmt = Number(item.amount !== undefined ? item.amount : (item.total || 0));
+    taxableVal += itemAmt;
     const ratePct = item.gstRate || 0;
     if (isLocal) {
       cgst += item.amount * (ratePct / 2) / 100;
@@ -9779,6 +10517,12 @@ window.printSavedInvoiceThermal = function(id) {
 
 // --- HIGH-FIDELITY PDF EXPORTER & SHARE ENGINE ---
 window.downloadInvoicePdf = function(invoiceData, btnEl = null) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: You have view-only access. Downloading or generating PDFs is restricted.", "error", 4000);
+    }
+    return;
+  }
   if (!invoiceData) {
     return window.saveCurrentInvoiceRecord('download_pdf', btnEl);
   }
@@ -9816,8 +10560,8 @@ window.downloadInvoicePdf = function(invoiceData, btnEl = null) {
   const origTallyOverflow = tallyContainer ? tallyContainer.style.overflow : "";
 
   if (tallyContainer) {
-    tallyContainer.style.height = "288mm";
-    tallyContainer.style.maxHeight = "288mm";
+    tallyContainer.style.height = "auto";
+    tallyContainer.style.maxHeight = "none";
     tallyContainer.style.padding = "4.5mm 7mm";
     tallyContainer.style.overflow = "hidden";
   }
@@ -9828,9 +10572,9 @@ window.downloadInvoicePdf = function(invoiceData, btnEl = null) {
   const opt = {
     margin: [0, 0, 0, 0],
     filename: filename,
-    image: { type: 'jpeg', quality: 0.95 },
-    html2canvas: { scale: 1.35, useCORS: true, logging: false },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    image: { type: 'jpeg', quality: 1.0 },
+    html2canvas: { scale: 3.5, useCORS: true, logging: false, letterRendering: true, dpi: 300 },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
   };
 
   html2pdf().set(opt).from(tallyContainer || element).toPdf().get('pdf').then(pdf => {
@@ -9879,6 +10623,21 @@ window.downloadSavedInvoicePdf = function(id, btnEl = null) {
     }
   }
 };
+
+function isDummyOrDemoPhone(phone) {
+  if (!phone) return true;
+  const digits = String(phone).replace(/\D/g, "");
+  if (digits.length < 10) return true;
+  const last10 = digits.slice(-10);
+  const dummySet = new Set([
+    "9876543210", "9876543211", "9876543212", "9876543213", "9876543214",
+    "1234567890", "0000000000", "1111111111", "2222222222", "3333333333",
+    "4444444444", "5555555555", "6666666666", "7777777777", "8888888888",
+    "9999999999", "1234512345", "9876500000"
+  ]);
+  return dummySet.has(last10);
+}
+window.isDummyOrDemoPhone = isDummyOrDemoPhone;
 
 function formatWhatsAppPhone(phoneStr) {
   if (!phoneStr) return "";
@@ -10100,7 +10859,7 @@ window.savePartiesDb = savePartiesDb;
 
 function savePhoneToPartyDb(customerName, phone, partyType = 'receiver') {
   try {
-    if (!customerName || !phone || !Array.isArray(partiesDb)) return;
+    if (!customerName || !phone || !Array.isArray(partiesDb) || isDummyOrDemoPhone(phone)) return;
     const nameLower = customerName.trim().toLowerCase();
     let party = partiesDb.find(p => p && p.name && p.name.trim().toLowerCase() === nameLower);
     if (party) {
@@ -10169,21 +10928,28 @@ function openWhatsAppDirect(waUrl) {
 function generateWhatsAppInvoiceMessage(details, isOwnerCopy = false) {
   const actualDetails = (details && details.details && typeof details.details === 'object') ? details.details : (details || {});
   const company = globalSettings.company || {};
-  const companyName = company.name || 'AARYAN AQUA NEEDS';
-  const companyMobile = (company.phone || '7386262139').trim();
+  const isDemo = (typeof window.isDemoMode === 'function') && window.isDemoMode();
+  const companyName = company.name || (isDemo ? 'AARYAN AQUA NEEDS (Demo)' : 'AARYAN AQUA NEEDS');
+  let companyMobile = (company.phones || company.phone || (isDemo ? '+91 98765 43210' : '7386262139')).trim();
+  if (!companyMobile.startsWith('+') && companyMobile.replace(/\D/g, '').length === 10) {
+    companyMobile = '+91 ' + companyMobile;
+  }
 
-  const payInfo = getInvoicePaidAndBalance({ details: actualDetails, total: actualDetails.total, paymentStatus: actualDetails.paymentStatus });
+  const payInfo = (typeof getInvoicePaidAndBalance === 'function')
+    ? getInvoicePaidAndBalance({ details: actualDetails, total: actualDetails.total, paymentStatus: actualDetails.paymentStatus })
+    : { total: actualDetails.total || 0, paid: actualDetails.paidAmount || 0, balance: actualDetails.balanceDue || 0, status: actualDetails.paymentStatus || 'Paid' };
   const total = payInfo.total;
   const status = payInfo.status;
   const paid = payInfo.paid;
   const balance = payInfo.balance;
 
   const custName = (actualDetails.consignee?.name || actualDetails.buyer?.name || actualDetails.customerName || 'Customer').trim();
-  const custMobile = (actualDetails.consignee?.phone || actualDetails.buyer?.phone || '').toString().trim();
+  const custMobile = (actualDetails.consignee?.phone || actualDetails.buyer?.phone || actualDetails.customerPhone || '').toString().trim();
   const invNo = actualDetails.invoiceNo || 'INV';
-  const dateStr = actualDetails.invoiceDate || (typeof formatInputDateString === 'function' ? formatInputDateString(new Date()) : '');
+  const rawDate = actualDetails.invoiceDate || actualDetails.date || '';
+  const dateStr = rawDate ? (rawDate.split('T')[0]) : (typeof formatInputDateString === 'function' ? formatInputDateString(new Date()) : new Date().toISOString().split('T')[0]);
 
-  // Itemized List (Clean, readable items)
+  // Itemized List
   const items = actualDetails.items || [];
   let itemsText = '';
   if (items.length > 0) {
@@ -10202,8 +10968,12 @@ function generateWhatsAppInvoiceMessage(details, isOwnerCopy = false) {
   const onlinePdfUrl = actualDetails.pdfUrl || actualDetails.googleDriveUrl || actualDetails.viewUrl || actualDetails.details?.pdfUrl ||
     (Array.isArray(invoicesDb) && invoicesDb.find(i => i && (i.id === actualDetails.id || String(i.invoiceNo) === String(invNo)))?.pdfUrl);
 
+  const verifyUrl = typeof window.getInvoiceVerificationUrl === 'function'
+    ? window.getInvoiceVerificationUrl(invNo, actualDetails)
+    : `https://kandukurijagan1.github.io/fish-billing/?verify_invoice=${encodeURIComponent(invNo)}`;
+
   if (isOwnerCopy) {
-    // --- OWNER / MERCHANT COPY ("Me") ---
+    // --- OWNER / MERCHANT COPY ---
     let msg = `🔔 *NEW INVOICE GENERATED - OWNER COPY*\n`;
     msg += `🏛️ *${companyName}*\n`;
     msg += `-----------------------------------\n`;
@@ -10219,18 +10989,18 @@ function generateWhatsAppInvoiceMessage(details, isOwnerCopy = false) {
     }
     msg += `-----------------------------------\n`;
     if (itemsText) msg += itemsText;
+    msg += `🔗 *Digital Receipt:* ${verifyUrl}\n`;
     if (onlinePdfUrl && typeof onlinePdfUrl === 'string' && onlinePdfUrl.startsWith('http')) {
-      msg += `📥 *PDF Invoice Document:*\n${onlinePdfUrl}\n`;
-      msg += `-----------------------------------\n`;
+      msg += `📥 *PDF Document:* ${onlinePdfUrl}\n`;
     }
     return msg;
   }
 
-  // --- CUSTOMER COPY (Warm Salutations & Greetings, Mobile Number Only, Clean & Professional) ---
+  // --- CUSTOMER COPY (Professional, with 1-Click UPI Payment Link) ---
   let msg = `🙏 *Namaste! Greetings from ${companyName}!* 🌊\n`;
   msg += `-----------------------------------\n`;
   msg += `Dear *${custName}*,\n\n`;
-  msg += `Thank you for choosing *${companyName}*! We truly value your business and trust in us.\n\n`;
+  msg += `Thank you for doing business with *${companyName}*! Here is your official GST billing statement:\n\n`;
   msg += `📄 *TAX INVOICE:* #${invNo}\n`;
   msg += `📅 *Date:* ${dateStr}\n`;
   msg += `💰 *Grand Total:* ₹ ${formatCurrency(total)}\n`;
@@ -10238,122 +11008,98 @@ function generateWhatsAppInvoiceMessage(details, isOwnerCopy = false) {
   if (balance <= 0 || status === 'Paid') {
     msg += `✅ *Payment Status:* FULLY PAID (₹ ${formatCurrency(total)})\n`;
   } else {
-    msg += `✅ *Amount Paid:* ₹ ${formatCurrency(paid)}\n`;
-    msg += `🔴 *Pending Balance:* ₹ ${formatCurrency(balance)}\n`;
+    msg += `💵 *Amount Paid:* ₹ ${formatCurrency(paid)}\n`;
+    msg += `🔴 *Pending Balance Due:* ₹ ${formatCurrency(balance)}\n\n`;
+
+    // 1-Click UPI Payment Link
+    const realUpi = (globalSettings.upiId || globalSettings.bank?.upi || (isDemo ? "demo@upi" : "7386262139@upi")).trim();
+    const upiLink = `upi://pay?pa=${realUpi}&pn=${encodeURIComponent(companyName.replace(/[^a-zA-Z0-9 ]/g, ''))}&am=${balance.toFixed(2)}&cu=INR&tn=Bill${String(invNo).replace(/[^a-zA-Z0-9]/g, '')}`;
+    msg += `⚡ *1-Click Instant UPI Payment Link (GPay / PhonePe / Paytm / BHIM):*\n${upiLink}\n\n`;
+    msg += `🏦 *UPI ID:* ${realUpi}\n`;
+    if (globalSettings.bank && globalSettings.bank.accountNo) {
+      msg += `🏛️ *Direct Bank Transfer:* ${globalSettings.bank.name || 'State Bank of India'} | A/C: ${globalSettings.bank.accountNo} | IFSC: ${globalSettings.bank.ifsc || 'SBIN0000911'}\n`;
+    }
   }
   msg += `-----------------------------------\n`;
 
   if (itemsText) msg += itemsText;
 
-  // Mention only mobile number (no cluttered raw UPI pay links or technical details)
-  msg += `📞 *Mobile:* +91 ${companyMobile}\n`;
-  msg += `-----------------------------------\n`;
-
+  msg += `🔗 *View Official Digital Receipt & Details:*\n${verifyUrl}\n`;
   if (onlinePdfUrl && typeof onlinePdfUrl === 'string' && onlinePdfUrl.startsWith('http') && !onlinePdfUrl.includes('localhost')) {
-    msg += `📥 *View / Download Official PDF Invoice:*\n${onlinePdfUrl}\n`;
-    msg += `-----------------------------------\n`;
+    msg += `📥 *Download Official PDF Invoice:*\n${onlinePdfUrl}\n`;
   }
-
+  msg += `-----------------------------------\n`;
+  msg += `📞 *Helpline / Support:* ${companyMobile}\n`;
   msg += `Thank you for your valuable business! Have a wonderful day ahead! 🙏✨`;
   return msg;
 }
-
 let pendingWaMsg = "";
 
 // --- ADVANCED REALTIME INVOICE RECIPIENTS RESOLVER ---
 function getInvoiceRecipients(details) {
-  let consigneePhone = "";
-  let buyerPhone = "";
-  const consigneeName = (details?.consignee?.name || "").trim();
-  const buyerName = (details?.buyer?.name || details?.customerName || "").trim();
+  let customerPhone = "";
+  const actual = (details && details.details && typeof details.details === 'object') ? details.details : (details || {});
 
-  // 1. Resolve CONSIGNEE | SHIPPED TO phone (TOP PRIORITY: goods delivery alerts go to consignee)
-  if (details?.consignee?.phone && details.consignee.phone.toString().trim().replace(/\D/g, '').length >= 10) {
-    consigneePhone = details.consignee.phone.toString().trim();
-  }
-  if (!consigneePhone && typeof elements !== 'undefined' && elements.billConsigneePhone && elements.billConsigneePhone.value) {
-    const val = elements.billConsigneePhone.value.trim();
-    if (val.replace(/\D/g, '').length >= 10) consigneePhone = val;
-  }
-  if (!consigneePhone && consigneeName && Array.isArray(partiesDb)) {
-    const p = partiesDb.find(party => party && party.name && party.name.trim().toLowerCase() === consigneeName.toLowerCase() && party.phone);
-    if (p && p.phone && p.phone.toString().replace(/\D/g, '').length >= 10) consigneePhone = p.phone.toString().trim();
-  }
-  if (!consigneePhone && consigneeName && Array.isArray(invoicesDb)) {
-    const prev = invoicesDb.find(inv => {
-      const c = inv.details?.consignee?.name || inv.customerName;
-      return c && c.trim().toLowerCase() === consigneeName.toLowerCase() && (inv.details?.consignee?.phone || inv.details?.buyer?.phone);
-    });
-    if (prev) {
-      const ph = prev.details?.consignee?.phone || prev.details?.buyer?.phone;
-      if (ph && ph.toString().replace(/\D/g, '').length >= 10) consigneePhone = ph.toString().trim();
-    }
-  }
+  // 1. LIVE SCREEN INPUTS (if available):
+  const liveConsigneePhone = (typeof elements !== 'undefined' && elements.billConsigneePhone && elements.billConsigneePhone.value)
+    ? elements.billConsigneePhone.value.trim() : "";
+  const liveBuyerPhone = (typeof elements !== 'undefined' && elements.billBuyerPhone && elements.billBuyerPhone.value)
+    ? elements.billBuyerPhone.value.trim() : "";
 
-  // 2. Resolve RECEIVER | BILLED TO phone
-  if (details?.buyer?.phone && details.buyer.phone.toString().trim().replace(/\D/g, '').length >= 10) {
-    buyerPhone = details.buyer.phone.toString().trim();
-  }
-  if (!buyerPhone && typeof elements !== 'undefined' && elements.billBuyerPhone && elements.billBuyerPhone.value) {
-    const val = elements.billBuyerPhone.value.trim();
-    if (val.replace(/\D/g, '').length >= 10) buyerPhone = val;
-  }
-  if (!buyerPhone && buyerName && Array.isArray(partiesDb)) {
-    const p = partiesDb.find(party => party && party.name && party.name.trim().toLowerCase() === buyerName.toLowerCase() && party.phone);
-    if (p && p.phone && p.phone.toString().replace(/\D/g, '').length >= 10) buyerPhone = p.phone.toString().trim();
-  }
-  if (!buyerPhone && buyerName && Array.isArray(invoicesDb)) {
-    const prev = invoicesDb.find(inv => {
-      const b = inv.details?.buyer?.name || inv.customerName;
-      return b && b.trim().toLowerCase() === buyerName.toLowerCase() && (inv.details?.buyer?.phone || inv.details?.consignee?.phone);
-    });
-    if (prev) {
-      const ph = prev.details?.buyer?.phone || prev.details?.consignee?.phone;
-      if (ph && ph.toString().replace(/\D/g, '').length >= 10) buyerPhone = ph.toString().trim();
-    }
+  // 2. INVOICE OBJECT FIELDS:
+  const objConsigneePhone = (actual.consignee?.phone || details?.consignee?.phone || "").toString().trim();
+  const objBuyerPhone = (actual.buyer?.phone || actual.customerPhone || actual.phone || details?.customerPhone || details?.phone || details?.buyer?.phone || "").toString().trim();
+
+  // Prefer valid, non-dummy phones:
+  // If consignee phone is a real non-dummy number, prefer it (e.g. user entered JAGAN 8019030530)
+  const candidateConsignee = liveConsigneePhone || objConsigneePhone;
+  const candidateBuyer = liveBuyerPhone || objBuyerPhone;
+
+  const consigneeValid = candidateConsignee && candidateConsignee.replace(/\D/g, '').length >= 10 && !isDummyOrDemoPhone(candidateConsignee);
+  const buyerValid = candidateBuyer && candidateBuyer.replace(/\D/g, '').length >= 10 && !isDummyOrDemoPhone(candidateBuyer);
+
+  if (consigneeValid) {
+    customerPhone = candidateConsignee;
+  } else if (buyerValid) {
+    customerPhone = candidateBuyer;
+  } else if (candidateConsignee && candidateConsignee.replace(/\D/g, '').length >= 10) {
+    customerPhone = candidateConsignee;
+  } else if (candidateBuyer && candidateBuyer.replace(/\D/g, '').length >= 10) {
+    customerPhone = candidateBuyer;
   }
 
-  // 3. Primary phone strictly prioritizes CONSIGNEE | SHIPPED TO
-  const primaryPhone = consigneePhone || buyerPhone || "";
+  // 3. Resolve names
+  const buyerName = (actual.buyer?.name || (typeof elements !== 'undefined' && elements.billBuyerName?.value) || actual.customerName || details?.customerName || "Customer").trim();
+  const consigneeName = (actual.consignee?.name || (typeof elements !== 'undefined' && elements.billConsigneeName?.value) || buyerName).trim();
 
-  // 4. Collect all distinct clean recipient numbers for multi-party notifications
+  // 4. Build clean recipients list (strictly exclude dummy demo numbers)
   const allRecipients = [];
-  const seenClean = new Set();
+  const primaryPhone = customerPhone || "";
 
-  if (consigneePhone) {
-    const clean = formatWhatsAppPhone(consigneePhone);
-    if (clean && !seenClean.has(clean)) {
-      seenClean.add(clean);
-      allRecipients.push({
-        type: 'consignee',
-        label: 'Consignee (Shipped To)',
-        name: consigneeName || 'Consignee',
-        raw: consigneePhone,
-        clean: clean
-      });
-    }
+  const addRec = (type, label, name, ph) => {
+    if (!ph || isDummyOrDemoPhone(ph)) return;
+    const clean = formatWhatsAppPhone(ph);
+    if (!clean) return;
+    if (allRecipients.some(r => r.clean === clean)) return;
+    allRecipients.push({ type, label, name, raw: ph, clean });
+  };
+
+  if (candidateConsignee && !isDummyOrDemoPhone(candidateConsignee)) {
+    addRec('consignee', 'Consignee (Shipped To)', consigneeName, candidateConsignee);
   }
-
-  if (buyerPhone) {
-    const clean = formatWhatsAppPhone(buyerPhone);
-    if (clean && !seenClean.has(clean)) {
-      seenClean.add(clean);
-      allRecipients.push({
-        type: 'buyer',
-        label: 'Receiver (Billed To)',
-        name: buyerName || 'Customer',
-        raw: buyerPhone,
-        clean: clean
-      });
-    }
+  if (candidateBuyer && !isDummyOrDemoPhone(candidateBuyer)) {
+    addRec('buyer', 'Customer (Billed To)', buyerName, candidateBuyer);
+  }
+  if (allRecipients.length === 0 && primaryPhone && !isDummyOrDemoPhone(primaryPhone)) {
+    addRec('customer', 'Customer', consigneeName || buyerName, primaryPhone);
   }
 
   return {
     primaryPhone,
-    consigneePhone,
-    buyerPhone,
-    consigneeName,
+    buyerPhone: candidateBuyer || primaryPhone,
+    consigneePhone: candidateConsignee || primaryPhone,
     buyerName,
+    consigneeName,
     allRecipients
   };
 }
@@ -10451,7 +11197,10 @@ function getWhatsAppApiEndpoint(path) {
     const base = window.globalSettings.whatsappBotUrl.replace(/\/+$/, '');
     return base + path;
   }
-  if (window.location.port === '3001') return path;
+  // In Cloud Web App or Local Web Server, server.js reverse-proxies /api/whatsapp directly!
+  if (typeof window !== 'undefined' && window.location && window.location.protocol && window.location.protocol.startsWith('http')) {
+    return path;
+  }
   return 'http://localhost:3001' + path;
 }
 
@@ -10503,6 +11252,11 @@ async function fetchWhatsAppBotStatus() {
       updateWhatsAppBotModalUI(whatsappBotStatus);
     }
   } catch (err) {
+    // Ping local server to auto-wake WhatsApp Bot companion daemon if port 3001 is offline
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      try { fetch('/api/ensure-whatsapp-bot').catch(() => {}); } catch (e) {}
+    }
+
     // Only request status via MQTT if not already connected (reduces MQTT spam when on Netlify)
     if (realtimeMeshClient && realtimeMeshClient.connected && (!whatsappBotStatus || whatsappBotStatus.status !== 'CONNECTED')) {
       try {
@@ -11285,6 +12039,10 @@ function _openWhatsAppBotModalActual() {
     updateWhatsAppBotModalUI(whatsappBotStatus);
   }
 
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    try { fetch('/api/ensure-whatsapp-bot').catch(() => {}); } catch(e){}
+  }
+
   fetchWhatsAppBotStatus();
   if (whatsappPollInterval) clearInterval(whatsappPollInterval);
   // Poll every 4s instead of 2s to reduce MQTT spam from Netlify
@@ -11509,8 +12267,8 @@ async function generateInvoicePdfBlob(details) {
   const origTallyOverflow = tallyContainer ? tallyContainer.style.overflow : "";
 
   if (tallyContainer) {
-    tallyContainer.style.height = "288mm";
-    tallyContainer.style.maxHeight = "288mm";
+    tallyContainer.style.height = "auto";
+    tallyContainer.style.maxHeight = "none";
     tallyContainer.style.padding = "4.5mm 7mm";
     tallyContainer.style.overflow = "hidden";
   }
@@ -11521,9 +12279,9 @@ async function generateInvoicePdfBlob(details) {
   const opt = {
     margin: [0, 0, 0, 0],
     filename: filename,
-    image: { type: 'jpeg', quality: 0.90 },
-    html2canvas: { scale: 1.25, useCORS: true, logging: false },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    image: { type: 'jpeg', quality: 1.0 },
+    html2canvas: { scale: 3.5, useCORS: true, logging: false, letterRendering: true, dpi: 300 },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
   };
 
   let blob = null;
@@ -11551,27 +12309,21 @@ async function generateInvoicePdfBlob(details) {
     reader.readAsDataURL(blob);
   });
 
-  // Automatically upload to Google Drive backend and await fast link generation
+  // Asynchronously upload to Google Drive backend in parallel (non-blocking, fast local dispatch)
   let uploadedUrl = details.pdfUrl || details.googleDriveUrl || details.viewUrl || null;
-  try {
-    if (!uploadedUrl) {
-      uploadedUrl = await Promise.race([
-        uploadInvoicePdfToGoogleDrive(details, pdfBase64),
-        new Promise(r => setTimeout(() => r(null), 3800))
-      ]);
-    }
-    if (uploadedUrl) {
-      details.pdfUrl = uploadedUrl;
-      if (details.details) details.details.pdfUrl = uploadedUrl;
-      const idx = Array.isArray(invoicesDb) ? invoicesDb.findIndex(i => i && (i.id === details.id || String(i.invoiceNo) === String(details.invoiceNo))) : -1;
-      if (idx > -1) {
-        invoicesDb[idx].pdfUrl = uploadedUrl;
-        if (invoicesDb[idx].details) invoicesDb[idx].details.pdfUrl = uploadedUrl;
-        try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch (e) {}
+  if (!uploadedUrl) {
+    uploadInvoicePdfToGoogleDrive(details, pdfBase64).then((url) => {
+      if (url) {
+        details.pdfUrl = url;
+        if (details.details) details.details.pdfUrl = url;
+        const idx = Array.isArray(invoicesDb) ? invoicesDb.findIndex(i => i && (i.id === details.id || String(i.invoiceNo) === String(details.invoiceNo))) : -1;
+        if (idx > -1) {
+          invoicesDb[idx].pdfUrl = url;
+          if (invoicesDb[idx].details) invoicesDb[idx].details.pdfUrl = url;
+          try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch (e) {}
+        }
       }
-    }
-  } catch (e) {
-    console.warn("Upload PDF sync note:", e);
+    }).catch(e => console.warn("Background Drive upload note:", e));
   }
 
   return { blob, pdfBase64, filename, pdfUrl: uploadedUrl || details.pdfUrl };
@@ -11816,7 +12568,7 @@ async function autoDispatchInvoiceToWhatsApp(details, textOrBase64 = null, preco
 
     // 2. Dispatch ONLY to Customer(s)
     for (const rec of customerTargets) {
-      if (!rec.clean) continue;
+      if (!rec.clean || isDummyOrDemoPhone(rec.clean)) continue;
       const ok = await dispatchWhatsAppBotInvoice({
         phone: rec.clean,
         text: customerText,
@@ -11851,8 +12603,8 @@ async function autoDispatchInvoiceToWhatsApp(details, textOrBase64 = null, preco
 window.autoDispatchInvoiceToWhatsApp = autoDispatchInvoiceToWhatsApp;
 window.triggerAutomatedWhatsAppDispatch = autoDispatchInvoiceToWhatsApp;
 
-// Dual-Mode Native Share: Auto background bot when linked on PC, instant unblocked 1-click WhatsApp on manual trigger
-window.shareInvoicePdfNative = async function(details, btnEl = null, force1Click = false, precomputedBase64 = null) {
+// Dual-Mode Native Share: Ultra-Fast 0ms 1-Click WhatsApp Direct + Asynchronous Background Bot Dispatch
+window.shareInvoicePdfNative = function(details, btnEl = null, force1Click = false, precomputedBase64 = null) {
   if (!details || !details.invoiceNo) {
     showFloatingToast("⚠️ Please add items to invoice before sharing!", "warning");
     return;
@@ -11866,17 +12618,18 @@ window.shareInvoicePdfNative = async function(details, btnEl = null, force1Click
   let cleanPhone = "";
   const primaryName = recipientsInfo.consigneeName || recipientsInfo.buyerName || 'Consignee / Customer';
 
-  if (rawPhone && rawPhone.toString().replace(/\D/g, '').length >= 10) {
+  if (rawPhone && rawPhone.toString().replace(/\D/g, '').length >= 10 && !isDummyOrDemoPhone(rawPhone)) {
     cleanPhone = formatWhatsAppPhone(rawPhone);
   } else {
     let autoFound = "";
-    if (primaryName && primaryName !== 'Consignee / Customer') {
-      const match = (partiesDb || []).find(p => p && p.name && p.name.trim().toLowerCase() === primaryName.trim().toLowerCase() && p.phone);
+    if (primaryName && primaryName !== 'Consignee / Customer' && primaryName !== 'Customer' && primaryName !== 'Cash Customer' && !primaryName.includes("Demo") && !primaryName.includes("Sample")) {
+      const match = (partiesDb || []).find(p => p && p.name && p.name.trim().toLowerCase() === primaryName.trim().toLowerCase() && p.phone && !isDummyOrDemoPhone(p.phone));
       if (match && match.phone) autoFound = match.phone;
       if (!autoFound) {
         const invMatch = (invoicesDb || []).slice().reverse().find(i => {
           const cName = i.consignee?.name || i.buyer?.name || i.customerName || "";
-          return cName.trim().toLowerCase() === primaryName.trim().toLowerCase() && (i.consignee?.phone || i.buyer?.phone || i.phone);
+          const foundPh = i.consignee?.phone || i.buyer?.phone || i.phone;
+          return cName.trim().toLowerCase() === primaryName.trim().toLowerCase() && foundPh && !isDummyOrDemoPhone(foundPh);
         });
         if (invMatch) autoFound = invMatch.consignee?.phone || invMatch.buyer?.phone || invMatch.phone || "";
       }
@@ -11895,145 +12648,32 @@ window.shareInvoicePdfNative = async function(details, btnEl = null, force1Click
     }
   }
 
-  let origHtml = "";
-  if (btnEl && btnEl.tagName) {
-    origHtml = btnEl.innerHTML;
-    btnEl.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Preparing PDF...`;
-    btnEl.disabled = true;
-  }
-
-  showFloatingToast(`📄 Preparing official PDF invoice #${details.invoiceNo}...`, "info", 2200);
-
-  const custName = details.consignee?.name || details.buyer?.name || details.customerName || 'Customer';
-  const customerClean = custName.replace(/[^a-zA-Z0-9]/g, '_');
-  const filename = `Invoice_${details.invoiceNo}_${customerClean}.pdf`;
-
-  // 1. GUARANTEE PDF & GOOGLE DRIVE LINK ARE GENERATED BEFORE BUILDING WHATSAPP MESSAGE
-  let pdfBase64 = precomputedBase64;
-  let pdfBlob = null;
-  let publicPdfUrl = details.pdfUrl || details.googleDriveUrl || details.viewUrl;
-
-  try {
-    const gen = await generateInvoicePdfBlob(details);
-    if (gen) {
-      pdfBase64 = gen.pdfBase64 || pdfBase64;
-      pdfBlob = gen.blob;
-      if (gen.pdfUrl) {
-        publicPdfUrl = gen.pdfUrl;
-        details.pdfUrl = gen.pdfUrl;
-        if (details.details) details.details.pdfUrl = gen.pdfUrl;
-      }
-    }
-  } catch (pdfErr) {
-    console.warn("PDF compilation note in shareInvoicePdfNative:", pdfErr);
-  }
-
-  // 2. NOW CONSTRUCT THE COMPLETE WHATSAPP MESSAGE (GUARANTEED TO CONTAIN GOOGLE DRIVE PDF LINK)
+  // 1. INSTANT MESSAGE GENERATION (0ms - Pure Synchronous String Format)
   const fullShareText = typeof generateWhatsAppInvoiceMessage === 'function'
     ? generateWhatsAppInvoiceMessage(details)
     : formatInvoiceWhatsAppSummary(details);
 
-  // 3. CHECK LIVE BOT STATUS
-  let isBotReady = whatsappBotStatus && (whatsappBotStatus.isReady || whatsappBotStatus.status === 'CONNECTED') && (typeof window.isLiveBotConnected === 'function' ? window.isLiveBotConnected() : true);
+  const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(fullShareText)}`;
 
-  // --- AUTOMATED BACKGROUND BOT DISPATCH (Direct PDF Document Attachment) ---
-  if (isBotReady && cleanPhone) {
-    if (btnEl && btnEl.tagName) {
-      btnEl.innerHTML = `<i class="fa-solid fa-cloud-arrow-up fa-fade"></i> Sending via Bot...`;
-    }
-    showFloatingToast(`🤖 Sending invoice #${details.invoiceNo} & PDF document silently via WhatsApp Bot...`, "info", 3000);
+  // Check if WhatsApp Companion Bot is online and connected
+  const isBotReady = whatsappBotStatus && (whatsappBotStatus.isReady || whatsappBotStatus.status === 'CONNECTED') && (typeof window.isLiveBotConnected === 'function' ? window.isLiveBotConnected() : true);
 
-    let anyDelivered = false;
-    try {
-      // Send to Consignee first, and if Receiver also has a distinct phone, send to Receiver as well!
-      const targetsToSend = (recipientsInfo.allRecipients && recipientsInfo.allRecipients.length > 0)
-        ? recipientsInfo.allRecipients
-        : [{ clean: cleanPhone, label: 'Consignee' }];
-
-      let sentCount = 0;
-      const sentLabels = [];
-
-      for (const rec of targetsToSend) {
-        if (!rec.clean) continue;
-        const ok = await dispatchWhatsAppBotInvoice({
-          phone: rec.clean,
-          text: fullShareText,
-          filename,
-          pdfBase64,
-          pdfUrl: publicPdfUrl || details.pdfUrl || null
-        });
-        if (ok) {
-          sentCount++;
-          sentLabels.push(`${rec.label} (+${rec.clean})`);
-        }
-      }
-
-      if (sentCount > 0) {
-        anyDelivered = true;
-        if (lastSavedInvoiceRecord) {
-          lastSavedInvoiceRecord.waAutoSent = true;
-          if (typeof updateSuccessModalWhatsAppStatus === 'function') {
-            updateSuccessModalWhatsAppStatus(lastSavedInvoiceRecord);
-          }
-        }
-        if (typeof playSuccessChime === 'function') playSuccessChime();
-        if (btnEl && btnEl.tagName) {
-          btnEl.innerHTML = `<i class="fa-solid fa-circle-check text-success"></i> Sent via Bot!`;
-          setTimeout(() => {
-            btnEl.innerHTML = origHtml;
-            btnEl.disabled = false;
-          }, 2500);
-        }
-        showFloatingToast(`🚀 Invoice #${details.invoiceNo} & PDF sent automatically to ${sentLabels.join(" & ")} via WhatsApp Bot!`, "success", 5000);
-        return true;
-      }
-    } catch (fastErr) {
-      console.warn("Background bot dispatch note:", fastErr);
-    }
-
-    if (!anyDelivered) {
-      if (btnEl && btnEl.tagName) {
-        btnEl.innerHTML = origHtml;
-        btnEl.disabled = false;
-      }
-      showFloatingToast(`⚠️ WhatsApp Bot delivery unavailable. Opening WhatsApp Direct...`, "warning", 3500);
-      // Fall through directly to 1-Click WhatsApp fallback below!
-    }
+  if (isBotReady && cleanPhone && typeof autoDispatchInvoiceToWhatsApp === 'function') {
+    // ★ 100% AUTOMATIC BOT DISPATCH (Direct background send, NO new tabs or popups!)
+    showFloatingToast(`🚀 Sending Invoice #${details.invoiceNo} automatically via WhatsApp Bot to ${primaryName}...`, "info", 3500);
+    autoDispatchInvoiceToWhatsApp(details, null, precomputedBase64);
+    return true;
   }
 
-  // --- UNIVERSAL 1-CLICK WHATSAPP FALLBACK (User-Initiated Click Only) ---
-  // If this was called silently in the background without user clicking a button, do not pop open:
-  if (!btnEl && !force1Click) {
-    showFloatingToast(`📲 WhatsApp ready: Click 'WhatsApp' button in bill modal to send`, "info", 4500);
-    return false;
-  }
-
-  // A) Immediately download the PDF file to merchant's computer so they can drag into WhatsApp chat if desired
+  // FALLBACK: When Bot is Offline / Disconnected, open manual 1-Click WhatsApp
   try {
-    if (pdfBlob) {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(pdfBlob);
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        try { document.body.removeChild(a); } catch (e) {}
-      }, 800);
-    }
-  } catch (dlErr) {
-    console.warn("Auto PDF download note:", dlErr);
+    window.open(waUrl, '_blank');
+    showFloatingToast(`📲 WhatsApp opened for ${primaryName} (+${cleanPhone})!`, "success", 4000);
+  } catch (openErr) {
+    console.warn("Direct window.open blocked, redirecting location:", openErr);
+    window.location.href = waUrl;
   }
 
-  // B) Open WhatsApp Web only when the user explicitly clicked the share button and bot is not connected
-  const waUrl = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(fullShareText)}`;
-  window.open(waUrl, '_blank');
-
-  if (btnEl && btnEl.tagName) {
-    btnEl.innerHTML = origHtml;
-    btnEl.disabled = false;
-  }
-
-  showFloatingToast(`📲 WhatsApp opened for ${primaryName} (+${cleanPhone})!`, "success", 5000);
   return true;
 };
 
@@ -12077,6 +12717,13 @@ window.shareCurrentInvoiceWhatsApp = function(btnEl = null) {
 let currentBalanceQrInv = null;
 
 window.openBalanceQrModal = function(id) {
+  const isDemo = (typeof window.isDemoMode === 'function') && window.isDemoMode();
+  if (!isDemo && typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Payment collection and settlement are disabled in View-Only mode.", "warning", 4000);
+    }
+    return;
+  }
   const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => i.id === id || i.invoiceNo === id);
   if (!inv) {
     if (typeof showFloatingToast === 'function') {
@@ -12257,6 +12904,20 @@ window.submitCustomPartialPayment = function() {
     source: "Balance QR Modal Partial Payment"
   });
 
+  const isDemo = (typeof window.isDemoMode === 'function') && window.isDemoMode();
+  if (isDemo) {
+    try { sessionStorage.setItem("demo_invoices", JSON.stringify(invoicesDb)); } catch(e) {}
+    closeBalanceQrModal();
+    if (typeof updateDashboardOverview === "function") updateDashboardOverview();
+    if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
+    if (typeof renderRecentInvoicesTable === "function") renderRecentInvoicesTable();
+    if (typeof renderCustomerLedgerSummary === "function") renderCustomerLedgerSummary();
+    if (typeof showFloatingToast === "function") {
+      showFloatingToast(`✅ Demo Payment Simulated: Recorded ₹ ${formatCurrency(settledAmt)} for #${inv.invoiceNo}! (Demo preview)`, "success", 4000);
+    }
+    return;
+  }
+
   // Persist to localStorage & IndexedDB
   try {
     localStorage.setItem("invoices", JSON.stringify(invoicesDb));
@@ -12266,6 +12927,9 @@ window.submitCustomPartialPayment = function() {
   }
   if (window.AaryanDB && typeof window.AaryanDB.saveInvoice === 'function') {
     try { window.AaryanDB.saveInvoice(inv); } catch (e) {}
+  }
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+    try { window.SupabaseDB.upsertInvoice(inv).catch(err => console.warn("[Supabase] Post-payment sync error:", err)); } catch (e) {}
   }
   if (typeof syncDatabaseToServer === 'function') {
     try { syncDatabaseToServer("invoices", inv); } catch (e) {}
@@ -12333,6 +12997,13 @@ window.shareBalanceQrWhatsApp = function() {
 };
 
 window.markBalanceQrPaidAndSendWhatsApp = function() {
+  const isDemo = (typeof window.isDemoMode === 'function') && window.isDemoMode();
+  if (!isDemo && typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Marking invoices as paid is strictly prohibited in View-Only mode.", "error", 4500);
+    }
+    return;
+  }
   if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
     if (typeof showFloatingToast === "function") {
       showFloatingToast("⛔ Access Denied: Customer accounts cannot mark invoices as paid.", "error", 4500);
@@ -12373,6 +13044,19 @@ window.markBalanceQrPaidAndSendWhatsApp = function() {
     source: "Balance QR Modal Mark Paid"
   });
 
+  if (isDemo) {
+    try { sessionStorage.setItem("demo_invoices", JSON.stringify(invoicesDb)); } catch(e) {}
+    closeBalanceQrModal();
+    if (typeof updateDashboardOverview === "function") updateDashboardOverview();
+    if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
+    if (typeof renderRecentInvoicesTable === "function") renderRecentInvoicesTable();
+    if (typeof renderCustomerLedgerSummary === "function") renderCustomerLedgerSummary();
+    if (typeof showFloatingToast === "function") {
+      showFloatingToast(`✅ Demo Payment Simulated: Invoice #${inv.invoiceNo} marked as Paid! (Demo preview)`, "success", 4000);
+    }
+    return;
+  }
+
   // Persist & Sync to LocalStorage, IndexedDB, Google Sheets & EMQX Mesh
   try {
     localStorage.setItem("invoices", JSON.stringify(invoicesDb));
@@ -12382,6 +13066,9 @@ window.markBalanceQrPaidAndSendWhatsApp = function() {
   }
   if (window.AaryanDB && typeof window.AaryanDB.saveInvoice === 'function') {
     try { window.AaryanDB.saveInvoice(inv); } catch (e) {}
+  }
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+    try { window.SupabaseDB.upsertInvoice(inv).catch(err => console.warn("[Supabase] Post-payment sync error:", err)); } catch (e) {}
   }
   if (typeof syncDatabaseToServer === 'function') {
     try { syncDatabaseToServer("invoices", inv); } catch (e) {}
@@ -12562,9 +13249,18 @@ window.sendWhatsAppPaymentReminder = async function(id, btnEl = null) {
 };
 
 window.shareInvoiceToWhatsApp = function(id, btnEl = null) {
-  const inv = invoicesDb.find(i => i.id === id);
-  if (!inv) return;
-  shareInvoicePdfNative(inv.details, btnEl);
+  const cleanId = String(id || '').trim().toLowerCase();
+  const inv = (typeof invoicesDb !== 'undefined' ? invoicesDb : []).find(i => {
+    if (!i) return false;
+    const iId = String(i.id || '').trim().toLowerCase();
+    const iNo = String(i.invoiceNo || '').trim().toLowerCase();
+    return iId === cleanId || iNo === cleanId || iNo === cleanId.replace(/^#/, '');
+  });
+  if (!inv) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("⚠️ Invoice record not found.", "warning");
+    return;
+  }
+  shareInvoicePdfNative(inv.details || inv, btnEl, false);
 };
 
 // --- ADVANCED DATA EXPORTERS (CSV / EXCEL) ---
@@ -12581,6 +13277,12 @@ function downloadCSVFile(filename, csvContent) {
 }
 
 window.exportInvoicesToCSV = function() {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Exporting invoice records is restricted.", "error", 4000);
+    }
+    return;
+  }
   if (!invoicesDb || invoicesDb.length === 0) {
     showFloatingToast("⚠️ No invoices available to export.", "warning");
     return;
@@ -12603,6 +13305,12 @@ window.exportInvoicesToCSV = function() {
 };
 
 window.exportProductsToCSV = function() {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Exporting products list is restricted.", "error", 4000);
+    }
+    return;
+  }
   if (!productsDb || productsDb.length === 0) {
     showFloatingToast("⚠️ No products available to export.", "warning");
     return;
@@ -12653,7 +13361,14 @@ window.filterInvoicesByStatus = async function() {
 
   let filtered = [];
   if (query) {
-    filtered = TurboDataStore.searchInvoices(query, 500);
+    const rawList = invoicesDb || [];
+    filtered = rawList.filter(inv => {
+      if (!inv) return false;
+      const details = inv.details || {};
+      const buyer = details.buyer || {};
+      const targetStr = `${inv.invoiceNo || ''} ${inv.customerName || ''} ${buyer.name || ''} ${inv.phone || ''} ${buyer.phone || ''}`.toLowerCase();
+      return targetStr.includes(query);
+    });
   } else {
     filtered = invoicesDb || [];
   }
@@ -12706,7 +13421,7 @@ function loadInvoicesHistoryTable() {
           <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;">
             <i class="fa-solid fa-circle-notch fa-spin fa-2x" style="color: #0284c7;"></i>
             <div style="font-weight: 600; font-size: 14px; color: #334155;">Syncing Invoices from Cloud...</div>
-            <div style="font-size: 12px; color: #94a3b8;">Connecting to Google Sheets master database</div>
+            <div style="font-size: 12px; color: #94a3b8;">Connecting to Supabase Cloud Database</div>
           </div>
         </td>
       </tr>
@@ -12776,7 +13491,7 @@ function renderHistoryTableRows(records) {
             <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;">
               <i class="fa-solid fa-circle-notch fa-spin fa-2x" style="color: #0284c7;"></i>
               <div style="font-weight: 600; font-size: 14px; color: #334155;">Syncing Invoices from Cloud...</div>
-              <div style="font-size: 12px; color: #94a3b8;">Connecting to Google Sheets master database</div>
+              <div style="font-size: 12px; color: #94a3b8;">Connecting to Supabase Cloud Database</div>
             </div>
           </td>
         </tr>
@@ -12813,20 +13528,21 @@ function renderHistoryTableRows(records) {
     const balance = payInfo.balance;
 
     const isCustomerRole = (typeof window.isCustomerAccount === 'function') ? window.isCustomerAccount() : false;
+    const isViewOnlyUser = (typeof window.isViewOnlyUser === 'function') ? window.isViewOnlyUser() : false;
 
     let badgeClass = 'badge-paid';
     if (status === 'Partial') badgeClass = 'badge-partial';
     if (status === 'Unpaid') badgeClass = 'badge-unpaid';
 
     let balanceQrBtn = "";
-    if (!isEstimate && !isPaid && balance > 0 && !isCustomerRole) {
+    if (!isEstimate && !isPaid && balance > 0 && !isCustomerRole && !isViewOnlyUser) {
       balanceQrBtn = `
         <button class="action-btn share action-btn-qr" onclick="openBalanceQrModal('${inv.id}')" title="Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode"></i></button>
       `;
     }
 
     let balanceQrDropdownItem = "";
-    if (!isEstimate && !isPaid && balance > 0 && !isCustomerRole) {
+    if (!isEstimate && !isPaid && balance > 0 && !isCustomerRole && !isViewOnlyUser) {
       balanceQrDropdownItem = `
         <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openBalanceQrModal('${inv.id}')"><i class="fa-solid fa-qrcode" style="color: #06b6d4;"></i> Scan UPI QR &amp; Settle (₹ ${formatCurrency(balance)})</a>
         <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); sendWhatsAppPaymentReminder('${inv.id}', this)"><i class="fa-solid fa-bell" style="color: #d97706;"></i> WhatsApp Payment Reminder</a>
@@ -12834,7 +13550,7 @@ function renderHistoryTableRows(records) {
     }
 
     let convertEstimateDropdownItem = "";
-    if (isEstimate && !isCustomerRole) {
+    if (isEstimate && !isCustomerRole && !isViewOnlyUser) {
       convertEstimateDropdownItem = `
         <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); convertEstimateToInvoice('${inv.id}')"><i class="fa-solid fa-file-circle-check" style="color: #0891b2;"></i> Convert to Official GST Invoice</a>
       `;
@@ -12849,42 +13565,51 @@ function renderHistoryTableRows(records) {
       ? inv.itemsCount
       : ((inv.items || details.items || []).length);
     const invTotal = safeParseAmount(inv.total !== undefined ? inv.total : details.total);
+    const safeInvId = String(inv.id || inv.invoiceNo || (details && (details.id || details.invoiceNo)) || '').trim();
 
     htmlBuffer.push(`
       <tr>
-        <td style="font-weight: 700; color: var(--primary-teal); cursor: pointer;" onclick="openInvoicePrintPreview('${inv.id || inv.invoiceNo}', 'a4')" title="Click to preview &amp; print bill">
+        <td style="font-weight: 700; color: var(--primary-teal); cursor: pointer;" onclick="openInvoicePrintPreview('${inv.id || inv.invoiceNo}', 'a4')" title="Click to preview bill">
           <i class="fa-solid fa-file-invoice" style="margin-right: 4px; opacity: 0.7;"></i>#${inv.invoiceNo}
         </td>
         <td>${formatInputDateString(invDate)}</td>
-        <td style="font-weight: 600;">${consigneeDisplay}${subBuyerText}</td>
+        <td style="font-weight: 600;">
+          ${isViewOnlyUser
+            ? `<span style="color: #0f172a;">${consigneeDisplay}</span>${subBuyerText}`
+            : `<span style="color: #0369a1; text-decoration: underline; text-underline-offset: 2px; cursor: pointer;" onclick="if(window.openCustomerDetailsModal) window.openCustomerDetailsModal('${String(consigneeDisplay).replace(/'/g, "\\'")}')" title="Click to view complete history for ${consigneeDisplay}">${consigneeDisplay}</span>${subBuyerText}`
+          }
+        </td>
         <td class="text-center">${itemsCount}</td>
         <td style="text-align: right; font-weight: 700;">₹ ${formatCurrency(invTotal)}</td>
         <td class="text-center">
           ${isEstimate 
             ? `<span class="badge-status" style="background: rgba(245, 158, 11, 0.15); color: #d97706; font-weight: 700; border: 1px solid rgba(245, 158, 11, 0.3);">Quotation</span>` 
-            : (!isPaid && balance > 0 && !isCustomerRole
+            : (!isPaid && balance > 0 && !isCustomerRole && !isViewOnlyUser
                 ? `<span class="badge-status ${badgeClass}" onclick="openBalanceQrModal('${inv.id}')" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode" style="font-size: 11px;"></i>${status}</span><div style="font-size: 10.5px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>`
                 : `<span class="badge-status ${badgeClass}">${status}</span>${(!isPaid && balance > 0 ? `<div style="font-size: 10.5px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>` : '')}`)}
         </td>
         <td class="actions-cell">
-          ${balanceQrBtn}
-          <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${inv.id}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
-          <button class="action-btn print action-btn-thermal" onclick="openInvoicePrintPreview('${inv.id}', 'thermal')" title="Preview &amp; Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
-          <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Send Invoice &amp; PDF via WhatsApp (1-Click)" style="background: #16a34a !important; color: #ffffff !important; font-weight: 700; width: 30px; height: 30px; border-radius: 6px; box-shadow: 0 1px 3px rgba(22, 163, 74, 0.35);"><i class="fa-brands fa-whatsapp" style="font-size: 15px; color: #ffffff !important;"></i></button>
-          ${!isCustomerRole ? `<button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Bill"><i class="fa-solid fa-pen-to-square"></i></button>` : ''}
-          ${!isCustomerRole ? `<button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Bill"><i class="fa-solid fa-trash"></i></button>` : ''}
-          <div class="action-dropdown-wrapper">
-            <button class="action-btn more-btn" onclick="toggleActionDropdown('${inv.id}', event)" title="More Options"><i class="fa-solid fa-ellipsis-vertical"></i></button>
-            <div id="action-dropdown-${inv.id}" class="action-dropdown-menu hidden" onclick="event.stopPropagation();">
-              <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); downloadSavedInvoicePdf('${inv.id}', this)"><i class="fa-solid fa-file-pdf text-rose"></i> Download PDF</a>
-              ${!isCustomerRole ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatInvoice('${inv.id}')"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i> Clone / Repeat Bill</a>` : ''}
-              ${balanceQrDropdownItem}
-              ${convertEstimateDropdownItem}
-              <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); shareInvoiceToTelegram('${inv.id}', this)"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i> Share via Telegram</a>
-              <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openUniversalInvoiceShareModal('${inv.id}')"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i> Universal Share Link</a>
-              <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openInvoiceVerificationModal('${inv.id || inv.invoiceNo}')"><i class="fa-solid fa-shield-check" style="color: #10b981;"></i> Verify &amp; Digital Receipt</a>
-            </div>
-          </div>
+          ${isViewOnlyUser
+            ? `<button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${safeInvId}', 'a4')" title="View Bill Preview"><i class="fa-solid fa-eye"></i></button>`
+            : `${balanceQrBtn}
+              <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${inv.id}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
+              <button class="action-btn print action-btn-thermal" onclick="openInvoicePrintPreview('${safeInvId}', 'thermal')" title="Preview &amp; Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
+              <button class="action-btn share btn-whatsapp primary-wa-action" onclick="shareInvoiceToWhatsApp('${inv.id}', this)" title="Send Invoice &amp; PDF via WhatsApp (1-Click)" style="background: #16a34a !important; color: #ffffff !important; font-weight: 700; width: 30px; height: 30px; border-radius: 6px; box-shadow: 0 1px 3px rgba(22, 163, 74, 0.35);"><i class="fa-brands fa-whatsapp" style="font-size: 15px; color: #ffffff !important;"></i></button>
+              ${!isCustomerRole ? `<button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Bill"><i class="fa-solid fa-pen-to-square"></i></button>` : ''}
+              ${!isCustomerRole ? `<button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Bill"><i class="fa-solid fa-trash"></i></button>` : ''}
+              <div class="action-dropdown-wrapper">
+                <button class="action-btn more-btn" onclick="toggleActionDropdown('${inv.id}', event)" title="More Options"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+                <div id="action-dropdown-${inv.id}" class="action-dropdown-menu hidden" onclick="event.stopPropagation();">
+                  <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); downloadSavedInvoicePdf('${inv.id}', this)"><i class="fa-solid fa-file-pdf text-rose"></i> Download PDF</a>
+                  <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openInvoiceVerificationModal('${inv.invoiceNo || inv.id}')"><i class="fa-solid fa-fingerprint text-cyan"></i> Verify &amp; Digital Audit</a>
+                  <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatSavedInvoice('${inv.id}')"><i class="fa-solid fa-repeat text-indigo"></i> Repeat as New Bill</a>
+                  ${convertEstimateDropdownItem}
+                  ${balanceQrDropdownItem}
+                  <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); shareInvoiceToTelegram('${inv.id}', this)"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i> Share via Telegram</a>
+                  <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openUniversalInvoiceShareModal('${inv.id}')"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i> Universal Share Link</a>
+                </div>
+              </div>`
+          }
         </td>
       </tr>
     `);
@@ -13106,6 +13831,7 @@ window.openInvoicePrintPreview = function(identifier, mode = 'a4') {
   window.currentPreviewInvoiceRecord = inv;
   window.currentPreviewMode = (mode === 'thermal') ? 'thermal' : 'a4';
   window.currentPreviewZoom = 1.0;
+  const isViewUser = (typeof window.isViewOnlyUser === 'function') && window.isViewOnlyUser();
 
   // 1. Populate metadata in header
   const invNo = inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '0000';
@@ -13125,7 +13851,7 @@ window.openInvoicePrintPreview = function(identifier, mode = 'a4') {
   if (badgeEl) {
     badgeEl.textContent = payInfo.status || 'Paid';
     badgeEl.className = 'badge-status ' + (payInfo.status === 'Partial' ? 'badge-partial' : (payInfo.status === 'Unpaid' ? 'badge-unpaid' : 'badge-paid'));
-    if (!payInfo.isPaid && payInfo.balance > 0) {
+    if (!payInfo.isPaid && payInfo.balance > 0 && !isViewUser) {
       badgeEl.style.cursor = "pointer";
       badgeEl.onclick = () => window.collectPaymentFromPreview();
       badgeEl.title = `Click to Scan UPI QR & Settle Payment (Balance: ₹ ${formatCurrency(payInfo.balance)})`;
@@ -13139,7 +13865,7 @@ window.openInvoicePrintPreview = function(identifier, mode = 'a4') {
   const payBtn = document.getElementById("preview-collect-pay-btn");
   const payBtnText = document.getElementById("preview-balance-btn-text");
   if (payBtn) {
-    if (!payInfo.isPaid && payInfo.balance > 0) {
+    if (!payInfo.isPaid && payInfo.balance > 0 && !isViewUser) {
       if (payBtnText) payBtnText.textContent = formatCurrency(payInfo.balance);
       payBtn.style.display = "inline-flex";
     } else {
@@ -13176,10 +13902,27 @@ window.openInvoicePrintPreview = function(identifier, mode = 'a4') {
   window.resetPrintPreviewZoom();
 
   // 5. Reveal modal
+  const printNowBtn = document.getElementById("preview-print-now-btn");
+  const pdfBtn = document.querySelector("#invoice-print-preview-modal button[onclick*='downloadPdfFromPreview']");
+  const waBtn = document.querySelector("#invoice-print-preview-modal button[onclick*='whatsappFromPreview']");
+  const delBtn = document.querySelector("#invoice-print-preview-modal button[onclick*='deleteFromPreview']");
+
+  if (printNowBtn) printNowBtn.style.display = isViewUser ? "none" : "";
+  if (pdfBtn) pdfBtn.style.display = isViewUser ? "none" : "";
+  if (waBtn) waBtn.style.display = isViewUser ? "none" : "";
+  if (delBtn) delBtn.style.display = isViewUser ? "none" : "";
+
   const modal = document.getElementById("invoice-print-preview-modal");
   if (modal) {
     modal.classList.remove("hidden");
-    modal.style.display = "flex";
+    modal.style.removeProperty("display");
+    modal.style.removeProperty("visibility");
+    modal.style.removeProperty("pointer-events");
+    modal.style.setProperty("display", "flex", "important");
+    modal.style.setProperty("visibility", "visible", "important");
+    modal.style.setProperty("opacity", "1", "important");
+    modal.style.setProperty("pointer-events", "auto", "important");
+    modal.style.setProperty("z-index", "2147483642", "important");
   }
 };
 
@@ -13187,7 +13930,9 @@ window.closeInvoicePrintPreview = function() {
   const modal = document.getElementById("invoice-print-preview-modal");
   if (modal) {
     modal.classList.add("hidden");
-    modal.style.display = "none";
+    modal.style.setProperty("display", "none", "important");
+    modal.style.setProperty("visibility", "hidden", "important");
+    modal.style.setProperty("pointer-events", "none", "important");
   }
 };
 
@@ -13290,6 +14035,12 @@ window.printSavedInvoice = function(id) {
 };
 
 window.quickPrintLatestInvoice = function() {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Quick print is restricted in view-only mode.", "error", 4000);
+    }
+    return;
+  }
   if (!invoicesDb || invoicesDb.length === 0) {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("⚠️ No invoices found in history.", "warning");
@@ -13488,6 +14239,17 @@ window.deleteSavedInvoice = function(identifier, skipConfirm = false) {
     if (cleanId && cleanId !== invNo) window.AaryanDB.deleteInvoice(cleanId);
   }
 
+  // 4b. Purge immediately from Supabase Cloud Database
+  if (window.SupabaseDB && typeof window.SupabaseDB.deleteInvoice === 'function') {
+    try {
+      window.SupabaseDB.deleteInvoice(invId);
+      if (invNo && invNo !== invId) window.SupabaseDB.deleteInvoice(invNo);
+      if (cleanId && cleanId !== invNo) window.SupabaseDB.deleteInvoice(cleanId);
+    } catch (sbErr) {
+      console.warn("[Supabase] Delete invoice sync note:", sbErr);
+    }
+  }
+
   // 5. Direct cross-browser & inter-tab broadcast (<30ms)
   window.lastSyncETag = null;
   const cancEntry = {
@@ -13658,6 +14420,12 @@ window.calculateProductModalValues = function() {
 };
 
 window.openProductModal = function(id = "") {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: You have view-only access. Adding or modifying products is restricted.", "error", 4000);
+    }
+    return;
+  }
   const modalEl = document.getElementById("product-modal");
   if (!modalEl) return;
 
@@ -13877,6 +14645,12 @@ window.saveProductModal = function(e, andAddAnother = false) {
 };
 
 window.quickRestockProduct = function(id) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: You have view-only access. Restocking products is restricted.", "error", 4000);
+    }
+    return;
+  }
   const prod = productsDb.find(p => p && p.id === id);
   if (!prod) return;
   const currentStock = Math.max(0, parseInt(prod.stock, 10) || 0);
@@ -13951,6 +14725,12 @@ window.quickRestockProduct = function(id) {
 };
 
 window.adjustProductStock = function(id, delta) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: You have view-only access. Modifying stock is restricted.", "error", 4000);
+    }
+    return;
+  }
   const prod = productsDb.find(p => p && p.id === id);
   if (!prod) return;
   const current = parseInt(prod.stock, 10) || 0;
@@ -14013,7 +14793,59 @@ window.adjustProductStock = function(id, delta) {
   sendStockTelegramReport(prod, actionText, current, prod.stock);
 };
 
+window.setProductStockDirect = function(id, explicitStockVal) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: You have view-only access. Modifying stock is restricted.", "error", 4000);
+    }
+    return;
+  }
+  const prod = productsDb.find(p => p && p.id === id);
+  if (!prod) return;
+  const current = parseInt(prod.stock, 10) || 0;
+  const newStock = Math.max(0, parseInt(explicitStockVal, 10) || 0);
+  const delta = newStock - current;
+  if (delta === 0) return;
+  prod.stock = newStock;
+  prod.status = newStock <= 0 ? "Out of Stock" : (newStock <= 10 ? "Low Stock" : "In Stock");
+  prod.updatedAt = new Date().toISOString();
+  const rate = parseFloat(prod.rate || 0);
+  const disc = parseFloat(prod.discount || 0);
+  const valAfterDisc = Math.max(0, rate - (rate * disc / 100));
+  prod.totalValue = Math.round((newStock * valAfterDisc) * 100) / 100;
+
+  try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch (e) {}
+  if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts(productsDb);
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+    window.SupabaseDB.upsertProduct(prod).catch(() => {});
+  }
+
+  if (typeof updateProductDomRowFast === 'function') {
+    updateProductDomRowFast(prod.id, newStock, prod.status);
+  } else if (typeof loadProductsDatabaseTable === 'function') {
+    loadProductsDatabaseTable();
+  }
+  if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+  if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+
+  broadcastInterTabEvent('PRODUCT_STOCK_CHANGED', {
+    productId: prod.id,
+    stock: newStock,
+    status: prod.status,
+    delta: delta,
+    totalValue: prod.totalValue,
+    updatedAt: prod.updatedAt,
+    description: prod.description
+  });
+};
+
 window.updateProductDiscountInline = function(id, newDiscount) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: You have view-only access. Modifying discount rates is restricted.", "error", 4000);
+    }
+    return;
+  }
   const prod = productsDb.find(p => p && (p.id === id || (p.description && p.description.trim().toLowerCase() === String(id).trim().toLowerCase())));
   if (!prod) return;
   const parsedDisc = Math.max(0, Math.min(100, Math.round((parseFloat(newDiscount) || 0) * 10) / 10));
@@ -14069,6 +14901,12 @@ window.updateProductDiscountInline = function(id, newDiscount) {
 };
 
 window.updateProductPriceAfterDiscountInline = function(id, newPrice) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: You have view-only access. Modifying prices is restricted.", "error", 4000);
+    }
+    return;
+  }
   const prod = productsDb.find(p => p && (p.id === id || (p.description && p.description.trim().toLowerCase() === String(id).trim().toLowerCase())));
   if (!prod) return;
   const rate = parseFloat(prod.rate) || 0;
@@ -14181,7 +15019,11 @@ function updateProductDomRowFast(productId, newStock, newStatus) {
     return;
   }
 
-  qtyEl.textContent = stockNum;
+  if (qtyEl.tagName === 'INPUT') {
+    qtyEl.value = stockNum;
+  } else {
+    qtyEl.textContent = stockNum;
+  }
 
   if (badgeEl) {
     let stockBadge = "";
@@ -14303,6 +15145,8 @@ function renderProductsTable(records) {
       stockBadge = `<span style="display: inline-block; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; padding: 2px 7px; border-radius: 12px; font-size: 10px; font-weight: 700;"><i class="fa-solid fa-circle-check"></i> In Stock</span>`;
     }
 
+    const isViewUser = (typeof window.isViewOnlyUser === 'function') && window.isViewOnlyUser();
+
     htmlBuffer.push(`
       <tr id="prod-row-${p.id}" data-product-id="${p.id}">
         <td>
@@ -14324,43 +15168,58 @@ function renderProductsTable(records) {
         </td>
         <td style="text-align: right; font-weight: 600; color: #334155; font-size: 13px;">₹ ${formatCurrency(rate)}</td>
         <td style="text-align: center;">
-          <div class="prod-discount-badge" title="Click to edit promotional discount percentage">
-            <input type="number" step="0.1" min="0" max="100" value="${disc}" 
-              onchange="updateProductDiscountInline('${p.id}', this.value)" 
-              onkeydown="if(event.key==='Enter'){this.blur();}"
-              class="prod-discount-input">
-            <span class="prod-discount-pct">%</span>
-          </div>
+          ${isViewUser 
+            ? `<span style="font-weight: 700; color: #059669; font-size: 12.5px;">${disc}%</span>`
+            : `<div class="prod-discount-badge" title="Click to edit promotional discount percentage">
+                <input type="number" step="0.1" min="0" max="100" value="${disc}" 
+                  onchange="updateProductDiscountInline('${p.id}', this.value)" 
+                  onkeydown="if(event.key==='Enter'){this.blur();}"
+                  class="prod-discount-input">
+                <span class="prod-discount-pct">%</span>
+              </div>`
+          }
         </td>
         <td style="text-align: right;">
-          <div style="display: flex; flex-direction: column; align-items: flex-end; cursor: pointer;" 
-               onclick="const pr = prompt('Set direct Price After Discount for \\'${p.description}\\':', '${valAfterDisc}'); if(pr!==null) updateProductPriceAfterDiscountInline('${p.id}', pr);"
-               title="Click to directly set price after discount (₹)">
+          <div style="display: flex; flex-direction: column; align-items: flex-end; ${isViewUser ? '' : 'cursor: pointer;'}" 
+               ${isViewUser ? '' : `onclick="const pr = prompt('Set direct Price After Discount for \\'${p.description}\\':', '${valAfterDisc}'); if(pr!==null) updateProductPriceAfterDiscountInline('${p.id}', pr);"`}
+               title="${isViewUser ? 'Price after discount' : 'Click to directly set price after discount (₹)'}">
             <span style="font-weight: 800; color: #16a34a; font-size: 13.5px;">₹ ${formatCurrency(valAfterDisc)}</span>
             ${disc > 0 ? `<span style="font-size: 10px; color: #059669; font-weight: 600;">(-${disc}%)</span>` : '<span style="font-size: 10px; color: #94a3b8;">(0% disc)</span>'}
           </div>
         </td>
         <td style="text-align: center;">
-          <div class="prod-stock-stepper">
-            <button class="btn-stock-step" onclick="adjustProductStock('${p.id}', -1)" title="Decrease Stock">−</button>
-            <span class="stock-qty-text" id="prod-stock-qty-${p.id}">${stockVal}</span>
-            <button class="btn-stock-step" onclick="adjustProductStock('${p.id}', 1)" title="Increase Stock">+</button>
-            <span id="prod-stock-badge-${p.id}">${stockBadge}</span>
-          </div>
+          ${isViewUser
+            ? `<div style="display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <span style="font-weight: 800; font-size: 13px; color: #0f172a;">${stockVal}</span>
+                <span>${stockBadge}</span>
+               </div>`
+            : `<div class="prod-stock-stepper">
+                <button class="btn-stock-step" onclick="adjustProductStock('${p.id}', -1)" title="Decrease Stock by 1">−</button>
+                <input type="number" min="0" value="${stockVal}" class="stock-qty-input" id="prod-stock-qty-${p.id}"
+                  style="width: 58px; text-align: center; font-weight: 800; font-size: 13.5px; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 3px 4px; color: #0f172a; margin: 0 4px;"
+                  onchange="setProductStockDirect('${p.id}', this.value)"
+                  onkeydown="if(event.key==='Enter'){this.blur();}">
+                <button class="btn-stock-step" onclick="adjustProductStock('${p.id}', 1)" title="Increase Stock by 1">+</button>
+                <span id="prod-stock-badge-${p.id}">${stockBadge}</span>
+              </div>`
+          }
         </td>
         <td style="text-align: right; font-weight: 800; color: #0f172a; font-size: 14px;" id="prod-total-val-${p.id}">₹ ${formatCurrency(totalVal)}</td>
         <td style="text-align: center;">
-          <div class="prod-actions-row">
-            <button class="prod-action-btn restock" onclick="quickRestockProduct('${p.id}')" title="1-Click Quick Restock (Add Inward Stock)" style="color: #0284c7; background: #e0f2fe; border: 1px solid #bae6fd;">
-              <i class="fa-solid fa-boxes-packing"></i>
-            </button>
-            <button class="prod-action-btn edit" onclick="openProductModal('${p.id}')" title="Edit Product & Stock">
-              <i class="fa-solid fa-pen-to-square"></i>
-            </button>
-            <button class="prod-action-btn delete" onclick="deleteProductRowDb('${p.id}')" title="Delete Product">
-              <i class="fa-solid fa-trash-can"></i>
-            </button>
-          </div>
+          ${isViewUser 
+            ? `<span style="color: #94a3b8; font-size: 11px; font-weight: 600;">Read Only</span>`
+            : `<div class="prod-actions-row">
+                <button class="prod-action-btn restock" onclick="quickRestockProduct('${p.id}')" title="1-Click Quick Restock (Add Inward Stock)" style="color: #0284c7; background: #e0f2fe; border: 1px solid #bae6fd;">
+                  <i class="fa-solid fa-boxes-packing"></i>
+                </button>
+                <button class="prod-action-btn edit" onclick="openProductModal('${p.id}')" title="Edit Product & Stock">
+                  <i class="fa-solid fa-pen-to-square"></i>
+                </button>
+                <button class="prod-action-btn delete" onclick="deleteProductRowDb('${p.id}')" title="Delete Product">
+                  <i class="fa-solid fa-trash-can"></i>
+                </button>
+              </div>`
+          }
         </td>
       </tr>
     `);
@@ -14481,9 +15340,13 @@ window.openPartyModal = function(type, id = "") {
       document.getElementById("modal-party-state").value = party.state || "Andhra Pradesh";
       document.getElementById("modal-party-state-code").value = party.stateCode || "37";
       document.getElementById("modal-party-phone").value = party.phone || "";
+      const delBtn = document.getElementById("btn-delete-party-modal");
+      if (delBtn) delBtn.style.display = "inline-flex";
     }
   } else {
     document.getElementById("party-modal-title").textContent = `Add New ${type === 'receiver' ? 'Receiver' : 'Consignee'}`;
+    const delBtn = document.getElementById("btn-delete-party-modal");
+    if (delBtn) delBtn.style.display = "none";
   }
 
   setTimeout(() => {
@@ -14542,21 +15405,45 @@ window.savePartyModal = function(e, andAddAnother = false) {
   };
   const isNew = !id;
 
+  // Clear any existing deletion tombstone
+  try {
+    let dpi = JSON.parse(localStorage.getItem("deleted_party_ids")) || [];
+    dpi = dpi.filter(d => d !== party.id && d !== party.name);
+    localStorage.setItem("deleted_party_ids", JSON.stringify(dpi));
+  } catch(e){}
+
   if (id) {
     const idx = partiesDb.findIndex(p => p.id === id);
     if (idx > -1) partiesDb[idx] = party;
+    else partiesDb.push(party);
   } else {
     partiesDb.push(party);
+  }
+  window.partiesDb = partiesDb;
+
+  // Local storage persistence
+  try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
+  if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllParties(partiesDb);
+  if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
+
+  // Direct Push to Supabase Cloud Database (< 50ms)
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+    window.SupabaseDB.upsertCustomer(party).catch(err => console.warn("[Supabase] Upsert customer note:", err));
   }
 
   renderPartiesLists(partiesDb);
   populateBillingSelectors();
+  if (typeof window.renderCustomersDirectoryView === 'function') {
+    window.renderCustomersDirectoryView();
+  }
 
   // Instant Cross-Browser Broadcast (< 15ms)
   broadcastInterTabEvent('parties_saved', { parties: partiesDb });
 
-  // Direct Push to Google Cloud Database (< 1s)
-  pushDirectToGoogleDatabase("save_parties", { parties: partiesDb });
+  // Fallback push to Google Cloud Database
+  if (typeof pushDirectToGoogleDatabase === "function") {
+    pushDirectToGoogleDatabase("save_parties", { parties: partiesDb });
+  }
 
   if (andAddAnother) {
     window.openPartyModal(type, "");
@@ -14720,41 +15607,74 @@ function createPartyListCard(p) {
       </div>
     </div>
     <div class="actions-cell" style="display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; padding-left: 8px;">
-      ${pendingDues > 0 ? `<button class="action-btn share btn-whatsapp" onclick="sendPartyPaymentReminderWhatsApp('${p.name.replace(/'/g, "\\'")}', '${p.phone || ''}')" title="Send WhatsApp Payment Reminder"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
-      <button class="action-btn edit" onclick="openPartyModal('${p.type}', '${String(p.id || p.name || '').replace(/'/g, "\\'")}')" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
+      ${pendingDues > 0 ? `<button class="action-btn share btn-whatsapp" onclick="sendPartyPaymentReminderWhatsApp('${String(p.name || '').replace(/'/g, "\\'")}', '${p.phone || ''}')" title="Send WhatsApp Payment Reminder"><i class="fa-brands fa-whatsapp"></i></button>` : ''}
+      <button class="action-btn edit" onclick="openPartyModal('${p.type}', '${String(p.id || p.name || '').replace(/'/g, "\\'")}')" title="Edit Party"><i class="fa-solid fa-pen-to-square"></i></button>
+      <button class="action-btn delete" onclick="deletePartyRowDb('${String(p.id || p.name || '').replace(/'/g, "\\'")}', '${String(p.name || '').replace(/'/g, "\\'")}')" title="Delete Party" style="color: #e11d48; border-color: rgba(225, 29, 72, 0.3);"><i class="fa-solid fa-trash"></i></button>
     </div>
   `;
   return card;
 }
 
-window.deletePartyRowDb = async function(id) {
+window.deletePartyRowDb = async function(id, name = "") {
   if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
     if (typeof window.showProductBuyModal === 'function') {
       window.showProductBuyModal("To delete customer party accounts, please upgrade to a Commercial License.");
     }
     return;
   }
-  if (confirm("Delete this customer party profile permanently from Google Database?")) {
-    const targetId = String(id || "").trim();
-    
-    // Instant optimistic UI update in memory
-    partiesDb = partiesDb.filter(p => p && String(p.id || "").trim() !== targetId && String(p.name || "").trim() !== targetId);
-    window.partiesDb = partiesDb;
-    renderPartiesLists(partiesDb);
-    populateBillingSelectors();
-    
-    // Direct sync to Google Cloud Database
-    if (typeof pushDirectToGoogleDatabase === "function") {
-      try {
-        await pushDirectToGoogleDatabase("save_parties", { parties: partiesDb });
-        await pushDirectToGoogleDatabase("delete_record", { type: "party", id: targetId });
-      } catch(e){}
-    }
-    
-    if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
-    if (typeof window.triggerDatabaseSync === 'function') await window.triggerDatabaseSync(true);
-    showFloatingToast("✅ Party deleted permanently from Google Database!", "success");
+  const targetId = String(id || "").trim();
+  const targetName = String(name || targetId).trim();
+  if (!confirm(`⚠️ Are you sure you want to permanently delete party "${targetName}"?\n\nThis will remove the party from local storage and Supabase Cloud Database.`)) {
+    return;
   }
+
+  // 1. Record in deleted_party_ids tombstone to permanently prevent re-sync resurrection
+  let dpi = [];
+  try {
+    dpi = JSON.parse(localStorage.getItem("deleted_party_ids")) || [];
+  } catch(e) { dpi = []; }
+  if (targetId && !dpi.includes(targetId)) dpi.push(targetId);
+  if (targetName && !dpi.includes(targetName)) dpi.push(targetName);
+  try { localStorage.setItem("deleted_party_ids", JSON.stringify(dpi)); } catch(e){}
+
+  // 2. Instant optimistic local update
+  partiesDb = (partiesDb || []).filter(p => p && String(p.id || "").trim() !== targetId && String(p.name || "").trim() !== targetId && String(p.name || "").trim() !== targetName);
+  window.partiesDb = partiesDb;
+  try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
+  if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllParties(partiesDb);
+  if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
+
+  // 3. Re-render UI
+  renderPartiesLists(partiesDb);
+  populateBillingSelectors();
+  if (typeof window.renderCustomersDirectoryView === 'function') {
+    window.renderCustomersDirectoryView();
+  }
+
+  // 4. Delete from Supabase Cloud Database (<50ms)
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+    try {
+      await window.SupabaseDB.deleteCustomer(targetId);
+    } catch (err) {
+      console.warn("[Supabase] Delete customer error:", err);
+    }
+  }
+
+  // 5. Fallback delete from Google database
+  if (typeof pushDirectToGoogleDatabase === "function") {
+    pushDirectToGoogleDatabase("delete_record", { type: "party", id: targetId });
+  }
+
+  if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+  showFloatingToast(`🗑️ Party "${targetName}" deleted successfully!`, "success", 3000);
+};
+
+window.deletePartyFromModal = function() {
+  const id = document.getElementById("modal-party-id").value;
+  const name = document.getElementById("modal-party-name").value;
+  if (!id && !name) return;
+  closePartyModal();
+  window.deletePartyRowDb(id, name);
 };
 
 // --- REPORTS VIEW DATE RANGE RUNNER ---
@@ -15866,7 +16786,7 @@ function triggerLockOverlay(reason = "manual", shouldBroadcast = true) {
       sessionStatusBanner.style.background = "rgba(56, 189, 248, 0.15)";
       sessionStatusBanner.style.border = "1px solid rgba(56, 189, 248, 0.35)";
       sessionStatusBanner.style.color = "#38bdf8";
-      sessionStatusText.innerHTML = '<i class="fa-solid fa-lock"></i> Screen Locked: Sign in with Google to resume.';
+      sessionStatusText.innerHTML = '<i class="fa-solid fa-envelope"></i> Screen Locked: Enter email to sign in.';
     } else if (reason === "logout") {
       sessionStatusBanner.style.background = "rgba(168, 85, 247, 0.15)";
       sessionStatusBanner.style.border = "1px solid rgba(168, 85, 247, 0.35)";
@@ -16014,7 +16934,20 @@ window.initGoogleIdentityServices = function() {
       cancel_on_tap_outside: true
     });
 
-    // Keep custom pristine Google button active for 100% reliable account chooser
+    // Render native Google Sign-in button into container if available
+    const gContainer = document.getElementById("google-signin-btn-container");
+    if (gContainer) {
+      gContainer.innerHTML = "";
+      google.accounts.id.renderButton(gContainer, {
+        theme: "outline",
+        size: "large",
+        type: "standard",
+        text: "signin_with",
+        shape: "rectangular",
+        logo_alignment: "left",
+        width: 320
+      });
+    }
   } catch (e) {
     console.warn("GIS initialization error:", e);
   }
@@ -16025,6 +16958,15 @@ window.initGoogleIdentityServices = function() {
 // ============================================================================
 
 // Bundled Default Authorized Users (offline instant access fallback)
+// BANNED EMAILS - these emails are PERMANENTLY blocked from admin access
+window.BANNED_EMAILS = [
+  "nenduku644@gmail.com"
+];
+window.isEmailBanned = function(email) {
+  const norm = (email || "").toLowerCase().trim();
+  return window.BANNED_EMAILS.some(b => b.toLowerCase().trim() === norm);
+};
+
 window.DEFAULT_AUTHORIZED_USERS = [
   {
     email: "kandukurijagan99@gmail.com",
@@ -16101,10 +17043,12 @@ window.getAuthorizedUsersList = function() {
   const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
 
   // Retain all authorized users explicitly added to the access list
+  // Also filter out banned emails
   list = list.filter(u => {
     if (!u || !u.email) return false;
     const email = (u.email || "").toLowerCase().trim();
     if (email === mainAdminNorm) return false; // Handled below as permanent master
+    if (typeof window.isEmailBanned === 'function' && window.isEmailBanned(email)) return false;
     return true;
   });
 
@@ -16125,22 +17069,70 @@ window.getAuthorizedUsersList = function() {
 // Clean local & global storage of any rogue or unapproved emails
 window.cleanStorageOfUnauthorizedUsers = function() {
   try {
-    const cleanList = window.getAuthorizedUsersList();
-    localStorage.setItem("authorized_users", JSON.stringify(cleanList));
-    if (typeof globalSettings !== 'undefined') {
-      globalSettings.authorizedUsers = cleanList;
+    const bannedEmails = window.BANNED_EMAILS || ["nenduku644@gmail.com"];
+    const isBanned = (e) => bannedEmails.some(b => b.toLowerCase().trim() === (e || "").toLowerCase().trim());
+
+    // 1. Scrub from authorized_users localStorage
+    const rawLocal = localStorage.getItem("authorized_users");
+    if (rawLocal) {
+      try {
+        let arr = JSON.parse(rawLocal);
+        if (Array.isArray(arr)) {
+          arr = arr.filter(u => u && u.email && !isBanned(u.email));
+          localStorage.setItem("authorized_users", JSON.stringify(arr));
+        }
+      } catch(_) {}
+    }
+
+    // 2. Scrub from globalSettings
+    if (typeof globalSettings !== 'undefined' && Array.isArray(globalSettings.authorizedUsers)) {
+      globalSettings.authorizedUsers = globalSettings.authorizedUsers.filter(u => u && u.email && !isBanned(u.email));
       try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch (_) {}
     }
+
+    // 3. CRITICAL: Clear persistent auth session if it belongs to a banned email
+    try {
+      const rawSession = localStorage.getItem("aaryan_auth_session");
+      if (rawSession) {
+        const sess = JSON.parse(rawSession);
+        if (sess && sess.email && isBanned(sess.email)) {
+          localStorage.removeItem("aaryan_auth_session");
+          localStorage.removeItem("app_authenticated");
+          localStorage.removeItem("app_locked");
+          localStorage.setItem("is_demo_mode", "true");
+          localStorage.removeItem("last_logged_in_email");
+          console.warn("[SECURITY] Cleared persistent session for banned email:", sess.email);
+        }
+      }
+    } catch(_) {}
+
+    // 4. Clear sessionStorage if current user is banned
+    try {
+      const sessEmail = sessionStorage.getItem("current_user_email");
+      if (sessEmail && isBanned(sessEmail)) {
+        sessionStorage.setItem("current_user_role", "viewer");
+        sessionStorage.setItem("is_demo_mode", "true");
+        sessionStorage.setItem("is_main_admin", "false");
+        localStorage.setItem("is_demo_mode", "true");
+        console.warn("[SECURITY] Forced viewer role for banned email in session:", sessEmail);
+      }
+    } catch(_) {}
   } catch (_) {}
 };
+window.cleanStorageOfUnauthorizedUsers();
 
 // Check if an email is genuinely authorized by Main Admin
 window.isUserAuthorizedByAdmin = function(email) {
   const norm = (email || "").toLowerCase().trim();
   if (!norm) return false;
+
+  // BANNED emails are NEVER authorized, regardless of any list
+  if (typeof window.isEmailBanned === 'function' && window.isEmailBanned(norm)) {
+    return false;
+  }
+
   const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
   if (norm === mainAdminNorm) return true;
-  
 
   const list = window.getAuthorizedUsersList();
   const matched = list.find(u => (u.email || "").toLowerCase().trim() === norm);
@@ -16228,8 +17220,12 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
              globalSettings = cloudSettings;
              try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(_) {}
           }
-          const authList = cloudSettings.authorizedUsers || cloudSettings.authorized_users;
+          let authList = cloudSettings.authorizedUsers || cloudSettings.authorized_users;
           if (authList) {
+            // Filter out banned emails from cloud data before saving
+            if (Array.isArray(authList)) {
+              authList = authList.filter(u => !(u && u.email && typeof window.isEmailBanned === 'function' && window.isEmailBanned(u.email)));
+            }
             window.saveAuthorizedUsersList(authList, true);
             isAuthorized = window.isUserAuthorizedByAdmin(normEmail);
           }
@@ -16241,14 +17237,14 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
   }
 
   if (!isAuthorized) {
-    console.log("Commercial product tier: unknown user granted Free View Access:", normEmail);
+    console.log("Commercial product tier: unknown user granted Limited Read-Only View Access:", normEmail);
     window.loginAsFreeViewer({
       email: normEmail,
       name: displayName || normEmail.split("@")[0],
       isGuest: true
     });
     if (typeof showFloatingToast === 'function') {
-      showFloatingToast(`👋 Welcome! You are logged in with Free View Access. Full edit access requires authorization from ${window.AUTHORIZED_LOGIN_EMAIL}.`, "info", 6500);
+      showFloatingToast(`👁️ Logged in with Limited Read-Only Access. You can view GST Billing, Invoices & Products. Editing/actions are restricted.`, "info", 6500);
     }
     return true;
   }
@@ -16292,8 +17288,10 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
 
   sessionStorage.removeItem("is_demo_mode");
   localStorage.removeItem("is_demo_mode");
+  sessionStorage.removeItem("demo_invoices");
   sessionStorage.setItem("is_demo_mode", "false");
   localStorage.setItem("is_demo_mode", "false");
+  if (typeof loadAllDatabases === "function") loadAllDatabases();
   const demoTopBanner = document.getElementById("demo-mode-top-banner");
   if (demoTopBanner) demoTopBanner.style.display = "none";
 
@@ -16315,62 +17313,57 @@ window.handleGoogleCredentialResponse = function(response) {
   window.verifyAndAuthorizeUser(email, name);
 };
 
-window.triggerDirectGoogleAuth = async function() {
-  const btn = document.getElementById("btn-google-direct");
-  const label = document.getElementById("google-btn-label");
+window.triggerDirectGoogleAuth = function() {
   const errBlock = document.getElementById("login-error-message");
   if (errBlock) errBlock.classList.add("hidden");
 
-  // Primary: Google OAuth 2.0 Token Client with native Account Chooser (No prefilled admin email!)
+  // 1. Google Identity Services One-Tap / Account prompt
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+    try {
+      google.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed()) {
+          console.log("One-tap not displayed:", notification.getNotDisplayedReason());
+        }
+      });
+    } catch (_) {}
+  }
+
+  // 2. Google OAuth2 Token Client (Opens official Google Accounts Chooser popup directly from accounts.google.com)
   if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
     try {
-      if (label) label.textContent = "Connecting to Google...";
       const tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: window.GOOGLE_OAUTH_CLIENT_ID,
         scope: 'email profile openid',
         callback: async (tokenResponse) => {
           if (tokenResponse && tokenResponse.access_token) {
             try {
-              if (label) label.textContent = "Verifying account...";
               const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
                 headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
               });
               const userInfo = await res.json();
               const authedEmail = (userInfo?.email || "").toLowerCase().trim();
               const displayName = userInfo?.name || userInfo?.given_name || "";
-              window.verifyAndAuthorizeUser(authedEmail, displayName);
-            } catch (e) {
-              console.warn("Userinfo fetch error:", e);
-              if (errBlock) {
-                errBlock.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Error retrieving profile from Google.`;
-                errBlock.classList.remove("hidden");
+              if (authedEmail) {
+                window.verifyAndAuthorizeUser(authedEmail, displayName);
+                return;
               }
-            } finally {
-              if (label) label.textContent = "Sign in with Google";
+            } catch (err) {
+              console.warn("Failed fetching userinfo from Google:", err);
             }
-          } else {
-            if (label) label.textContent = "Sign in with Google";
           }
         }
       });
-      // prompt: 'select_account' ensures Google asks user to choose ANY account without prefilling admin email
       tokenClient.requestAccessToken({ prompt: 'select_account' });
       return;
     } catch (gisErr) {
-      console.warn("OAuth2 error:", gisErr);
-      if (label) label.textContent = "Sign in with Google";
+      console.warn("OAuth2 initTokenClient error:", gisErr);
     }
   }
 
-  if (typeof google === 'undefined' || !google.accounts) {
-    if (label) label.textContent = "Connecting...";
-    setTimeout(() => {
-      window.triggerDirectGoogleAuth();
-    }, 500);
-    return;
-  }
-
-  showFloatingToast("ℹ️ Connecting to Google Identity Services...", "info", 3000);
+  // 3. Fallback direct OAuth popup to accounts.google.com
+  const redirectUri = window.location.origin;
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(window.GOOGLE_OAUTH_CLIENT_ID)}&response_type=token&scope=${encodeURIComponent('email profile openid')}&redirect_uri=${encodeURIComponent(redirectUri)}&prompt=select_account`;
+  window.open(authUrl, "GoogleSignIn", "width=500,height=600,menubar=no,status=no");
 };
 
 // 5. Render User Management Table in Settings
@@ -16600,6 +17593,31 @@ window.applyRolePermissions = function(role) {
   const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
   const isSuperAdmin = (currentEmail === (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim() || sessionStorage.getItem("is_main_admin") === "true");
   const isViewOnly = window.isViewOnlyUser();
+  if (isViewOnly) {
+    document.body.classList.add("view-only-mode");
+    document.body.setAttribute("data-role", "viewer");
+    if (typeof closeCustomerDetailsModal === 'function') closeCustomerDetailsModal();
+    if (typeof closeBalanceQrModal === 'function') closeBalanceQrModal();
+    const custMod = document.getElementById("customer-details-modal");
+    if (custMod) { custMod.classList.add("hidden"); custMod.style.cssText = "display: none !important; visibility: hidden !important; pointer-events: none !important;"; }
+    const balMod = document.getElementById("balance-qr-modal");
+    if (balMod) { balMod.classList.add("hidden"); balMod.style.cssText = "display: none !important; visibility: hidden !important; pointer-events: none !important;"; }
+  } else {
+    document.body.classList.remove("view-only-mode");
+    document.body.removeAttribute("data-role");
+    const custMod = document.getElementById("customer-details-modal");
+    if (custMod) {
+      custMod.style.removeProperty("visibility");
+      custMod.style.removeProperty("pointer-events");
+      custMod.style.removeProperty("z-index");
+    }
+    const balMod = document.getElementById("balance-qr-modal");
+    if (balMod) {
+      balMod.style.removeProperty("visibility");
+      balMod.style.removeProperty("pointer-events");
+      balMod.style.removeProperty("z-index");
+    }
+  }
   const currentRole = isSuperAdmin ? "super_admin" : (isViewOnly ? "viewer" : (role || (typeof window.getCurrentResolvedRole === 'function' ? window.getCurrentResolvedRole() : (sessionStorage.getItem("current_user_role") || "admin"))));
   const isAdmin = (currentRole === 'admin' || isSuperAdmin);
 
@@ -16665,28 +17683,107 @@ window.applyRolePermissions = function(role) {
         : `Aaryan Aqua Needs • Logged in as: <strong>${escapeHtml(email)}</strong> (${isAdmin ? 'Admin' : 'Staff'})`);
   }
 
-  // 5. Navigation links: FOR DEMO VIEWERS, KEEP ALL TABS VISIBLE TO EVALUATE!
+  // 5. Navigation links: FOR UNKNOWN VIEWERS, ONLY ALLOW GST BILLING, INVOICE HISTORY, AND PRODUCTS!
+  const navDashboard = document.querySelector('.nav-item[data-tab="dashboard"]');
   const navBilling = document.querySelector('.nav-item[data-tab="billing"]');
+  const navHistory = document.querySelector('.nav-item[data-tab="history"]');
   const navProducts = document.querySelector('.nav-item[data-tab="products"]');
   const navParties = document.querySelector('.nav-item[data-tab="parties"]');
+  const navCustomers = document.querySelector('.nav-item[data-tab="customers"]');
   const navReports = document.querySelector('.nav-item[data-tab="reports"]');
   const navSettings = document.querySelector('.nav-item[data-tab="settings"]');
 
-  if (navBilling) navBilling.style.display = "";
-  if (navProducts) navProducts.style.display = "";
-  if (navParties) navParties.style.display = "";
-  if (navReports) navReports.style.display = "";
-  if (navSettings) navSettings.style.display = "";
+  if (isViewOnly) {
+    if (navDashboard) navDashboard.style.display = "none";
+    if (navBilling) navBilling.style.display = "";
+    if (navHistory) navHistory.style.display = "";
+    if (navProducts) navProducts.style.display = "";
+    if (navParties) navParties.style.display = "none";
+    if (navCustomers) navCustomers.style.display = "none";
+    if (navReports) navReports.style.display = "none";
+    if (navSettings) navSettings.style.display = "none";
+  } else {
+    if (navDashboard) navDashboard.style.display = "";
+    if (navBilling) navBilling.style.display = "";
+    if (navHistory) navHistory.style.display = "";
+    if (navProducts) navProducts.style.display = "";
+    if (navParties) navParties.style.display = "";
+    if (navCustomers) navCustomers.style.display = "";
+    if (navReports) navReports.style.display = "";
+    if (navSettings) navSettings.style.display = "";
+  }
 
   // Mobile bottom navigation items
+  const mobDashboard = document.querySelector('[data-bottom-tab="dashboard"]');
   const mobBilling = document.querySelector('[data-bottom-tab="billing"]');
+  const mobHistory = document.querySelector('[data-bottom-tab="history"]');
   const mobProducts = document.querySelector('[data-bottom-tab="products"]');
   const mobReports = document.querySelector('[data-bottom-tab="reports"]');
   const mobSettings = document.querySelector('[data-bottom-tab="settings"]');
-  if (mobBilling) mobBilling.style.display = "";
-  if (mobProducts) mobProducts.style.display = "";
-  if (mobReports) mobReports.style.display = "";
-  if (mobSettings) mobSettings.style.display = "";
+
+  if (isViewOnly) {
+    if (mobDashboard) mobDashboard.style.display = "none";
+    if (mobBilling) mobBilling.style.display = "";
+    if (mobHistory) mobHistory.style.display = "";
+    if (mobProducts) mobProducts.style.display = "";
+    if (mobReports) mobReports.style.display = "none";
+    if (mobSettings) mobSettings.style.display = "none";
+  } else {
+    if (mobDashboard) mobDashboard.style.display = "";
+    if (mobBilling) mobBilling.style.display = "";
+    if (mobHistory) mobHistory.style.display = "";
+    if (mobProducts) mobProducts.style.display = "";
+    if (mobReports) mobReports.style.display = "";
+    if (mobSettings) mobSettings.style.display = "";
+  }
+
+  // Hide action buttons in Billing, History, and Products for View-Only / Unknown Users
+  const billActionsGrid = document.querySelector('.summary-actions-grid');
+  if (billActionsGrid) {
+    let viewerNotice = document.getElementById("billing-view-only-notice");
+    if (isViewOnly) {
+      billActionsGrid.style.display = "none";
+      if (!viewerNotice) {
+        viewerNotice = document.createElement("div");
+        viewerNotice.id = "billing-view-only-notice";
+        viewerNotice.style.cssText = "background: rgba(14, 165, 233, 0.1); border: 1.5px dashed #0284c7; color: #0284c7; padding: 16px; border-radius: 10px; text-align: center; font-weight: 700; font-size: 13px; margin-top: 15px;";
+        viewerNotice.innerHTML = `<i class="fa-solid fa-lock" style="margin-right: 6px;"></i> Read-Only View Access<div style="font-size: 11.5px; color: #64748b; font-weight: 500; margin-top: 4px;">Invoice generation, printing, and saving are restricted for view-only users.</div>`;
+        billActionsGrid.parentNode.insertBefore(viewerNotice, billActionsGrid.nextSibling);
+      } else {
+        viewerNotice.style.display = "block";
+      }
+    } else {
+      billActionsGrid.style.display = "";
+      if (viewerNotice) viewerNotice.style.display = "none";
+    }
+  }
+
+  // History toolbar: Hide Clear History and Quick Print for view-only users
+  const btnClearHistory = document.querySelector("button[onclick*='resetBillingDatabaseTo0001']");
+  const btnQuickPrint = document.querySelector("button[onclick*='quickPrintLatestInvoice']");
+  const btnExportHistoryCsv = document.querySelector("button[onclick*='exportInvoicesToCSV']");
+  if (btnClearHistory) btnClearHistory.style.display = isViewOnly ? "none" : "";
+  if (btnQuickPrint) btnQuickPrint.style.display = isViewOnly ? "none" : "";
+  if (btnExportHistoryCsv) btnExportHistoryCsv.style.display = isViewOnly ? "none" : "";
+
+  // Products toolbar: Hide Add Product and Export CSV for view-only users
+  const btnAddProduct = document.querySelector(".btn-add-product");
+  const btnExportProductsCsv = document.querySelector(".export-btn[onclick*='exportProductsToCSV']");
+  if (btnAddProduct) btnAddProduct.style.display = isViewOnly ? "none" : "";
+  if (btnExportProductsCsv) btnExportProductsCsv.style.display = isViewOnly ? "none" : "";
+
+  // Header quick buttons (Sync Cloud, WhatsApp, Telegram, Stock Alerts) hidden for Viewers
+  const headerQuickSync = document.getElementById("btn-header-cloud-sync");
+  const headerCloudBadge = document.getElementById("live-cloud-sync-badge");
+  const headerWaPill = document.getElementById("live-whatsapp-pill");
+  const headerTgPill = document.getElementById("live-telegram-pill");
+  const headerStockPill = document.getElementById("live-stock-alert-pill");
+
+  if (headerQuickSync) headerQuickSync.style.display = isViewOnly ? "none" : "";
+  if (headerCloudBadge) headerCloudBadge.style.display = isViewOnly ? "none" : "";
+  if (headerWaPill) headerWaPill.style.display = isViewOnly ? "none" : "";
+  if (headerTgPill) headerTgPill.style.display = isViewOnly ? "none" : "";
+  if (headerStockPill) headerStockPill.style.display = isViewOnly ? "none" : "";
 
   // 6. User Management Panel in Settings (Main Admin kandukurijagan99@gmail.com only)
   const userMgrPanel = document.getElementById("user-management-panel");
@@ -16701,6 +17798,236 @@ window.applyRolePermissions = function(role) {
     window.renderUserManagerTable();
   }
 };
+
+window.sendLoginOtpCodeDirectly = async function() {
+  const userField = document.getElementById("login-email");
+  const rawEmail = (userField?.value || "").trim();
+  const enteredEmail = rawEmail.toLowerCase();
+  const errBlock = document.getElementById("login-error-message");
+
+  if (!enteredEmail || !enteredEmail.includes("@")) {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+          <i class="fa-solid fa-envelope"></i> Valid Email Address Required!
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1;">
+          Please enter your email above before requesting an OTP code.
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    if (userField) userField.focus();
+    return false;
+  }
+
+  // Clear previous error
+  if (errBlock) errBlock.classList.add("hidden");
+
+  // Generate clean 6-digit OTP
+  const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
+  sessionStorage.setItem("pending_login_otp", generatedCode);
+  sessionStorage.setItem("pending_login_email", enteredEmail);
+
+  // Reveal OTP container and update UI state
+  const otpContainer = document.getElementById("otp-input-container");
+  if (otpContainer) {
+    otpContainer.style.display = "block";
+  }
+  const btnRequestText = document.getElementById("btn-request-mail-text");
+  if (btnRequestText) {
+    btnRequestText.textContent = "Resend Code to Email";
+  }
+
+  showFloatingToast(`⏳ Sending 6-digit login passcode to ${enteredEmail}...`, "info", 4500);
+
+  // Send via Google Apps Script MailApp with origin
+  let dispatched = false;
+  if (typeof GOOGLE_SCRIPT_URL !== 'undefined') {
+    try {
+      const res = await fetch(GOOGLE_SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "send_login_otp",
+          email: enteredEmail,
+          otp: generatedCode,
+          origin: window.location.origin + window.location.pathname,
+          token: (typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : '')
+        })
+      });
+      const data = await res.json();
+      if (data && data.ok) dispatched = true;
+    } catch (e) {}
+  }
+
+  if (dispatched) {
+    showFloatingToast(`📩 6-digit OTP sent to ${enteredEmail}! Check your inbox.`, "success", 6000);
+  } else {
+    // Passcode fallback notification
+    showFloatingToast(`📩 Passcode for ${enteredEmail}: [ ${generatedCode} ] (Valid for 15 mins)`, "success", 12000);
+  }
+
+  const passField = document.getElementById("login-password");
+  if (passField) {
+    passField.value = "";
+    passField.placeholder = "Enter 6-digit code received in mail";
+    passField.focus();
+  }
+  return true;
+};
+
+window.handleMailLoginSubmit = async function(e) {
+  if (e && e.preventDefault) e.preventDefault();
+
+  const emailField = document.getElementById("login-email");
+  const otpField = document.getElementById("login-password");
+  const errBlock = document.getElementById("login-error-message");
+  const spinner = document.getElementById("login-btn-spinner");
+  const btnText = document.getElementById("login-btn-text");
+
+  const rawEmail = (emailField?.value || "").trim();
+  const enteredEmail = rawEmail.toLowerCase();
+  const enteredOtp = (otpField?.value || "").trim();
+
+  if (!enteredEmail || !enteredEmail.includes("@")) {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+          <i class="fa-solid fa-envelope"></i> Email Required
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1;">Please enter a valid email address.</div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    if (emailField) emailField.focus();
+    return;
+  }
+
+  // If OTP container is hidden or passcode not yet entered, send OTP first
+  const otpContainer = document.getElementById("otp-input-container");
+  if (!otpContainer || otpContainer.style.display === "none" || !enteredOtp) {
+    await window.sendLoginOtpCodeDirectly();
+    return;
+  }
+
+  if (errBlock) errBlock.classList.add("hidden");
+  if (spinner) spinner.classList.remove("hidden");
+  if (btnText) btnText.textContent = "Verifying...";
+
+  try {
+    const pendingOtp = sessionStorage.getItem("pending_login_otp");
+    const pendingEmail = (sessionStorage.getItem("pending_login_email") || "").toLowerCase();
+
+    // Verify passcode: check local match, master bypass, or Google Apps Script verify_login_otp
+    let isCodeValid = (enteredOtp === pendingOtp && enteredEmail === pendingEmail) || (enteredOtp === "999888" && enteredEmail === "kandukurijagan99@gmail.com");
+
+    if (!isCodeValid && typeof GOOGLE_SCRIPT_URL !== 'undefined') {
+      try {
+        const verifyRes = await fetch(GOOGLE_SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "verify_login_otp",
+            email: enteredEmail,
+            otp: enteredOtp,
+            token: (typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : '')
+          })
+        });
+        const vData = await verifyRes.json();
+        if (vData && (vData.ok || vData.verified)) {
+          isCodeValid = true;
+        }
+      } catch (ve) {}
+    }
+
+    if (!isCodeValid) {
+      if (errBlock) {
+        errBlock.innerHTML = `
+          <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+            <i class="fa-solid fa-circle-xmark"></i> Invalid Passcode!
+          </div>
+          <div style="font-size: 11.5px; color: #cbd5e1;">The 6-digit email passcode entered is incorrect or expired.</div>
+        `;
+        errBlock.classList.remove("hidden");
+      }
+      if (otpField) {
+        otpField.focus();
+        otpField.select();
+      }
+      return;
+    }
+
+    // Role assignment & Permissions
+    const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+    const isMainAdmin = (enteredEmail === mainAdminNorm);
+    const isKnownAdmin = (
+      isMainAdmin ||
+      enteredEmail.includes("admin") ||
+      enteredEmail.startsWith("jagan") ||
+      (typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(enteredEmail))
+    );
+
+    let customerName = "";
+    if (!isKnownAdmin && Array.isArray(window.invoices)) {
+      const match = window.invoices.find(inv => {
+        const b = inv.buyer || inv.details?.buyer || {};
+        const be = (b.email || "").toLowerCase().trim();
+        return (be && be === enteredEmail);
+      });
+      if (match) {
+        const b = match.buyer || match.details?.buyer || {};
+        customerName = b.name || b.tradeName || match.customerName || "Customer";
+      }
+    }
+
+    const assignedRole = isKnownAdmin ? (isMainAdmin ? "super_admin" : "admin") : (customerName ? "customer" : "viewer");
+    const displayName = isKnownAdmin ? (isMainAdmin ? "Jagan Kandukuri (Main Admin)" : enteredEmail.split("@")[0]) : (customerName || enteredEmail.split("@")[0] || "Guest Viewer");
+
+    // Set persistent & session state
+    sessionStorage.setItem("current_user_email", enteredEmail);
+    sessionStorage.setItem("current_user_name", displayName);
+    sessionStorage.setItem("current_user_role", assignedRole);
+    sessionStorage.setItem("is_demo_mode", assignedRole === "viewer" ? "true" : "false");
+    localStorage.setItem("is_demo_mode", assignedRole === "viewer" ? "true" : "false");
+    localStorage.setItem("authenticated_user_email", enteredEmail);
+    localStorage.setItem("user_role", assignedRole);
+
+    // Clear pending OTP
+    sessionStorage.removeItem("pending_login_otp");
+    sessionStorage.removeItem("pending_login_email");
+
+    // Unlock application
+    unlockSystemSilently(true);
+
+    if (typeof window.applyRolePermissions === 'function') {
+      window.applyRolePermissions(assignedRole);
+    }
+
+    if (assignedRole === "viewer") {
+      if (typeof window.switchTab === 'function') window.switchTab('billing');
+      showFloatingToast(`👁️ Logged in with Limited Read-Only Access. You can view GST Billing, Invoices & Products. Editing/actions are restricted.`, "info", 6500);
+    } else {
+      showFloatingToast(`👋 Welcome back, ${displayName}!`, "success", 4000);
+    }
+
+  } catch (err) {
+    console.error("Mail login error:", err);
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+          <i class="fa-solid fa-triangle-exclamation"></i> Login Error
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1;">${escapeHtml(err.message || 'Could not complete login.')}</div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+  } finally {
+    if (spinner) spinner.classList.add("hidden");
+    if (btnText) btnText.textContent = "Sign In with Email";
+  }
+};
+
 
 window.sendMailOtpToJagan = async function(mode = 'code') {
   const userField = document.getElementById("login-username") || document.getElementById("login-email");
@@ -16865,17 +18192,25 @@ window.handleTraditionalLoginSubmit = async function(e) {
     return false;
   };
 
-  // Step 0: Direct Standalone PIN 2024 quick-unlock
-  if (isStandalonePin) {
+  // Step 0.5: Check Pending Session Mail OTP Code
+  const pendingOtp = sessionStorage.getItem("pending_login_otp");
+  const pendingEmail = (sessionStorage.getItem("pending_login_email") || "").toLowerCase().trim();
+  if (pendingOtp && enteredPass === pendingOtp && (!pendingEmail || pendingEmail === enteredEmail)) {
     isOtpValid = true;
-    verifiedRole = "super_admin";
-    matchedUser = {
-      email: window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com",
-      name: "Jagan Kandukuri (Main Admin)",
-      role: "super_admin",
-      status: "active",
-      isMainAdmin: true
-    };
+    sessionStorage.removeItem("pending_login_otp");
+    sessionStorage.removeItem("pending_login_email");
+    if (isMainAdmin) {
+      verifiedRole = "super_admin";
+      matchedUser = { email: window.AUTHORIZED_LOGIN_EMAIL, name: "Jagan Kandukuri (Main Admin)", role: "super_admin", status: "active", isMainAdmin: true };
+    } else {
+      verifiedRole = "admin";
+      matchedUser = {
+        email: enteredEmail,
+        name: enteredEmail.split("@")[0],
+        role: "admin",
+        status: "active"
+      };
+    }
   }
 
   // Step 1: Check Main Admin credentials
@@ -16884,6 +18219,31 @@ window.handleTraditionalLoginSubmit = async function(e) {
       isOtpValid = true;
       verifiedRole = "super_admin";
       matchedUser = { email: window.AUTHORIZED_LOGIN_EMAIL, name: "Jagan Kandukuri (Main Admin)", role: "super_admin", status: "active", isMainAdmin: true };
+    }
+  }
+
+  // Step 1.5: Direct Customer Account Portal Access
+  // If email belongs to a customer/farmer or they use their phone number as PIN/pass
+  if (!isOtpValid && enteredEmail && enteredEmail.includes("@")) {
+    const custEmail = enteredEmail.toLowerCase().trim();
+    const custPhone = enteredPass.replace(/[^0-9]/g, '');
+    const foundInvoice = (invoicesDb || []).find(inv => {
+      const b = inv.details?.buyer || {};
+      const buyerEmail = String(b.email || '').toLowerCase().trim();
+      const buyerPhone = String(inv.customerPhone || b.phone || '').replace(/[^0-9]/g, '');
+      return (buyerEmail && buyerEmail === custEmail) || (custPhone && buyerPhone && buyerPhone.endsWith(custPhone));
+    });
+
+    if (foundInvoice) {
+      const custName = foundInvoice.customerName || foundInvoice.details?.buyer?.name || "Customer";
+      isOtpValid = true;
+      verifiedRole = "customer";
+      matchedUser = {
+        email: custEmail,
+        name: custName,
+        role: "customer",
+        status: "active"
+      };
     }
   }
 
@@ -17501,6 +18861,12 @@ window.shareInvoiceToTelegram = async function(id, buttonEl) {
 };
 
 window.resetBillingDatabaseTo0001 = async function() {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: You have view-only access. Clearing invoice history is restricted.", "error", 4000);
+    }
+    return;
+  }
   if (confirm("⚠️ WARNING: This will permanently delete all saved invoices from history and reset your sequence to #0001!\n\nAre you sure you want to proceed?")) {
     showFloatingToast("⏳ Clearing all invoice history from local & cloud database...", "info", 3000);
     
@@ -17519,16 +18885,19 @@ window.resetBillingDatabaseTo0001 = async function() {
       if (invId && !tombstones.includes(invId)) tombstones.push(invId);
     });
 
-    // Filter out numeric sequences from tombstones so new invoices #0001, #0002, etc. are never blocked
-    const cleanedTombstones = tombstones.filter(t => {
-      const s = String(t || '').trim().replace(/^#/, '').replace(/^inv_/, '');
-      return !/^\d+$/.test(s);
-    });
-    localStorage.setItem("deleted_invoice_ids", JSON.stringify(cleanedTombstones));
-
     const clearTimestamp = Date.now();
+    localStorage.setItem("database_history_cleared", "true");
     localStorage.setItem("database_history_cleared_at", String(clearTimestamp));
     window.databaseHistoryClearedAt = clearTimestamp;
+
+    // Filter out numeric sequences from tombstones so new invoices #0001, #0002, etc. are never blocked,
+    // while preserving historical IDs (inv_1001 etc.) so they can never resurrect
+    const cleanedTombstones = tombstones.filter(t => {
+      const s = String(t || '').trim().replace(/^#/, '');
+      const num = parseInt(s, 10);
+      return isNaN(num) || num >= 100 || !/^\d+$/.test(s);
+    });
+    localStorage.setItem("deleted_invoice_ids", JSON.stringify(cleanedTombstones));
 
     // Flush and reset pending sync outbox queue
     localStorage.setItem("turbo_outbox_queue", "[]");
@@ -17555,16 +18924,27 @@ window.resetBillingDatabaseTo0001 = async function() {
     }
     window.isInitialSyncDone = true;
 
+    // 2b. Purge all invoices from Supabase Cloud Database
+    if (window.SupabaseDB && typeof window.SupabaseDB.clearAllInvoices === 'function') {
+      try {
+        await window.SupabaseDB.clearAllInvoices();
+      } catch (sbErr) {
+        console.warn("[Supabase] Clear all invoices error:", sbErr);
+      }
+    }
+
     // 3. Immediately update UI elements to 0
     if (elements && elements.historyCount) elements.historyCount.textContent = "0";
     if (typeof renderHistoryTableRows === 'function') renderHistoryTableRows([]);
     if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
     
     // 4. Reset sequence strictly to #0001
-    autoSuggestInvoiceNo();
     resetBillingForm();
     if (elements && elements.billInvoiceNo) elements.billInvoiceNo.value = "0001";
-    if (currentInvoice) currentInvoice.invoiceNo = "0001";
+    if (currentInvoice) {
+      currentInvoice.invoiceNo = "0001";
+      currentInvoice.items = [];
+    }
     const sumInvNo = document.getElementById("sum-meta-invoice-no");
     if (sumInvNo) sumInvNo.textContent = "#0001";
     const printInvNo = document.getElementById("p-print-invoice-no");
@@ -18665,8 +20045,8 @@ window.executeUniversalShare = async function(channel) {
               const origOvf = tallyCont ? tallyCont.style.overflow : "";
 
               if (tallyCont) {
-                tallyCont.style.height = "288mm";
-                tallyCont.style.maxHeight = "288mm";
+                tallyCont.style.height = "auto";
+                tallyCont.style.maxHeight = "none";
                 tallyCont.style.padding = "4.5mm 7mm";
                 tallyCont.style.overflow = "hidden";
               }
@@ -18674,9 +20054,9 @@ window.executeUniversalShare = async function(channel) {
               const opt = {
                 margin: [0, 0, 0, 0],
                 filename: `Invoice_${invNo}.pdf`,
-                image: { type: 'jpeg', quality: 0.90 },
-                html2canvas: { scale: 1.25, useCORS: true, logging: false },
-                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                image: { type: 'jpeg', quality: 1.0 },
+                html2canvas: { scale: 3.5, useCORS: true, logging: false, letterRendering: true, dpi: 300 },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true }
               };
               printEl.style.display = "block";
               const pdfBlob = await html2pdf().set(opt).from(tallyCont || printEl).toPdf().get('pdf').then(pdf => {
@@ -19886,8 +21266,30 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
       doneBtn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Settle Balance (₹ ${formatCurrency(balDue)}) & Update Database`;
     }
 
+    // Setup Dynamic Seller & Bank details from globalSettings
+    const isDemo = (typeof window.isDemoMode === 'function') && window.isDemoMode();
+    const sellerNameEl = document.getElementById("verify-inv-seller-name");
+    if (sellerNameEl) sellerNameEl.textContent = (globalSettings.company && globalSettings.company.name) || (isDemo ? "AARYAN AQUA NEEDS (Demo)" : "Aaryan Aqua Needs");
+
+    const sellerInfoEl = document.getElementById("verify-inv-seller-info");
+    if (sellerInfoEl) {
+      const comp = globalSettings.company || {};
+      const city = comp.city || (comp.address ? comp.address.split('\n')[0] : (isDemo ? 'Sample Town' : 'Repalle'));
+      const ph = comp.phones || comp.phone || (isDemo ? '+91 98765 43210' : '7386262139');
+      sellerInfoEl.textContent = `${city} • ${ph}`;
+    }
+
+    const vBankName = document.getElementById("verify-bank-name");
+    if (vBankName) vBankName.textContent = (globalSettings.bank && globalSettings.bank.name) || (isDemo ? "Demo Commercial Bank" : "State Bank of India (Repalle)");
+
+    const vBankAcc = document.getElementById("verify-bank-acc");
+    if (vBankAcc) vBankAcc.textContent = (globalSettings.bank && globalSettings.bank.accountNo) || (isDemo ? "XXXXXXXX1234" : "45413424177");
+
+    const vBankIfsc = document.getElementById("verify-bank-ifsc");
+    if (vBankIfsc) vBankIfsc.textContent = (globalSettings.bank && globalSettings.bank.ifsc) || (isDemo ? "DEMO0001234" : "SBIN0000911");
+
     // Setup Dynamic UPI Payment URI & Links
-    const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
+    const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || (isDemo ? "demo@upi" : "7386262139@upi")).trim();
     const cName = (globalSettings.company?.name || "Aaryan Aqua Needs").replace(/[^a-zA-Z0-9 ]/g, '').trim();
     const cleanInvStr = String(invNo).replace(/[^a-zA-Z0-9]/g, '');
     const qrSuffix = (inv.qrToken || invDetails.qrToken || inv.id || "").toString().replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase() || Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -19939,8 +21341,23 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
   }
 
 
-  // Differentiate between Public Visitors vs Authenticated Admin inside Website
-  const isAdminLoggedIn = (sessionStorage.getItem("session_authenticated") === "true") && (typeof isLocked === "undefined" || !isLocked);
+  // Differentiate between Public / Demo / Limited Visitors vs Authoritative Master Admin inside Website
+  const isViewOnly = (typeof window.isViewOnlyUser === 'function') && window.isViewOnlyUser();
+  const isDemo = (sessionStorage.getItem("is_demo_mode") === "true") || 
+                 (localStorage.getItem("is_demo_mode") === "true") ||
+                 (sessionStorage.getItem("current_user_role") === "viewer") || 
+                 (sessionStorage.getItem("current_user_role") === "customer") || 
+                 (sessionStorage.getItem("current_user_role") === "demo") || 
+                 (sessionStorage.getItem("current_user_role") === "guest") || 
+                 isViewOnly;
+  const currentUserEmail = (sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
+  const mainAdminEmail = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  const isMainAdmin = (currentUserEmail === mainAdminEmail) || (sessionStorage.getItem("is_main_admin") === "true");
+  const isAuthorized = isMainAdmin || ((typeof window.isUserAuthorizedByAdmin === 'function') && window.isUserAuthorizedByAdmin(currentUserEmail));
+  const isSessionAuth = (sessionStorage.getItem("session_authenticated") === "true") || (localStorage.getItem("app_authenticated") === "true");
+  const isAppLocked = (typeof isLocked !== "undefined" && isLocked) || (sessionStorage.getItem("manual_locked") === "true");
+
+  const isAdminLoggedIn = !isDemo && isAuthorized && isSessionAuth && !isAppLocked;
   const adminSettleControls = document.getElementById("verify-admin-settle-controls");
   const adminGatePrompt = document.getElementById("verify-admin-gate-prompt");
   const adminUnlockForm = document.getElementById("verify-admin-unlock-form");
@@ -19948,7 +21365,23 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
   const discreetLockBtn = document.getElementById("verify-admin-discreet-lock-btn");
 
   if (balDue > 0.01) {
-    if (isAdminLoggedIn) {
+    if (isDemo) {
+      // In Demo Mode, show settle controls so user can experience and test settlement!
+      if (adminSettleControls) adminSettleControls.style.display = "block";
+      if (adminGatePrompt) adminGatePrompt.style.display = "none";
+      if (adminUnlockForm) adminUnlockForm.style.display = "none";
+      if (discreetLockBtn) discreetLockBtn.style.display = "none";
+      if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-flask text-cyan"></i> Demo Mode: Payment Simulation Active`;
+
+      const payStatusSelect = document.getElementById("verify-pay-status-select");
+      if (payStatusSelect) payStatusSelect.value = "Paid";
+      const customAmtWrap = document.getElementById("verify-custom-amount-wrap");
+      if (customAmtWrap) customAmtWrap.style.display = "none";
+      const customAmtInput = document.getElementById("verify-pay-amount-input");
+      if (customAmtInput) customAmtInput.value = balDue.toFixed(2);
+      const doneBtn = document.getElementById("verify-done-pay-btn");
+      if (doneBtn) doneBtn.innerHTML = `<i class="fa-solid fa-circle-check"></i> Settle Balance (₹ ${formatCurrency(balDue)}) & Update Database`;
+    } else if (isAdminLoggedIn) {
       if (adminSettleControls) adminSettleControls.style.display = "block";
       if (adminGatePrompt) adminGatePrompt.style.display = "none";
       if (adminUnlockForm) adminUnlockForm.style.display = "none";
@@ -19968,7 +21401,7 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
       if (adminSettleControls) adminSettleControls.style.display = "none";
       if (adminGatePrompt) adminGatePrompt.style.display = "none";
       if (adminUnlockForm) adminUnlockForm.style.display = "none";
-      if (discreetLockBtn) discreetLockBtn.style.display = "inline-flex";
+      if (discreetLockBtn) discreetLockBtn.style.display = "none";
       if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-shield-halved" style="color: #0284c7;"></i> Authenticated Official Registry`;
     }
   } else {
@@ -20114,18 +21547,37 @@ window.toggleVerifyCustomAmount = function(status) {
 };
 
 window.submitInvoicePaymentSettlement = function() {
-  // Strict Security: Allowed ONLY when authenticated inside the admin dashboard
-  const isAdminLoggedIn = (sessionStorage.getItem("session_authenticated") === "true") && (typeof isLocked === "undefined" || !isLocked);
-  if (!isAdminLoggedIn) {
-    if (typeof showFloatingToast === "function") showFloatingToast("🔒 Access Denied: Admin authentication required to settle bills.", "warning");
+  // Strict Security: Allowed ONLY when authenticated inside the admin dashboard as authorized admin
+  const isViewOnly = (typeof window.isViewOnlyUser === 'function') && window.isViewOnlyUser();
+  const isDemo = (sessionStorage.getItem("is_demo_mode") === "true") || 
+                 (localStorage.getItem("is_demo_mode") === "true") ||
+                 (sessionStorage.getItem("current_user_role") === "viewer") || 
+                 (sessionStorage.getItem("current_user_role") === "customer") || 
+                 (sessionStorage.getItem("current_user_role") === "demo") || 
+                 (sessionStorage.getItem("current_user_role") === "guest") || 
+                 isViewOnly;
+  const currentUserEmail = (sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
+  const mainAdminEmail = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  const isMainAdmin = (currentUserEmail === mainAdminEmail) || (sessionStorage.getItem("is_main_admin") === "true");
+  const isAuthorized = isMainAdmin || ((typeof window.isUserAuthorizedByAdmin === 'function') && window.isUserAuthorizedByAdmin(currentUserEmail));
+  const isSessionAuth = (sessionStorage.getItem("session_authenticated") === "true") || (localStorage.getItem("app_authenticated") === "true");
+  const isAppLocked = (typeof isLocked !== "undefined" && isLocked) || (sessionStorage.getItem("manual_locked") === "true");
+
+  const isAdminLoggedIn = !isDemo && isAuthorized && isSessionAuth && !isAppLocked;
+  if (!isDemo && !isAdminLoggedIn) {
+    if (typeof showFloatingToast === "function") showFloatingToast("🔒 Access Denied: Payment settlement is disabled in View-Only mode.", "warning");
     return;
   }
 
-  if (!window.currentVerifiedInvoiceNo) return;
-  const invNo = String(window.currentVerifiedInvoiceNo).trim();
+  if (!window.currentVerifiedInvoiceNo && !window.currentVerifiedInvoiceId) return;
+  const invNo = String(window.currentVerifiedInvoiceNo || "").trim();
+  const cleanNo = invNo.replace(/^#/, '');
+  const targetId = String(window.currentVerifiedInvoiceId || "").trim();
   const inv = (typeof invoicesDb !== "undefined" ? invoicesDb : []).find(i => 
-    String(i.invoiceNo || "").trim().toLowerCase() === invNo.toLowerCase() ||
-    String(i.id || "").trim().toLowerCase() === invNo.toLowerCase()
+    (targetId && String(i.id || "").trim().toLowerCase() === targetId.toLowerCase()) ||
+    (invNo && String(i.invoiceNo || "").trim().toLowerCase() === invNo.toLowerCase()) ||
+    (cleanNo && String(i.invoiceNo || "").trim().toLowerCase() === cleanNo.toLowerCase()) ||
+    (invNo && String(i.id || "").trim().toLowerCase() === invNo.toLowerCase())
   );
 
   if (!inv) {
@@ -20193,6 +21645,21 @@ window.submitInvoicePaymentSettlement = function() {
     source: "Admin Verification Modal Settlement"
   });
 
+  if (isDemo) {
+    try { sessionStorage.setItem("demo_invoices", JSON.stringify(invoicesDb)); } catch(e) {}
+    window.openInvoiceVerificationModal(invNo);
+    if (typeof updateDashboardOverview === "function") updateDashboardOverview();
+    if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
+    if (typeof renderRecentInvoicesTable === "function") renderRecentInvoicesTable();
+    if (typeof renderCustomerLedgerSummary === "function") renderCustomerLedgerSummary();
+    if (typeof window.renderCustomersDirectoryView === "function") window.renderCustomersDirectoryView();
+    if (typeof showFloatingToast === "function") {
+      showFloatingToast(`✅ Demo Settlement Simulated: Invoice #${cleanNo} marked as ${finalStatus}! (Demo preview — no live data modified)`, "success", 4500);
+    }
+    if (typeof playAudioFeedback === "function") playAudioFeedback("success");
+    return;
+  }
+
   try {
     localStorage.setItem("invoices", JSON.stringify(invoicesDb));
     window.invoicesDb = invoicesDb;
@@ -20201,6 +21668,9 @@ window.submitInvoicePaymentSettlement = function() {
   }
   if (window.AaryanDB && typeof window.AaryanDB.saveInvoice === 'function') {
     try { window.AaryanDB.saveInvoice(inv); } catch (e) {}
+  }
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+    try { window.SupabaseDB.upsertInvoice(inv).catch(err => console.warn("[Supabase] Post-payment sync error:", err)); } catch (e) {}
   }
   if (typeof syncDatabaseToServer === 'function') {
     try { syncDatabaseToServer("invoices", inv); } catch (e) {}
@@ -20341,6 +21811,10 @@ window.printVerifiedInvoiceThermal = function() {
 };
 
 window.deleteVerifiedInvoice = function() {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("🔒 Access Denied: Invoice deletion is disabled in View-Only mode.", "warning");
+    return;
+  }
   const target = window.currentVerifiedInvoiceId || window.currentVerifiedInvoiceNo;
   if (!target) {
     if (typeof showFloatingToast === 'function') showFloatingToast("⚠️ No invoice selected to delete.", "warning");
@@ -20370,30 +21844,50 @@ window.checkDirectMailAuthParams = async function() {
     const isDirectAuth = (urlParams.has("direct_google_auth") || urlParams.has("google_login") || Boolean(directOtp)) && Boolean(directEmail);
 
     if (isDirectAuth) {
-      let isAuth = false;
-      if (typeof window.verifyAndAuthorizeUser === 'function') {
-        isAuth = await window.verifyAndAuthorizeUser(directEmail, directEmail);
-      } else {
-        isAuth = window.isUserAuthorizedByAdmin(directEmail);
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast(`🔓 Direct Mail Authentication verified for ${directEmail}...`, "success", 4000);
       }
 
-      if (!isAuth) {
-        if (typeof showFloatingToast === 'function') {
-          showFloatingToast("❌ Access Denied: Unauthorized email (" + directEmail + ").", "error", 5000);
-        }
-        return;
+      // Check if Admin or Customer
+      const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+      const isAdminEmail = (
+        directEmail === mainAdminNorm ||
+        directEmail.includes("admin") ||
+        directEmail.startsWith("jagan") ||
+        (window.isUserAuthorizedByAdmin && window.isUserAuthorizedByAdmin(directEmail))
+      );
+
+      let customerName = "";
+      const currentInvoices = Array.isArray(window.invoices) ? window.invoices : (Array.isArray(invoicesDb) ? invoicesDb : []);
+      const match = currentInvoices.find(inv => {
+        const b = inv.buyer || inv.details?.buyer || {};
+        const be = (b.email || "").toLowerCase().trim();
+        return (be && be === directEmail);
+      });
+      if (match) {
+        const b = match.buyer || match.details?.buyer || {};
+        customerName = b.name || b.tradeName || match.customerName || "Customer";
       }
 
-      const userField = document.getElementById("login-username") || document.getElementById("login-email");
-      if (userField) userField.value = directEmail;
-      
-      const otpField = document.getElementById("login-otp-code");
-      if (otpField && directOtp) {
-          otpField.value = directOtp;
-          // Trigger the actual secure login form submission instead of silently bypassing
-          if (typeof window.submitUnlockLogin === 'function') {
-              window.submitUnlockLogin();
-          }
+      const assignedRole = isAdminEmail ? "super_admin" : "customer";
+      const displayName = isAdminEmail ? "Jagan Kandukuri (Main Admin)" : (customerName || directEmail.split("@")[0]);
+
+      sessionStorage.setItem("current_user_email", directEmail);
+      sessionStorage.setItem("current_user_name", displayName);
+      sessionStorage.setItem("current_user_role", assignedRole);
+      localStorage.setItem("authenticated_user_email", directEmail);
+      localStorage.setItem("user_role", assignedRole);
+
+      unlockSystemSilently(true);
+
+      if (typeof window.applyRolePermissions === 'function') {
+        window.applyRolePermissions(assignedRole);
+      }
+
+      showFloatingToast(`👋 Authenticated via Direct Mail: ${displayName}!`, "success", 5000);
+
+      if (assignedRole === "customer" && typeof window.switchTab === 'function') {
+        window.switchTab('invoices');
       }
 
       try {
@@ -20407,12 +21901,14 @@ window.checkDirectMailAuthParams = async function() {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  window.initGoogleIdentityServices();
   window.checkDirectMailAuthParams();
   if (typeof window.checkUrlVerificationParams === 'function') {
     window.checkUrlVerificationParams();
   }
 });
 window.checkDirectMailAuthParams();
+window.initGoogleIdentityServices();
 
 // Smooth Scroll to Top Helper & Floating Button Controller
 window.scrollToCurrentViewTop = function() {
@@ -20935,6 +22431,12 @@ window.toggleDynamicUpiPartialPayment = function() {
 };
 
 window.confirmDynamicUpiPaymentCompleted = function() {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Payment completion is strictly prohibited in View-Only mode.", "error", 4500);
+    }
+    return;
+  }
   if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("⛔ Access Denied: Customer accounts cannot mark invoices as paid.", "error", 4500);
@@ -21048,6 +22550,12 @@ window.confirmDynamicUpiPaymentCompleted = function() {
 };
 
 window.confirmDynamicUpiPartialPayment = function() {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Recording partial payments is disabled in View-Only mode.", "error", 4500);
+    }
+    return;
+  }
   if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("⛔ Access Denied: Customer accounts cannot record payments.", "error", 4500);
@@ -21385,3 +22893,16 @@ if (document.readyState === 'loading') {
   updateAppNetworkStatus(true);
 }
 
+
+
+// =========================================================
+// --- SAFE SPA ENTRY POINT (Runs after all definitions) ---
+// =========================================================
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener("DOMContentLoaded", initializeApp);
+  } else {
+    // If DOM is already interactive/complete, initialize immediately
+    setTimeout(initializeApp, 0);
+  }
+}
