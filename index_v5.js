@@ -9813,6 +9813,9 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
     if (invoiceRecord.details) {
       invoiceRecord.details.paymentHistory = effectiveHistory;
     }
+    if (typeof window.ensureInvoicePaymentHistory === 'function') {
+      window.ensureInvoicePaymentHistory(invoiceRecord);
+    }
 
     let stockDeltas = [];
     if (existingIdx > -1) {
@@ -12963,6 +12966,9 @@ window.submitCustomPartialPayment = function() {
     status: finalStatus,
     source: "Balance QR Modal Partial Payment"
   });
+  if (typeof window.ensureInvoicePaymentHistory === 'function') {
+    window.ensureInvoicePaymentHistory(inv);
+  }
 
   const isDemo = (typeof window.isDemoMode === 'function') && window.isDemoMode();
   if (isDemo) {
@@ -13116,6 +13122,9 @@ window.markBalanceQrPaidAndSendWhatsApp = function() {
     mode: inv.paymentMode,
     source: "Balance QR Modal Mark Paid"
   });
+  if (typeof window.ensureInvoicePaymentHistory === 'function') {
+    window.ensureInvoicePaymentHistory(inv);
+  }
 
   if (isDemo) {
     try { sessionStorage.setItem("demo_invoices", JSON.stringify(invoicesDb)); } catch(e) {}
@@ -21799,6 +21808,9 @@ window.submitInvoicePaymentSettlement = function() {
     status: finalStatus,
     source: "Admin Verification Modal Settlement"
   });
+  if (typeof window.ensureInvoicePaymentHistory === 'function') {
+    window.ensureInvoicePaymentHistory(inv);
+  }
 
   if (isDemo) {
     try { sessionStorage.setItem("demo_invoices", JSON.stringify(invoicesDb)); } catch(e) {}
@@ -22675,6 +22687,9 @@ window.confirmDynamicUpiPaymentCompleted = function() {
       status: "Paid",
       source: "Dynamic UPI QR Modal"
     });
+    if (typeof window.ensureInvoicePaymentHistory === 'function') {
+      window.ensureInvoicePaymentHistory(dbInv);
+    }
 
     try {
       localStorage.setItem("invoices", JSON.stringify(invoicesDb));
@@ -22781,6 +22796,9 @@ window.confirmDynamicUpiPartialPayment = function() {
       status: finalStatus,
       source: "Dynamic UPI QR Modal Partial Payment"
     });
+    if (typeof window.ensureInvoicePaymentHistory === 'function') {
+      window.ensureInvoicePaymentHistory(dbInv);
+    }
 
     try {
       localStorage.setItem("invoices", JSON.stringify(invoicesDb));

@@ -38,17 +38,31 @@
   // --- 1. CORE SELF-HEALING & INSTALLMENT RECONCILIATION ENGINE ---
   window.ensureInvoicePaymentHistory = function (inv) {
     if (!inv) return [];
-    if (!Array.isArray(inv.paymentHistory)) inv.paymentHistory = [];
+    if (!Array.isArray(inv.paymentHistory)) {
+      if (inv.details && Array.isArray(inv.details.paymentHistory)) {
+        inv.paymentHistory = inv.details.paymentHistory;
+      } else {
+        inv.paymentHistory = [];
+      }
+    }
     
     const d = inv.details || {};
-    const total = Number(inv.total || d.total || d.grandTotal || 0);
+    const total = Number(inv.total !== undefined ? inv.total : (d.total !== undefined ? d.total : (d.grandTotal || 0)));
     const paid = Number(inv.paidAmount !== undefined ? inv.paidAmount : (d.paidAmount || 0));
+
+    // Sort existing installments chronologically
+    inv.paymentHistory.sort((a, b) => {
+      const tA = new Date(a.date || a.timestamp || 0).getTime();
+      const tB = new Date(b.date || b.timestamp || 0).getTime();
+      return tA - tB;
+    });
+
     const recordedSum = inv.paymentHistory.reduce((sum, p) => sum + Number(p.amount || 0), 0);
 
     // Self-heal: If customer paid money upfront that wasn't logged into paymentHistory, prepend Installment #1
     if (paid - recordedSum > 0.01) {
       const missingAmt = Math.round((paid - recordedSum) * 100) / 100;
-      const upfrontDate = inv.date || inv.invoiceDate || d.date || d.invoiceDate || new Date().toISOString();
+      const upfrontDate = inv.date || inv.invoiceDate || d.date || d.invoiceDate || (inv.paymentHistory[0] ? inv.paymentHistory[0].date : new Date().toISOString());
       const upfrontEntry = {
         id: "pay_upfront_" + (inv.id || inv.invoiceNo || Date.now()),
         installmentNo: 1,
@@ -57,20 +71,35 @@
         mode: inv.paymentMode || d.paymentMode || "Cash",
         reference: inv.paymentReference || d.paymentReference || "Upfront Bill Settlement",
         note: "Paid on the spot during billing",
-        balanceAfter: Math.max(0, total - missingAmt),
         status: (total - missingAmt <= 0.01) ? "Paid" : "Partial"
       };
       inv.paymentHistory.unshift(upfrontEntry);
     }
 
-    // Ensure sequential installment numbers and unique IDs
+    // Sequentially calculate running total paid and EXACT mathematical balanceAfter for every installment
+    let runningPaid = 0;
     inv.paymentHistory.forEach((p, idx) => {
-      if (!p.installmentNo) p.installmentNo = idx + 1;
-      if (!p.id) p.id = "pay_" + (idx + 1) + "_" + (inv.id || 'inv');
+      p.installmentNo = idx + 1;
+      if (!p.id) p.id = "pay_" + (idx + 1) + "_" + (inv.id || inv.invoiceNo || 'inv');
+      const amt = Number(p.amount || 0);
+      runningPaid = Math.round((runningPaid + amt) * 100) / 100;
+      p.balanceAfter = Math.max(0, Math.round((total - runningPaid) * 100) / 100);
+      p.status = (p.balanceAfter <= 0.01) ? "Paid" : "Partial";
     });
+
+    // Synchronize root and details fields
+    if (inv.paymentHistory.length > 0) {
+      const finalBal = inv.paymentHistory[inv.paymentHistory.length - 1].balanceAfter;
+      inv.paidAmount = runningPaid;
+      inv.balanceDue = finalBal;
+      inv.paymentStatus = finalBal <= 0.01 ? "Paid" : (runningPaid > 0 ? "Partial" : "Unpaid");
+    }
 
     if (inv.details) {
       inv.details.paymentHistory = inv.paymentHistory;
+      inv.details.paidAmount = inv.paidAmount;
+      inv.details.balanceDue = inv.balanceDue;
+      inv.details.paymentStatus = inv.paymentStatus;
     }
 
     return inv.paymentHistory;
@@ -377,7 +406,7 @@
               mode: p.mode || "Cash",
               reference: p.reference || p.utr || "—",
               note: p.note || (idx === 0 ? "Upfront on-spot billing settlement" : `Installment #${p.installmentNo || (idx + 1)}`),
-              balanceAfter: p.balanceAfter !== undefined ? p.balanceAfter : Math.max(0, invTotal - Number(p.amount || 0))
+              balanceAfter: p.balanceAfter !== undefined ? p.balanceAfter : Math.max(0, Math.round((invTotal - history.slice(0, idx + 1).reduce((s, x) => s + Number(x.amount || 0), 0)) * 100) / 100)
             });
           });
         });
@@ -613,7 +642,7 @@
                                   ${inst.note && inst.note !== '—' ? `<span style="color: #64748b;">(${inst.note})</span>` : ''}
                                 </td>
                                 <td style="padding: 6px 10px; text-align: right; font-weight: 700; color: ${(inst.balanceAfter || 0) > 0.01 ? '#dc2626' : '#16a34a'};">
-                                  ₹ ${formatMoney(inst.balanceAfter !== undefined ? inst.balanceAfter : Math.max(0, invTotal - inst.amount))}
+                                  ₹ ${formatMoney(inst.balanceAfter !== undefined ? inst.balanceAfter : Math.max(0, Math.round((invTotal - history.slice(0, idx + 1).reduce((s, x) => s + Number(x.amount || 0), 0)) * 100) / 100))}
                                 </td>
                                 <td style="padding: 6px 10px; text-align: center;">
                                   <button type="button" class="btn btn-xs" onclick="window.shareInstallmentReceiptWhatsApp('${safeInvId}', '${inst.id || idx}')" title="Send Installment Receipt to Customer via WhatsApp" style="background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 11px;">
@@ -700,6 +729,7 @@
                     </span>
                   </td>
                   <td style="text-align: right; font-weight: 800; color: #16a34a; font-size: 13.5px;">₹ ${formatMoney(pay.amount)}</td>
+                  <td style="text-align: right; font-weight: 700; color: ${(pay.balanceAfter || 0) > 0.01 ? '#dc2626' : '#16a34a'}; font-size: 13px;">₹ ${formatMoney(pay.balanceAfter || 0)}</td>
                   <td>
                     <span class="badge-status badge-paid" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; font-weight: 700; padding: 3px 8px; border-radius: 6px;">
                       <i class="fa-solid fa-money-bill-wave"></i> ${pay.mode}
@@ -1285,10 +1315,11 @@
         <table>
           <thead>
             <tr>
-              <th style="width: 80px;">Inst #</th>
+              <th style="width: 70px;">Inst #</th>
               <th>Payment Timestamp</th>
               <th>Bill #</th>
               <th class="text-right">Amount Received</th>
+              <th class="text-right">Balance After</th>
               <th>Payment Mode</th>
               <th>UTR / Reference / Note</th>
             </tr>
@@ -1300,6 +1331,7 @@
                 <td>${formatDateTime(p.date)}</td>
                 <td style="font-weight: bold; color: #0284c7;">#${p.invoiceNo}</td>
                 <td class="text-right" style="color: #16a34a; font-weight: bold;">₹ ${formatMoney(p.amount)}</td>
+                <td class="text-right" style="color: ${(p.balanceAfter || 0) > 0.01 ? '#dc2626' : '#16a34a'}; font-weight: bold;">₹ ${formatMoney(p.balanceAfter || 0)}</td>
                 <td><strong>${p.mode}</strong></td>
                 <td>${p.reference || '—'} ${p.note && p.note !== '—' ? `(${p.note})` : ''}</td>
               </tr>
@@ -1571,13 +1603,14 @@
             <table class="cust-modal-table">
               <thead>
                 <tr>
-                  <th style="width: 90px;">INST #</th>
-                  <th style="width: 170px;">PAYMENT DATE &amp; TIME</th>
-                  <th style="width: 120px;">FOR BILL #</th>
-                  <th style="text-align: right; width: 130px;">AMOUNT RECEIVED</th>
-                  <th style="width: 140px;">PAYMENT MODE</th>
+                  <th style="width: 85px;">INST #</th>
+                  <th style="width: 160px;">PAYMENT DATE &amp; TIME</th>
+                  <th style="width: 110px;">FOR BILL #</th>
+                  <th style="text-align: right; width: 125px;">AMOUNT RECEIVED</th>
+                  <th style="text-align: right; width: 125px;">BALANCE AFTER</th>
+                  <th style="width: 130px;">PAYMENT MODE</th>
                   <th>UTR / TRANSACTION REFERENCE / NOTE</th>
-                  <th style="text-align: center; width: 100px;">RECEIPT</th>
+                  <th style="text-align: center; width: 95px;">RECEIPT</th>
                 </tr>
               </thead>
               <tbody id="cust-detail-payments-tbody"></tbody>
