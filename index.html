@@ -431,6 +431,17 @@
 
     // Build Version Enforcement
 
+    (function() {
+      try {
+        var email = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
+        var role = (sessionStorage.getItem("current_user_role") || "").toLowerCase().trim();
+        var isDemo = sessionStorage.getItem("is_demo_mode") === "true" || localStorage.getItem("is_demo_mode") === "true" || role === "viewer" || role === "demo" || role === "guest";
+        var isJagan = email === "kandukurijagan99@gmail.com" || email === "kandukurijagan88@gmail.com" || email.indexOf("kandukurijagan") === 0;
+        if (isDemo && !isJagan) {
+          document.documentElement.classList.add("view-only-mode", "demo-mode-active");
+        }
+      } catch(e) {}
+    })();
     window.__APP_BUILD_VERSION__ = "v428_instant_retained_mesh_sync";
 
     try {
@@ -453,9 +464,9 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=live_v43">
+  <link rel="stylesheet" href="index.css?v=live_v44">
 
-  <script src="invoice_utils_v5.js?v=live_v43"></script>
+  <script src="invoice_utils_v5.js?v=live_v44"></script>
 
 </head>
 
@@ -6953,8 +6964,7 @@
 
 
           <!-- Customer & Shop Summary Card -->
-
-          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; font-size: 12.5px; margin-bottom: 14px;">
+          <div id="verify-customer-shop-card" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; font-size: 12.5px; margin-bottom: 14px;">
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
 
@@ -7011,8 +7021,7 @@
 
 
           <!-- Itemized Products Table -->
-
-          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; margin-bottom: 14px;">
+          <div id="verify-items-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; margin-bottom: 14px;">
 
             <div style="background: #f1f5f9; padding: 8px 12px; font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.04em; display: flex; justify-content: space-between;">
 
@@ -7041,8 +7050,7 @@
 
 
           <!-- Financial Breakdown Card -->
-
-          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; font-size: 12.5px; margin-bottom: 16px;">
+          <div id="verify-financial-breakdown-card" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; font-size: 12.5px; margin-bottom: 16px;">
 
             <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
 
@@ -7219,8 +7227,7 @@
 
 
           <!-- Action Buttons Bar: Print A4, Print POS Thermal, Download PDF, WhatsApp -->
-
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+          <div id="verify-action-buttons-wrap" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
 
             <button type="button" id="verify-print-btn" class="btn btn-primary" onclick="printVerifiedInvoice()" style="justify-content: center; font-size: 13px; font-weight: 800; padding: 10px; background: linear-gradient(135deg, #06b6d4 0%, #2563eb 100%); border: none; box-shadow: 0 2px 6px rgba(6, 182, 212, 0.35); color: white;">
 
@@ -7271,6 +7278,9 @@
           </div>
 
 
+
+          <!-- DEMO SETTLEMENT SUMMARY CARD -->
+          <div id="verify-demo-settle-card" style="display: none;"></div>
 
           <!-- STORE ADMIN SETTLEMENT PANEL (Rendered dynamically ONLY when logged into the admin dashboard) -->
 
@@ -10724,13 +10734,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v43"></script>
+<script src="supabase-adapter.js?v=live_v44"></script>
 
-<script src="initial_db.js?v=live_v43"></script>
+<script src="initial_db.js?v=live_v44"></script>
 
-<script src="customer-timeline.js?v=live_v43"></script>
+<script src="customer-timeline.js?v=live_v44"></script>
 
-<script src="index_v5.js?v=live_v43"></script>
+<script src="index_v5.js?v=live_v44"></script>
 
 </body>
 

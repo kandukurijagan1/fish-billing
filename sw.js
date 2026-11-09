@@ -1,5 +1,5 @@
 // Aaryan Aqua Needs - Professional PWA Offline Shell Service Worker
-const CACHE_NAME = 'aaryan-aqua-v5.14.3';
+const CACHE_NAME = 'aaryan-aqua-v5.14.4';
 
 const PRECACHE_ASSETS = [
   './',

@@ -5958,7 +5958,7 @@ function updateDashboardOverview() {
 
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td style="font-weight: 700; color: var(--primary-teal); white-space: nowrap; cursor: pointer;" onclick="openInvoicePrintPreview('${inv.id || inv.invoiceNo}', 'a4')" title="Click to preview &amp; print invoice">
+          <td style="font-weight: 700; color: var(--primary-teal); white-space: nowrap; ${isViewOnlyUser ? '' : 'cursor: pointer;'}" ${isViewOnlyUser ? (balance > 0.01 ? `onclick="openInvoiceVerificationModal('${inv.invoiceNo || inv.id}')" title="Click to Settle Bill #${inv.invoiceNo}" style="cursor: pointer;"` : `onclick="if(typeof showFloatingToast === 'function') showFloatingToast('🔒 Detailed invoice preview is restricted in Demo mode.', 'info', 4000);" title="Invoice #${inv.invoiceNo} (Paid)"`) : `onclick="openInvoicePrintPreview('${inv.id || inv.invoiceNo}', 'a4')" title="Click to preview &amp; print invoice"`}>
             <i class="fa-solid fa-file-invoice" style="margin-right: 4px; opacity: 0.7;"></i>#${inv.invoiceNo}
           </td>
           <td style="white-space: nowrap;">${formatInputDateString(inv.invoiceDate)}</td>
@@ -5972,7 +5972,10 @@ function updateDashboardOverview() {
           </td>
           <td class="actions-cell">
             ${isViewOnlyUser
-              ? `<button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${safeInvId}', 'a4')" title="View Bill Preview"><i class="fa-solid fa-eye"></i></button>`
+              ? (!isPaid && balance > 0.01
+                  ? `<button class="btn btn-xs btn-settle-demo" onclick="openInvoiceVerificationModal('${inv.invoiceNo || inv.id}')" style="background: linear-gradient(135deg, #0284c7, #0369a1); color: #ffffff; border: none; padding: 4px 10px; font-size: 11.5px; font-weight: 700; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(2, 132, 199, 0.35);" title="Settle Invoice Balance"><i class="fa-solid fa-bolt" style="color: #38bdf8;"></i> Settle</button>`
+                  : `<span class="badge-status badge-paid" style="font-size: 11px; padding: 3px 8px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-circle-check"></i> Paid</span>`
+                )
               : `${(!isEstimate && !isPaid && balance > 0 && !isCustomerRole) ? `<button class="action-btn share action-btn-qr" onclick="openBalanceQrModal('${inv.id}')" title="Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode"></i></button>` : ''}
             <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${safeInvId}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
             <button class="action-btn print action-btn-thermal" onclick="openInvoicePrintPreview('${inv.id}', 'thermal')" title="Preview &amp; Print POS Thermal"><i class="fa-solid fa-receipt"></i></button>
@@ -8102,6 +8105,13 @@ if ('BarcodeDetector' in window) {
 }
 
 window.openBarcodeScannerModal = async function(initialTab = 'camera') {
+  if ((typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+      (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser())) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("🔒 Barcode scanning is not available in Demo account.", "info", 4000);
+    }
+    return;
+  }
   const modal = document.getElementById("barcode-scanner-modal");
   if (!modal) return;
   modal.classList.remove("hidden");
@@ -13632,7 +13642,7 @@ function renderHistoryTableRows(records) {
 
     htmlBuffer.push(`
       <tr>
-        <td style="font-weight: 700; color: var(--primary-teal); cursor: pointer;" onclick="openInvoicePrintPreview('${inv.id || inv.invoiceNo}', 'a4')" title="Click to preview bill">
+        <td style="font-weight: 700; color: var(--primary-teal); ${isViewOnlyUser ? '' : 'cursor: pointer;'}" ${isViewOnlyUser ? (balance > 0.01 ? `onclick="openInvoiceVerificationModal('${inv.invoiceNo || inv.id}')" title="Click to Settle Bill #${inv.invoiceNo}" style="cursor: pointer;"` : `onclick="if(typeof showFloatingToast === 'function') showFloatingToast('🔒 Detailed bill preview is restricted in Demo mode.', 'info', 4000);" title="Invoice #${inv.invoiceNo} (Paid)"`) : `onclick="openInvoicePrintPreview('${inv.id || inv.invoiceNo}', 'a4')" title="Click to preview bill"`}>
           <i class="fa-solid fa-file-invoice" style="margin-right: 4px; opacity: 0.7;"></i>#${inv.invoiceNo}
         </td>
         <td>${formatInputDateString(invDate)}</td>
@@ -13653,7 +13663,10 @@ function renderHistoryTableRows(records) {
         </td>
         <td class="actions-cell">
           ${isViewOnlyUser
-            ? `<button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${safeInvId}', 'a4')" title="View Bill Preview"><i class="fa-solid fa-eye"></i></button>`
+            ? (!isPaid && balance > 0.01
+                ? `<button class="btn btn-xs btn-settle-demo" onclick="openInvoiceVerificationModal('${inv.invoiceNo || inv.id}')" style="background: linear-gradient(135deg, #0284c7, #0369a1); color: #ffffff; border: none; padding: 4px 10px; font-size: 11.5px; font-weight: 700; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(2, 132, 199, 0.35);" title="Settle Invoice Balance"><i class="fa-solid fa-bolt" style="color: #38bdf8;"></i> Settle</button>`
+                : `<span class="badge-status badge-paid" style="font-size: 11px; padding: 3px 8px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-circle-check"></i> Paid</span>`
+              )
             : `${balanceQrBtn}
               <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${inv.id}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
               <button class="action-btn print action-btn-thermal" onclick="openInvoicePrintPreview('${safeInvId}', 'thermal')" title="Preview &amp; Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
@@ -13880,6 +13893,14 @@ window.executeSystemPrint = function() {
 };
 
 window.openInvoicePrintPreview = function(identifier, mode = 'a4') {
+  const isViewUser = (typeof window.isViewOnlyUser === 'function') && window.isViewOnlyUser();
+  const isDemoUser = (typeof window.isDemoMode === 'function' && window.isDemoMode()) || isViewUser;
+  if (isDemoUser) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("🔒 Detailed invoice preview is restricted in Demo mode.", "info", 4000);
+    }
+    return;
+  }
   const inv = (typeof window.findInvoiceRecordByIdentifier === 'function')
     ? window.findInvoiceRecordByIdentifier(identifier)
     : (typeof invoicesDb !== 'undefined' ? invoicesDb : []).find(i => i.id === identifier || i.invoiceNo === identifier);
@@ -13894,7 +13915,6 @@ window.openInvoicePrintPreview = function(identifier, mode = 'a4') {
   window.currentPreviewInvoiceRecord = inv;
   window.currentPreviewMode = (mode === 'thermal') ? 'thermal' : 'a4';
   window.currentPreviewZoom = 1.0;
-  const isViewUser = (typeof window.isViewOnlyUser === 'function') && window.isViewOnlyUser();
 
   // 1. Populate metadata in header
   const invNo = inv.invoiceNo || (inv.details && inv.details.invoiceNo) || '0000';
@@ -17657,8 +17677,14 @@ window.applyRolePermissions = function(role) {
   const isSuperAdmin = (currentEmail === (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim() || sessionStorage.getItem("is_main_admin") === "true");
   const isViewOnly = window.isViewOnlyUser();
   if (isViewOnly) {
-    document.body.classList.add("view-only-mode");
+    document.body.classList.add("view-only-mode", "demo-mode-active");
+    if (document.documentElement) document.documentElement.classList.add("view-only-mode", "demo-mode-active");
     document.body.setAttribute("data-role", "viewer");
+    const topMeta = document.querySelector(".app-top-header-meta");
+    if (topMeta) {
+      topMeta.style.setProperty("display", "none", "important");
+      topMeta.style.setProperty("visibility", "hidden", "important");
+    }
     if (typeof closeCustomerDetailsModal === 'function') closeCustomerDetailsModal();
     if (typeof closeBalanceQrModal === 'function') closeBalanceQrModal();
     const custMod = document.getElementById("customer-details-modal");
@@ -17666,8 +17692,14 @@ window.applyRolePermissions = function(role) {
     const balMod = document.getElementById("balance-qr-modal");
     if (balMod) { balMod.classList.add("hidden"); balMod.style.cssText = "display: none !important; visibility: hidden !important; pointer-events: none !important;"; }
   } else {
-    document.body.classList.remove("view-only-mode");
+    document.body.classList.remove("view-only-mode", "demo-mode-active");
+    if (document.documentElement) document.documentElement.classList.remove("view-only-mode", "demo-mode-active");
     document.body.removeAttribute("data-role");
+    const topMeta = document.querySelector(".app-top-header-meta");
+    if (topMeta) {
+      topMeta.style.removeProperty("display");
+      topMeta.style.removeProperty("visibility");
+    }
     const custMod = document.getElementById("customer-details-modal");
     if (custMod) {
       custMod.style.removeProperty("visibility");
@@ -21475,9 +21507,69 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
     if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-circle-check text-green"></i> Verified &amp; Settled`;
   }
 
-  if (printBtn) printBtn.style.display = "inline-flex";
-  if (thermalBtn) thermalBtn.style.display = "inline-flex";
-  if (adminBar) adminBar.style.display = isAdminLoggedIn ? "flex" : "none";
+  const custShopCard = document.getElementById("verify-customer-shop-card");
+  const itemsCard = document.getElementById("verify-items-card");
+  const finCard = document.getElementById("verify-financial-breakdown-card");
+  const actBtnsWrap = document.getElementById("verify-action-buttons-wrap");
+  const demoSettleCard = document.getElementById("verify-demo-settle-card");
+
+  if (isDemo) {
+    if (custShopCard) custShopCard.style.display = "none";
+    if (itemsCard) itemsCard.style.display = "none";
+    if (finCard) finCard.style.display = "none";
+    if (paymentSection) paymentSection.style.display = "none";
+    if (actBtnsWrap) actBtnsWrap.style.display = "none";
+    if (adminBar) adminBar.style.display = "none";
+    if (printBtn) printBtn.style.display = "none";
+    if (thermalBtn) thermalBtn.style.display = "none";
+
+    if (demoSettleCard) {
+      demoSettleCard.style.display = "block";
+      demoSettleCard.innerHTML = `
+        <div style="background: linear-gradient(135deg, #f8fafc, #f1f5f9); border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 14px 16px; margin-bottom: 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div>
+              <span style="color: #64748b; font-size: 11px; display: block; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Invoice Number</span>
+              <span style="font-weight: 800; font-size: 16px; color: #0284c7;"><i class="fa-solid fa-file-invoice" style="margin-right: 5px;"></i>#${invNo}</span>
+            </div>
+            <div style="text-align: right;">
+              <span style="color: #64748b; font-size: 11px; display: block; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Payment Status</span>
+              <span class="badge-status ${balDue <= 0.01 ? 'badge-paid' : 'badge-unpaid'}" style="font-size: 11px; font-weight: 800; padding: 3px 8px;">${balDue <= 0.01 ? 'PAID' : (paidAmt > 0 ? 'PARTIAL' : 'UNPAID')}</span>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px dashed #cbd5e1;">
+            <div>
+              <span style="color: #475569; font-size: 12px; font-weight: 600; display: block;">Total Bill:</span>
+              <span style="font-weight: 700; font-size: 14px; color: #1e293b;">₹ ${formatCurrency(totalAmt)}</span>
+            </div>
+            <div style="text-align: right;">
+              <span style="color: #475569; font-size: 12px; font-weight: 600; display: block;">Outstanding Balance:</span>
+              <span style="font-size: 17px; font-weight: 800; color: ${balDue <= 0.01 ? '#16a34a' : '#c2410c'};">₹ ${formatCurrency(balDue)}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (balDue > 0.01) {
+      if (adminSettleControls) adminSettleControls.style.display = "block";
+      if (fullyPaidSection) fullyPaidSection.style.display = "none";
+      if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-bolt" style="color: #0284c7;"></i> Demo Mode: Payment Settlement Simulation`;
+    } else {
+      if (adminSettleControls) adminSettleControls.style.display = "none";
+      if (fullyPaidSection) fullyPaidSection.style.display = "block";
+      if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-circle-check text-green"></i> Verified &amp; 100% Settled`;
+    }
+  } else {
+    if (custShopCard) custShopCard.style.display = "block";
+    if (itemsCard) itemsCard.style.display = "block";
+    if (finCard) finCard.style.display = "block";
+    if (actBtnsWrap) actBtnsWrap.style.display = "grid";
+    if (demoSettleCard) demoSettleCard.style.display = "none";
+    if (printBtn) printBtn.style.display = "inline-flex";
+    if (thermalBtn) thermalBtn.style.display = "inline-flex";
+    if (adminBar) adminBar.style.display = isAdminLoggedIn ? "flex" : "none";
+  }
 
   modal.classList.remove("hidden");
   modal.style.display = "flex";

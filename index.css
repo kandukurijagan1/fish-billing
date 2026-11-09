@@ -13028,3 +13028,88 @@ body[data-role="demo"] #balance-qr-modal {
     opacity: 1;
   }
 }
+
+
+/* ============================================================================
+   COMMERCIAL DEMO & VIEW-ONLY ACCESS RESTRICTIONS
+   1. The top header meta strip (Low stock alert, DB status, Cloud sync, WhatsApp, Telegram, Free View Upgrade badge, Lock, Sign Out)
+      MUST NOT be visible in Demo / View-Only accounts.
+   2. Barcode scanning buttons MUST NOT be visible or usable in Demo / View-Only accounts.
+   3. In Verification Modal, hide all proprietary invoice details (items, HSN, rates, customer contact, tax breakdown, print/pdf/share actions)
+      and keep ONLY settlement panel & fully-paid notice so demo user can experience settling bills!
+   ============================================================================ */
+
+html.view-only-mode .app-top-header-meta,
+html.demo-mode-active .app-top-header-meta,
+body.view-only-mode .app-top-header-meta,
+body[data-role="viewer"] .app-top-header-meta,
+body[data-role="demo"] .app-top-header-meta,
+body.demo-mode-active .app-top-header-meta {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Hide all Barcode & QR camera scanning buttons in Demo / View-Only accounts */
+html.view-only-mode button[onclick*="openBarcodeScannerModal"],
+html.view-only-mode .btn-scan-barcode-picker,
+html.view-only-mode #btn-scan-barcode,
+html.view-only-mode .btn-hero[onclick*="openBarcodeScannerModal"],
+body.view-only-mode button[onclick*="openBarcodeScannerModal"],
+body.view-only-mode .btn-scan-barcode-picker,
+body.view-only-mode #btn-scan-barcode,
+body.view-only-mode .btn-hero[onclick*="openBarcodeScannerModal"],
+body[data-role="viewer"] button[onclick*="openBarcodeScannerModal"],
+body[data-role="viewer"] .btn-scan-barcode-picker,
+body[data-role="viewer"] #btn-scan-barcode,
+body[data-role="viewer"] .btn-hero[onclick*="openBarcodeScannerModal"],
+body[data-role="demo"] button[onclick*="openBarcodeScannerModal"],
+body[data-role="demo"] .btn-scan-barcode-picker,
+body[data-role="demo"] #btn-scan-barcode,
+body[data-role="demo"] .btn-hero[onclick*="openBarcodeScannerModal"],
+body.demo-mode-active button[onclick*="openBarcodeScannerModal"],
+body.demo-mode-active .btn-scan-barcode-picker,
+body.demo-mode-active #btn-scan-barcode,
+body.demo-mode-active .btn-hero[onclick*="openBarcodeScannerModal"] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* In Demo / View-Only accounts, hide detailed invoice data inside Verification Modal:
+   Keep ONLY settlement panel & fully-paid notice so demo user can experience settling bills! */
+body.view-only-mode #verify-customer-shop-card,
+body.view-only-mode #verify-items-card,
+body.view-only-mode #verify-financial-breakdown-card,
+body.view-only-mode #verify-payment-section,
+body.view-only-mode #verify-action-buttons-wrap,
+body.view-only-mode #verify-admin-actions-bar,
+body[data-role="viewer"] #verify-customer-shop-card,
+body[data-role="viewer"] #verify-items-card,
+body[data-role="viewer"] #verify-financial-breakdown-card,
+body[data-role="viewer"] #verify-payment-section,
+body[data-role="viewer"] #verify-action-buttons-wrap,
+body[data-role="viewer"] #verify-admin-actions-bar,
+body.demo-mode-active #verify-customer-shop-card,
+body.demo-mode-active #verify-items-card,
+body.demo-mode-active #verify-financial-breakdown-card,
+body.demo-mode-active #verify-payment-section,
+body.demo-mode-active #verify-action-buttons-wrap,
+body.demo-mode-active #verify-admin-actions-bar {
+  display: none !important;
+}
+
+.btn-settle-demo {
+  transition: all 0.2s ease !important;
+}
+.btn-settle-demo:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 3px 8px rgba(2, 132, 199, 0.45) !important;
+  filter: brightness(1.1) !important;
+}
