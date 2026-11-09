@@ -124,7 +124,10 @@
     return { ok: true, invoice: inv };
   };
 
-  // --- 2. 360-DEGREE CUSTOMER DETAIL MODAL ---
+  // --- 2. 360-DEGREE CUSTOMER DETAIL & ACCOUNT LEDGER MODAL ---
+  let currentActiveCustomerStatement = null;
+  window._currentCustDetailTab = "invoices";
+
   window.openCustomerDetailsModal = function (customerIdentifier) {
     if (!customerIdentifier) return;
     const isViewUser = (typeof window.isViewOnlyUser === 'function') && window.isViewOnlyUser();
@@ -138,14 +141,15 @@
         if (!inv) return false;
         const d = inv.details || {};
         const buyer = d.buyer || {};
-        const cName = String(inv.customerName || buyer.name || "").trim().toLowerCase();
-        const phone = String(inv.customerPhone || buyer.phone || "").replace(/[^0-9]/g, "");
+        const consignee = d.consignee || {};
+        const cName = String(inv.customerName || consignee.name || buyer.name || "").trim().toLowerCase();
+        const phone = String(inv.customerPhone || buyer.phone || consignee.phone || "").replace(/[^0-9]/g, "");
         const cleanTargetPhone = searchTarget.replace(/[^0-9]/g, "");
 
         return (
           cName === searchTarget ||
-          cName.includes(searchTarget) ||
-          (cleanTargetPhone && phone && phone.includes(cleanTargetPhone))
+          (cleanTargetPhone.length >= 7 && phone.includes(cleanTargetPhone)) ||
+          (cName.length >= 3 && (cName.includes(searchTarget) || searchTarget.includes(cName)))
         );
       });
 
@@ -188,17 +192,17 @@
           return bDate - aDate;
         });
 
-        if (allInvs[0].customerName || allInvs[0].details?.buyer?.name) {
-          primaryCustName = allInvs[0].customerName || allInvs[0].details?.buyer?.name;
+        if (allInvs[0].customerName || allInvs[0].details?.buyer?.name || allInvs[0].details?.consignee?.name) {
+          primaryCustName = allInvs[0].customerName || allInvs[0].details?.consignee?.name || allInvs[0].details?.buyer?.name;
         }
-        if (allInvs[0].customerPhone || allInvs[0].details?.buyer?.phone) {
-          primaryPhone = allInvs[0].customerPhone || allInvs[0].details?.buyer?.phone;
+        if (allInvs[0].customerPhone || allInvs[0].details?.buyer?.phone || allInvs[0].details?.consignee?.phone) {
+          primaryPhone = allInvs[0].customerPhone || allInvs[0].details?.buyer?.phone || allInvs[0].details?.consignee?.phone;
         }
-        if (allInvs[0].details?.buyer?.address) {
-          primaryAddress = allInvs[0].details?.buyer?.address;
+        if (allInvs[0].details?.consignee?.address || allInvs[0].details?.buyer?.address) {
+          primaryAddress = allInvs[0].details?.consignee?.address || allInvs[0].details?.buyer?.address;
         }
-        if (allInvs[0].details?.buyer?.gstin) {
-          primaryGstin = allInvs[0].details?.buyer?.gstin;
+        if (allInvs[0].details?.buyer?.gstin || allInvs[0].details?.consignee?.gstin) {
+          primaryGstin = allInvs[0].details?.buyer?.gstin || allInvs[0].details?.consignee?.gstin;
         }
 
         allInvs.forEach((inv) => {
@@ -264,6 +268,8 @@
       currentActiveCustomerStatement = {
         name: primaryCustName,
         phone: primaryPhone,
+        address: primaryAddress,
+        gstin: primaryGstin,
         invoices: allInvs,
         products: allPurchasedProducts,
         payments: allPaymentEntries,
@@ -272,9 +278,10 @@
         totalBalance
       };
 
-      // Populate modal DOM - ensure it exists
+      // Populate or create modal DOM
       let modal = document.getElementById("customer-details-modal");
-      if (!modal) {
+      if (!modal || !modal.querySelector(".cust-modal-header")) {
+        if (modal) modal.remove();
         modal = createCustomerDetailsModalDOM();
       }
       if (!modal) return;
@@ -284,70 +291,147 @@
         if (el) el.textContent = txt;
       };
 
+      // 1. Header Profile details
       setElText("cust-detail-name", primaryCustName);
       setElText("cust-detail-phone", primaryPhone);
       setElText("cust-detail-address", primaryAddress);
-      setElText("cust-detail-gstin", primaryGstin);
+      setElText("cust-detail-gstin", (primaryGstin && primaryGstin !== "—") ? primaryGstin : "Unregistered / Retail");
 
+      // Customer avatar initials
+      const avatarEl = document.getElementById("cust-detail-avatar");
+      if (avatarEl) {
+        const words = primaryCustName.trim().split(/\s+/);
+        const initials = words.length >= 2 ? (words[0][0] + words[1][0]).toUpperCase() : primaryCustName.slice(0, 2).toUpperCase();
+        avatarEl.textContent = initials || "C";
+      }
+
+      // Phone link
+      const phoneLink = document.getElementById("cust-detail-phone-link");
+      if (phoneLink) {
+        const cleanPh = primaryPhone.replace(/[^0-9]/g, "");
+        if (cleanPh.length >= 10) {
+          phoneLink.href = `https://wa.me/91${cleanPh}`;
+          phoneLink.title = "Click to chat on WhatsApp";
+        } else {
+          phoneLink.removeAttribute("href");
+        }
+      }
+
+      // Outstanding Due Header Badge & Reminder Buttons
+      const dueBadge = document.getElementById("cust-header-due-badge");
+      const waRemBtn = document.getElementById("cust-header-wa-btn");
+      const kpiDueCard = document.getElementById("cust-kpi-card-due");
+      const kpiDueLabel = document.getElementById("cust-kpi-label-due");
+      const kpiSettleBtn = document.getElementById("cust-kpi-settle-btn");
+      const footerSettleBtn = document.getElementById("cust-footer-settle-btn");
+
+      const isDue = totalBalance > 0.01;
+
+      if (isDue) {
+        if (dueBadge) {
+          dueBadge.style.display = "inline-flex";
+          dueBadge.innerHTML = `<span style="background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); padding: 5px 12px; border-radius: 8px; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;"><i class="fa-solid fa-triangle-exclamation"></i> Due: ₹ ${formatMoney(totalBalance)}</span>`;
+        }
+        if (waRemBtn && !isViewUser) waRemBtn.style.display = "inline-flex";
+        if (kpiSettleBtn && !isViewUser) kpiSettleBtn.style.display = "inline-flex";
+        if (footerSettleBtn && !isViewUser) footerSettleBtn.style.display = "inline-flex";
+        if (kpiDueCard) {
+          kpiDueCard.className = "cust-modal-kpi-card kpi-due";
+          if (kpiDueLabel) {
+            kpiDueLabel.style.color = "#dc2626";
+            kpiDueLabel.textContent = "Outstanding Due";
+          }
+        }
+      } else {
+        if (dueBadge) {
+          dueBadge.style.display = "inline-flex";
+          dueBadge.innerHTML = `<span style="background: rgba(16, 185, 129, 0.2); color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4); padding: 5px 12px; border-radius: 8px; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;"><i class="fa-solid fa-circle-check"></i> Account Clear</span>`;
+        }
+        if (waRemBtn) waRemBtn.style.display = "none";
+        if (kpiSettleBtn) kpiSettleBtn.style.display = "none";
+        if (footerSettleBtn) footerSettleBtn.style.display = "none";
+        if (kpiDueCard) {
+          kpiDueCard.className = "cust-modal-kpi-card kpi-due-zero";
+          if (kpiDueLabel) {
+            kpiDueLabel.style.color = "#16a34a";
+            kpiDueLabel.textContent = "Balance Status";
+          }
+        }
+      }
+
+      // KPI Numbers
       setElText("cust-detail-total-invoices", allInvs.length);
       setElText("cust-detail-total-billed", "₹ " + formatMoney(totalBilled));
       setElText("cust-detail-total-paid", "₹ " + formatMoney(totalPaid));
-      setElText("cust-detail-total-balance", "₹ " + formatMoney(totalBalance));
+      setElText("cust-detail-total-balance", isDue ? "₹ " + formatMoney(totalBalance) : "₹ 0.00 (Clear)");
+
+      // Tab Count Badges
+      setElText("cust-tab-badge-invoices", allInvs.length);
+      setElText("cust-tab-badge-products", allPurchasedProducts.length);
+      setElText("cust-tab-badge-payments", allPaymentEntries.length);
+
+      // Reset search box
+      const searchBox = document.getElementById("cust-modal-search");
+      if (searchBox) searchBox.value = "";
 
       // 1. Populate Invoices Table
-      const invThead = document.querySelector("#pane-cust-tab-invoices table thead");
-      if (invThead) {
-        invThead.innerHTML = `
-          <tr style="border-bottom: 2px solid #e2e8f0; color: #475569; text-align: left;">
-            <th style="padding: 8px 10px;">INVOICE #</th>
-            <th style="padding: 8px 10px;">BILL DATE &amp; TIME</th>
-            <th style="padding: 8px 10px; text-align: right;">GRAND TOTAL</th>
-            <th style="padding: 8px 10px; text-align: right;">PAID</th>
-            <th style="padding: 8px 10px; text-align: right;">BALANCE</th>
-            <th style="padding: 8px 10px; text-align: center;">STATUS</th>
-            ${!isViewUser ? '<th style="padding: 8px 10px; text-align: center;">ACTION</th>' : ''}
-          </tr>
-        `;
-      }
       const invTbody = document.getElementById("cust-detail-invoices-tbody");
       if (invTbody) {
         if (allInvs.length === 0) {
-          invTbody.innerHTML = `<tr><td colspan="${!isViewUser ? '7' : '6'}" class="text-center text-muted" style="padding: 24px; color: #64748b;"><i class="fa-solid fa-file-invoice" style="font-size: 24px; color: #cbd5e1; display: block; margin-bottom: 8px;"></i>No invoices or bills recorded yet for this customer.</td></tr>`;
+          invTbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted" style="padding: 32px; color: #64748b;"><i class="fa-solid fa-file-invoice" style="font-size: 28px; color: #cbd5e1; display: block; margin-bottom: 8px;"></i>No invoices or bills recorded yet for this customer.</td></tr>`;
         } else {
           invTbody.innerHTML = allInvs
             .map((inv) => {
               if (!inv) return "";
-              const invNo = inv.invoiceNo || inv.details?.invoiceNo || "—";
-              const invDate = inv.date || inv.invoiceDate || inv.details?.date || "—";
-              const invTotal = Number(inv.total || inv.details?.total || inv.details?.grandTotal || 0);
-              const invPaid = Number(inv.paidAmount || inv.details?.paidAmount || 0);
-              const invBal = Number(inv.balanceDue || inv.details?.balanceDue || 0);
+              const d = inv.details || {};
+              const invNo = inv.invoiceNo || d.invoiceNo || "—";
+              const invDate = inv.date || inv.invoiceDate || d.date || d.invoiceDate || "—";
+              const invTotal = Number(inv.total || d.total || d.grandTotal || 0);
+              const invPaid = Number(inv.paidAmount || d.paidAmount || 0);
+              const invBal = Number(inv.balanceDue || d.balanceDue || 0);
               const status = invBal <= 0 ? "PAID" : (invPaid > 0 ? "PARTIAL" : "UNPAID");
               const statusBadge =
                 status === "PAID"
-                  ? '<span class="badge-status badge-paid">PAID</span>'
+                  ? '<span class="badge-status badge-paid" style="background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; font-weight: 800;">PAID</span>'
                   : (status === "PARTIAL"
-                      ? '<span class="badge-status badge-partial">PARTIAL</span>'
-                      : '<span class="badge-status badge-unpaid">UNPAID</span>');
+                      ? '<span class="badge-status badge-partial" style="background: #fffbeb; color: #d97706; border: 1px solid #fde68a; font-weight: 800;">PARTIAL</span>'
+                      : '<span class="badge-status badge-unpaid" style="background: #fff1f2; color: #e11d48; border: 1px solid #fecdd3; font-weight: 800;">UNPAID</span>');
+
+              const items = Array.isArray(inv.items) ? inv.items : (Array.isArray(d.items) ? d.items : []);
+              const itemsListBrief = items.map(it => it.name || it.description).filter(Boolean);
+              const itemsPreview = itemsListBrief.slice(0, 2).join(", ") + (itemsListBrief.length > 2 ? ` (+${itemsListBrief.length - 2} more)` : "");
 
               const safeInvId = String(inv.id || invNo).replace(/'/g, "\\'");
               return `
                 <tr>
-                  <td style="font-weight: 700; color: #0284c7; cursor: pointer;" onclick="openInvoicePrintPreview('${safeInvId}', 'a4')">
-                    <i class="fa-solid fa-file-invoice"></i> #${invNo}
+                  <td>
+                    <div style="font-weight: 800; color: #0284c7; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;" onclick="openInvoicePrintPreview('${safeInvId}', 'a4')" title="Open A4 Tax Invoice #${invNo}">
+                      <i class="fa-solid fa-file-invoice"></i> #${invNo}
+                    </div>
                   </td>
-                  <td>${formatDateTime(invDate)}</td>
-                  <td style="text-align: right; font-weight: 700;">₹ ${formatMoney(invTotal)}</td>
-                  <td style="text-align: right; color: #16a34a; font-weight: 700;">₹ ${formatMoney(invPaid)}</td>
-                  <td style="text-align: right; color: ${invBal > 0 ? '#b45309' : '#64748b'}; font-weight: 700;">₹ ${formatMoney(invBal)}</td>
-                  <td class="text-center">${statusBadge}</td>
-                  ${!isViewUser ? `
-                  <td class="text-center">
-                    ${invBal > 0
-                      ? `<button class="btn btn-xs btn-primary" onclick="window.promptCustomerPaymentForInvoice('${safeInvId}')" style="padding: 4px 8px; font-size: 11px; font-weight: 700; border-radius: 4px;"><i class="fa-solid fa-hand-holding-dollar"></i> Settle</button>`
-                      : '<span style="color: #10b981; font-weight: 700; font-size: 11px;">Settled</span>'
-                    }
-                  </td>` : ''}
+                  <td>
+                    <div style="font-weight: 600; color: #334155;">${formatDateTime(invDate)}</div>
+                  </td>
+                  <td>
+                    <div style="font-size: 11.5px; color: #475569;" title="${itemsListBrief.join(', ')}">
+                      <strong>${items.length} ${items.length === 1 ? 'item' : 'items'}</strong>
+                      ${itemsPreview ? `<div style="color: #64748b; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px;">${itemsPreview}</div>` : ''}
+                    </div>
+                  </td>
+                  <td style="text-align: right; font-weight: 800; color: #0f172a;">₹ ${formatMoney(invTotal)}</td>
+                  <td style="text-align: right; color: #16a34a; font-weight: 800;">₹ ${formatMoney(invPaid)}</td>
+                  <td style="text-align: right; color: ${invBal > 0 ? '#dc2626' : '#64748b'}; font-weight: 800;">₹ ${formatMoney(invBal)}</td>
+                  <td style="text-align: center;">${statusBadge}</td>
+                  <td style="text-align: center;">
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 5px;">
+                      ${invBal > 0 && !isViewUser
+                        ? `<button class="btn btn-xs" onclick="window.promptCustomerPaymentForInvoice('${safeInvId}')" title="Settle Balance for #${invNo}" style="padding: 4px 8px; font-size: 11px; font-weight: 800; border-radius: 6px; background: #0284c7; color: white; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-bolt"></i> Settle</button>`
+                        : ''
+                      }
+                      <button class="action-btn" onclick="openInvoicePrintPreview('${safeInvId}', 'a4')" title="Preview & Print A4 Invoice" style="padding: 5px 8px; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff; color: #0284c7; cursor: pointer;"><i class="fa-solid fa-print"></i></button>
+                      <button class="action-btn" onclick="if(window.shareInvoiceToWhatsApp) window.shareInvoiceToWhatsApp('${safeInvId}', this)" title="Share Bill on WhatsApp" style="padding: 5px 8px; border-radius: 6px; border: 1px solid rgba(22, 163, 74, 0.3); background: #f0fdf4; color: #16a34a; cursor: pointer;"><i class="fa-brands fa-whatsapp"></i></button>
+                    </div>
+                  </td>
                 </tr>
               `;
             })
@@ -357,51 +441,90 @@
 
       // 2. Populate Products Purchased Table
       const prodTbody = document.getElementById("cust-detail-products-tbody");
+      const prodSummary = document.getElementById("cust-products-summary-strip");
       if (prodTbody) {
-        prodTbody.innerHTML =
-          allPurchasedProducts.length === 0
-            ? '<tr><td colspan="6" class="text-center text-muted" style="padding: 24px; color: #64748b;">No item details available.</td></tr>'
-            : allPurchasedProducts
-                .map(
-                  (p) => {
-                    const safeInvRef = String(p.invoiceId || p.invoiceNo).replace(/'/g, "\\'");
-                    return `
-                      <tr>
-                        <td style="font-weight: 600;">${p.name}</td>
-                        <td><span style="color: #0284c7; font-weight: 600; cursor: pointer;" onclick="openInvoicePrintPreview('${safeInvRef}', 'a4')">#${p.invoiceNo}</span></td>
-                        <td>${formatDateTime(p.date)}</td>
-                        <td class="text-center" style="font-weight: 700;">${p.quantity} ${p.unit}</td>
-                        <td style="text-align: right;">₹ ${formatMoney(p.rate)}</td>
-                        <td style="text-align: right; font-weight: 700; color: #0f172a;">₹ ${formatMoney(p.total)}</td>
-                      </tr>
-                    `;
-                  }
-                )
-                .join("");
+        if (allPurchasedProducts.length === 0) {
+          prodTbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted" style="padding: 32px; color: #64748b;"><i class="fa-solid fa-boxes-stacked" style="font-size: 28px; color: #cbd5e1; display: block; margin-bottom: 8px;"></i>No item purchase history available.</td></tr>';
+          if (prodSummary) prodSummary.textContent = "No products purchased yet.";
+        } else {
+          prodTbody.innerHTML = allPurchasedProducts
+            .map((p) => {
+              const safeInvRef = String(p.invoiceId || p.invoiceNo).replace(/'/g, "\\'");
+              return `
+                <tr>
+                  <td style="font-weight: 700; color: #0f172a;">${p.name}</td>
+                  <td>
+                    <span style="color: #0284c7; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" onclick="openInvoicePrintPreview('${safeInvRef}', 'a4')" title="Open Bill #${p.invoiceNo}">
+                      <i class="fa-solid fa-file-invoice"></i> #${p.invoiceNo}
+                    </span>
+                  </td>
+                  <td style="color: #475569;">${formatDateTime(p.date)}</td>
+                  <td style="text-align: center;">
+                    <span style="background: #f1f5f9; padding: 3px 8px; border-radius: 6px; font-weight: 700; color: #334155;">${p.quantity} ${p.unit}</span>
+                  </td>
+                  <td style="text-align: right; color: #475569;">₹ ${formatMoney(p.rate)}</td>
+                  <td style="text-align: right; font-weight: 800; color: #0f172a;">₹ ${formatMoney(p.total)}</td>
+                </tr>
+              `;
+            })
+            .join("");
+
+          const totalProdSum = allPurchasedProducts.reduce((sum, p) => sum + (p.total || 0), 0);
+          if (prodSummary) {
+            prodSummary.innerHTML = `
+              <span>Total Line Items: <strong>${allPurchasedProducts.length}</strong></span>
+              <span>Cumulative Product Value: <strong style="color: #0284c7;">₹ ${formatMoney(totalProdSum)}</strong></span>
+            `;
+          }
+        }
       }
 
       // 3. Populate Payments Timeline Log Table
       const payTbody = document.getElementById("cust-detail-payments-tbody");
+      const paySummary = document.getElementById("cust-payments-summary-strip");
       if (payTbody) {
-        payTbody.innerHTML =
-          allPaymentEntries.length === 0
-            ? '<tr><td colspan="5" class="text-center text-muted" style="padding: 24px; color: #64748b;">No recorded payment entries.</td></tr>'
-            : allPaymentEntries
-                .map(
-                  (pay) => {
-                    const safeInvRef = String(pay.invoiceId || pay.invoiceNo).replace(/'/g, "\\'");
-                    return `
-                      <tr>
-                        <td style="font-weight: 600;">${formatDateTime(pay.date)}</td>
-                        <td><span style="color: #0284c7; font-weight: 600; cursor: pointer;" onclick="openInvoicePrintPreview('${safeInvRef}', 'a4')">#${pay.invoiceNo}</span></td>
-                        <td style="text-align: right; font-weight: 700; color: #16a34a; font-size: 13px;">₹ ${formatMoney(pay.amount)}</td>
-                        <td><span class="badge-status badge-paid" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd;">${pay.mode}</span></td>
-                        <td style="font-size: 11.5px; color: #475569;">${pay.reference !== '—' ? `<strong>Ref:</strong> ${pay.reference} ` : ''}${pay.note !== '—' ? `(${pay.note})` : ''}</td>
-                      </tr>
-                    `;
-                  }
-                )
-                .join("");
+        if (allPaymentEntries.length === 0) {
+          payTbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted" style="padding: 32px; color: #64748b;"><i class="fa-solid fa-receipt" style="font-size: 28px; color: #cbd5e1; display: block; margin-bottom: 8px;"></i>No recorded payment entries yet.</td></tr>';
+          if (paySummary) paySummary.textContent = "No payments logged yet.";
+        } else {
+          payTbody.innerHTML = allPaymentEntries
+            .map((pay) => {
+              const safeInvRef = String(pay.invoiceId || pay.invoiceNo).replace(/'/g, "\\'");
+              return `
+                <tr>
+                  <td style="font-weight: 700; color: #334155;">${formatDateTime(pay.date)}</td>
+                  <td>
+                    <span style="color: #0284c7; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" onclick="openInvoicePrintPreview('${safeInvRef}', 'a4')" title="Open Bill #${pay.invoiceNo}">
+                      <i class="fa-solid fa-file-invoice"></i> #${pay.invoiceNo}
+                    </span>
+                  </td>
+                  <td style="text-align: right; font-weight: 800; color: #16a34a; font-size: 13.5px;">₹ ${formatMoney(pay.amount)}</td>
+                  <td>
+                    <span class="badge-status badge-paid" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; font-weight: 700; padding: 3px 8px; border-radius: 6px;">
+                      <i class="fa-solid fa-money-bill-wave"></i> ${pay.mode}
+                    </span>
+                  </td>
+                  <td style="font-size: 12px; color: #475569;">
+                    ${pay.reference !== '—' ? `<strong>Ref/UTR:</strong> <span style="font-family: monospace; color: #0f172a; font-weight: 700;">${pay.reference}</span> ` : ''}
+                    ${pay.note !== '—' ? `<span style="color: #64748b;">(${pay.note})</span>` : ''}
+                  </td>
+                  <td style="text-align: center;">
+                    <span style="color: #059669; font-weight: 800; font-size: 11px; background: #ecfdf5; padding: 2px 8px; border-radius: 6px; border: 1px solid #a7f3d0;">
+                      <i class="fa-solid fa-circle-check"></i> Verified
+                    </span>
+                  </td>
+                </tr>
+              `;
+            })
+            .join("");
+
+          if (paySummary) {
+            paySummary.innerHTML = `
+              <span>Total Payment Receipts: <strong>${allPaymentEntries.length}</strong></span>
+              <span>Total Received &amp; Reconciled: <strong style="color: #059669;">₹ ${formatMoney(totalPaid)}</strong></span>
+            `;
+          }
+        }
       }
 
       // Reset active tab to Invoices
@@ -415,16 +538,13 @@
         stmtActions.style.display = isViewUser ? "none" : "flex";
       }
 
-      // Show modal with robust styling to override any previous display:none
+      // Show modal
       modal.classList.remove("hidden");
-      modal.style.removeProperty("display");
-      modal.style.removeProperty("visibility");
-      modal.style.removeProperty("pointer-events");
       modal.style.setProperty("display", "flex", "important");
       modal.style.setProperty("visibility", "visible", "important");
       modal.style.setProperty("opacity", "1", "important");
       modal.style.setProperty("pointer-events", "auto", "important");
-      modal.style.setProperty("z-index", "99999", "important");
+      modal.style.setProperty("z-index", "2147483645", "important");
     } catch (err) {
       console.error("[CustomerTimeline] Error opening customer modal:", err);
       if (typeof showFloatingToast === "function") {
@@ -433,12 +553,42 @@
     }
   };
 
-  let currentActiveCustomerStatement = null;
+  window.filterCustModalRows = function (query) {
+    const q = String(query || '').toLowerCase().trim();
+    const currentTab = window._currentCustDetailTab || 'invoices';
+    const pane = document.getElementById(`pane-cust-tab-${currentTab}`);
+    if (!pane) return;
+    const rows = pane.querySelectorAll('tbody tr');
+    rows.forEach(row => {
+      if (row.querySelector('td[colspan]')) return;
+      const text = row.textContent.toLowerCase();
+      row.style.display = text.includes(q) ? '' : 'none';
+    });
+  };
+
+  window.settleCustomerTopDueBill = function () {
+    if (!currentActiveCustomerStatement || !Array.isArray(currentActiveCustomerStatement.invoices)) return;
+    const dueInv = currentActiveCustomerStatement.invoices.find(i => {
+      const bal = Number(i.balanceDue !== undefined ? i.balanceDue : (i.details?.balanceDue || 0));
+      return bal > 0.01;
+    });
+    if (dueInv) {
+      window.promptCustomerPaymentForInvoice(dueInv.id || dueInv.invoiceNo);
+    } else {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("✅ Customer has no pending balance to settle!", "success");
+      }
+    }
+  };
 
   window.printCustomerStatement = function () {
     if (!currentActiveCustomerStatement) return;
     const s = currentActiveCustomerStatement;
-    const printWin = window.open("", "_blank", "width=850,height=900");
+    const comp = (window.globalSettings && window.globalSettings.company) || {};
+    const bank = (window.globalSettings && window.globalSettings.bank) || {};
+    const upiId = (window.globalSettings && window.globalSettings.upiId) || "7386262139@upi";
+
+    const printWin = window.open("", "_blank", "width=900,height=950");
     if (!printWin) {
       window.print();
       return;
@@ -450,80 +600,155 @@
       <head>
         <title>Customer Account Statement - ${s.name}</title>
         <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 24px; color: #1e293b; }
-          .header { border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; }
-          .title { font-size: 20px; font-weight: bold; color: #0284c7; }
-          .kpi-row { display: flex; gap: 14px; margin-bottom: 24px; }
-          .kpi { flex: 1; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; }
-          .kpi-val { font-size: 16px; font-weight: bold; margin-top: 4px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px; }
-          th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; }
-          th { background: #f8fafc; font-weight: bold; }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 28px; color: #0f172a; margin: 0; }
+          .header-box { border-bottom: 2.5px solid #0284c7; padding-bottom: 14px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
+          .company-name { font-size: 22px; font-weight: 800; color: #0284c7; letter-spacing: -0.5px; }
+          .company-sub { font-size: 11.5px; color: #475569; margin-top: 3px; max-width: 450px; line-height: 1.4; }
+          .statement-badge { font-size: 12px; font-weight: 700; background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 6px; display: inline-block; margin-bottom: 6px; }
+          .cust-info-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; margin-bottom: 20px; display: flex; justify-content: space-between; gap: 16px; font-size: 12px; }
+          .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 24px; }
+          .kpi { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; background: #ffffff; }
+          .kpi-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; }
+          .kpi-val { font-size: 16px; font-weight: 800; margin-top: 3px; color: #0f172a; }
+          .section-title { font-size: 14px; font-weight: 800; color: #1e293b; margin: 18px 0 8px 0; display: flex; justify-content: space-between; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11.5px; }
+          th, td { border: 1px solid #e2e8f0; padding: 7px 9px; text-align: left; }
+          th { background: #f1f5f9; font-weight: 700; color: #475569; text-transform: uppercase; font-size: 10px; }
           .text-right { text-align: right; }
           .text-center { text-align: center; }
+          .bank-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 14px; font-size: 11.5px; margin-top: 20px; display: flex; justify-content: space-between; align-items: center; }
           @media print { body { padding: 0; } }
         </style>
       </head>
       <body>
-        <div class="header">
+        <div class="header-box">
           <div>
-            <div class="title">AARYAN AQUA NEEDS</div>
-            <div style="font-size: 13px; color: #64748b;">Customer Account & Payment Statement</div>
+            <div class="company-name">${comp.name || "AARYAN AQUA NEEDS"}</div>
+            <div class="company-sub">
+              ${comp.tagline ? `<strong>${comp.tagline}</strong><br>` : ''}
+              ${(comp.address || "").replace(/\n/g, ', ')}<br>
+              Phone: ${comp.phones || "+91 74166 05652"} • Email: ${comp.email || "aaryanaquaneeds@gmail.com"}<br>
+              GSTIN: <strong>${comp.gstin || "37ACNFA4687Q1ZC"}</strong>
+            </div>
           </div>
-          <div style="text-align: right; font-size: 12px;">
-            <strong>Statement Date:</strong> ${new Date().toLocaleDateString("en-IN")}<br>
-            <strong>Customer:</strong> ${s.name} (${s.phone || 'No phone'})
+          <div style="text-align: right;">
+            <div class="statement-badge">CUSTOMER ACCOUNT STATEMENT</div>
+            <div style="font-size: 12px; color: #475569; margin-top: 4px;">
+              <strong>Statement Date:</strong> ${new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}<br>
+              <strong>Statement Time:</strong> ${new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })}
+            </div>
+          </div>
+        </div>
+
+        <div class="cust-info-box">
+          <div>
+            <div style="font-size: 14px; font-weight: 800; color: #0f172a;">${s.name}</div>
+            <div style="color: #64748b; margin-top: 3px;">
+              Phone: <strong>${s.phone || '—'}</strong><br>
+              Address: ${s.address || '—'}
+            </div>
+          </div>
+          <div style="text-align: right;">
+            <div>GSTIN: <strong>${s.gstin || 'Unregistered'}</strong></div>
+            <div style="margin-top: 3px;">Total Bills: <strong>${s.invoices.length}</strong></div>
           </div>
         </div>
 
         <div class="kpi-row">
-          <div class="kpi"><div>Total Invoices</div><div class="kpi-val">${s.invoices.length}</div></div>
-          <div class="kpi"><div>Total Billed</div><div class="kpi-val">₹ ${formatMoney(s.totalBilled)}</div></div>
-          <div class="kpi"><div>Total Received</div><div class="kpi-val" style="color: #16a34a;">₹ ${formatMoney(s.totalPaid)}</div></div>
-          <div class="kpi" style="border-color: #fca5a5; background: #fff5f5;"><div>Balance Due</div><div class="kpi-val" style="color: #dc2626;">₹ ${formatMoney(s.totalBalance)}</div></div>
+          <div class="kpi">
+            <div class="kpi-label">Total Invoices</div>
+            <div class="kpi-val">${s.invoices.length}</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Total Purchases</div>
+            <div class="kpi-val" style="color: #0284c7;">₹ ${formatMoney(s.totalBilled)}</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Cleared / Received</div>
+            <div class="kpi-val" style="color: #16a34a;">₹ ${formatMoney(s.totalPaid)}</div>
+          </div>
+          <div class="kpi" style="${s.totalBalance > 0 ? 'border-color: #fca5a5; background: #fff5f5;' : 'border-color: #a7f3d0; background: #f0fdf4;'}">
+            <div class="kpi-label" style="color: ${s.totalBalance > 0 ? '#dc2626' : '#16a34a'};">Current Balance Due</div>
+            <div class="kpi-val" style="color: ${s.totalBalance > 0 ? '#dc2626' : '#16a34a'};">₹ ${formatMoney(s.totalBalance)}</div>
+          </div>
         </div>
 
-        <h3>Invoices Record</h3>
+        <div class="section-title">
+          <span>Invoices &amp; Billing History</span>
+          <span style="font-size: 11.5px; font-weight: normal; color: #64748b;">${s.invoices.length} record(s)</span>
+        </div>
         <table>
           <thead>
-            <tr><th>Invoice #</th><th>Date</th><th class="text-right">Grand Total</th><th class="text-right">Paid</th><th class="text-right">Balance</th><th class="text-center">Status</th></tr>
+            <tr>
+              <th>Invoice #</th>
+              <th>Bill Date &amp; Time</th>
+              <th class="text-right">Grand Total</th>
+              <th class="text-right">Paid Amount</th>
+              <th class="text-right">Balance Due</th>
+              <th class="text-center">Status</th>
+            </tr>
           </thead>
           <tbody>
-            ${s.invoices.map(inv => `
+            ${s.invoices.length === 0 ? '<tr><td colspan="6" class="text-center">No invoices recorded.</td></tr>' : s.invoices.map(inv => `
               <tr>
-                <td>#${inv.invoiceNo || '—'}</td>
+                <td style="font-weight: bold; color: #0284c7;">#${inv.invoiceNo || '—'}</td>
                 <td>${formatDateTime(inv.date || inv.invoiceDate)}</td>
                 <td class="text-right">₹ ${formatMoney(inv.total || inv.grandTotal)}</td>
-                <td class="text-right">₹ ${formatMoney(inv.paidAmount)}</td>
-                <td class="text-right">₹ ${formatMoney(inv.balanceDue)}</td>
-                <td class="text-center">${(inv.balanceDue || 0) <= 0 ? 'PAID' : 'PENDING'}</td>
+                <td class="text-right" style="color: #16a34a; font-weight: bold;">₹ ${formatMoney(inv.paidAmount)}</td>
+                <td class="text-right" style="color: ${(inv.balanceDue || 0) > 0 ? '#dc2626' : '#475569'}; font-weight: bold;">₹ ${formatMoney(inv.balanceDue)}</td>
+                <td class="text-center">${(inv.balanceDue || 0) <= 0 ? '<strong style="color: #16a34a;">PAID</strong>' : '<strong style="color: #dc2626;">PENDING</strong>'}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
 
-        <h3>Payment Receipts & Timeline Log</h3>
+        <div class="section-title">
+          <span>Payment Receipts &amp; Audit Log</span>
+          <span style="font-size: 11.5px; font-weight: normal; color: #64748b;">${s.payments.length} receipt(s)</span>
+        </div>
         <table>
           <thead>
-            <tr><th>Exact Payment Date & Time</th><th>Invoice #</th><th class="text-right">Amount Received</th><th>Mode</th><th>Reference</th></tr>
+            <tr>
+              <th>Payment Timestamp</th>
+              <th>Bill #</th>
+              <th class="text-right">Amount Received</th>
+              <th>Payment Mode</th>
+              <th>UTR / Ref / Notes</th>
+            </tr>
           </thead>
           <tbody>
-            ${s.payments.length === 0 ? '<tr><td colspan="5" class="text-center">No payment entries.</td></tr>' : s.payments.map(p => `
+            ${s.payments.length === 0 ? '<tr><td colspan="5" class="text-center">No recorded payment receipts.</td></tr>' : s.payments.map(p => `
               <tr>
                 <td>${formatDateTime(p.date)}</td>
-                <td>#${p.invoiceNo}</td>
+                <td style="font-weight: bold; color: #0284c7;">#${p.invoiceNo}</td>
                 <td class="text-right" style="color: #16a34a; font-weight: bold;">₹ ${formatMoney(p.amount)}</td>
-                <td>${p.mode}</td>
-                <td>${p.reference || '—'}</td>
+                <td><strong>${p.mode}</strong></td>
+                <td>${p.reference || '—'} ${p.note && p.note !== '—' ? `(${p.note})` : ''}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
 
-        <div style="margin-top: 30px; font-size: 11px; color: #94a3b8; text-align: center;">
-          Generated electronically by Aaryan Aqua Needs Billing System.
+        ${s.totalBalance > 0.01 ? `
+          <div class="bank-box">
+            <div>
+              <strong>Bank Details for Settlement:</strong><br>
+              Bank: ${bank.name || 'State Bank of India'} • A/C No: ${bank.accountNo || '45413424177'} • IFSC: ${bank.ifsc || 'SBIN0000911'} (${bank.branch || 'Repalle'})<br>
+              Instant UPI ID: <strong>${upiId}</strong>
+            </div>
+            <div style="text-align: right;">
+              <span style="font-size: 13px; font-weight: 800; color: #dc2626;">Amount Payable: ₹ ${formatMoney(s.totalBalance)}</span>
+            </div>
+          </div>
+        ` : ''}
+
+        <div style="margin-top: 40px; display: flex; justify-content: space-between; font-size: 11px; color: #64748b;">
+          <div>Generated electronically by Aaryan Aqua Needs Billing System.</div>
+          <div style="text-align: right; border-top: 1px solid #cbd5e1; padding-top: 6px; width: 200px;">
+            Authorized Signatory
+          </div>
         </div>
-        <script>window.onload = function() { window.print(); }<\/script>
+        <script>window.onload = function() { window.print(); }</script>
       </body>
       </html>
     `;
@@ -598,97 +823,147 @@
   // Switch tabs inside customer profile modal
   window.switchCustDetailTab = function (tabName) {
     const tabs = ["invoices", "products", "payments"];
+    window._currentCustDetailTab = tabName;
     tabs.forEach((t) => {
       const btn = document.getElementById(`btn-cust-tab-${t}`);
       const pane = document.getElementById(`pane-cust-tab-${t}`);
       if (btn) btn.classList.toggle("active", t === tabName);
       if (pane) pane.style.display = t === tabName ? "block" : "none";
     });
+    const searchInput = document.getElementById("cust-modal-search");
+    if (searchInput && searchInput.value) {
+      window.filterCustModalRows(searchInput.value);
+    }
   };
 
   function createCustomerDetailsModalDOM() {
     const existing = document.getElementById("customer-details-modal");
-    if (existing) return existing;
+    if (existing) {
+      if (existing.querySelector(".cust-modal-header")) return existing;
+      existing.remove();
+    }
     const div = document.createElement("div");
     div.id = "customer-details-modal";
     div.className = "modal-overlay hidden no-print";
     div.style.cssText =
-      "position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 99999; padding: 16px;";
+      "position: fixed; inset: 0; background: rgba(15, 23, 42, 0.78); backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 2147483645; padding: 16px;";
     div.onclick = function (e) {
       if (e.target === div) closeCustomerDetailsModal();
     };
 
     div.innerHTML = `
-      <div class="modal-box" style="background: #ffffff; width: 100%; max-width: 950px; max-height: 90vh; border-radius: 14px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); display: flex; flex-direction: column; overflow: hidden; font-family: inherit;">
+      <div class="modal-box" style="background: #ffffff; width: 100%; max-width: min(96vw, 1080px); max-height: min(92vh, 880px); border-radius: 16px; box-shadow: 0 25px 60px -15px rgba(15, 23, 42, 0.45); display: flex; flex-direction: column; overflow: hidden; font-family: inherit;">
         
-        <!-- Header -->
-        <div style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #ffffff; padding: 18px 24px; display: flex; align-items: center; justify-content: space-between;">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="width: 44px; height: 44px; background: rgba(14, 165, 233, 0.2); border: 1.5px solid #0ea5e9; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; color: #38bdf8;">
-              <i class="fa-solid fa-user-tie"></i>
-            </div>
-            <div>
-              <div style="font-size: 18px; font-weight: 800; color: #ffffff;" id="cust-detail-name">Customer Name</div>
-              <div style="font-size: 12px; color: #94a3b8; display: flex; gap: 14px; margin-top: 3px;">
-                <span><i class="fa-solid fa-phone text-emerald"></i> <span id="cust-detail-phone">—</span></span>
-                <span><i class="fa-solid fa-location-dot text-rose"></i> <span id="cust-detail-address">—</span></span>
-                <span><i class="fa-solid fa-id-card text-cyan"></i> GSTIN: <span id="cust-detail-gstin">—</span></span>
+        <!-- Modern Profile Header -->
+        <div class="cust-modal-header">
+          <div style="display: flex; align-items: center; gap: 14px; min-width: 0;">
+            <div class="cust-modal-avatar" id="cust-detail-avatar">MB</div>
+            <div style="min-width: 0;">
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <span class="cust-modal-title" id="cust-detail-name">Customer Name</span>
+                <span id="cust-header-role-badge" style="background: rgba(14, 165, 233, 0.2); color: #38bdf8; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(14, 165, 233, 0.3);">Client Farm</span>
+              </div>
+              <div class="cust-modal-meta-row">
+                <span id="cust-detail-phone-wrap" class="cust-modal-meta-chip">
+                  <i class="fa-solid fa-phone text-emerald"></i>
+                  <a id="cust-detail-phone-link" href="#" target="_blank"><span id="cust-detail-phone">—</span></a>
+                </span>
+                <span id="cust-detail-address-wrap" class="cust-modal-meta-chip">
+                  <i class="fa-solid fa-location-dot text-rose"></i>
+                  <span id="cust-detail-address">—</span>
+                </span>
+                <span id="cust-detail-gstin-wrap" class="cust-modal-meta-chip">
+                  <i class="fa-solid fa-receipt text-cyan"></i>
+                  <span>GSTIN: <strong id="cust-detail-gstin" style="color: #ffffff;">—</strong></span>
+                </span>
               </div>
             </div>
           </div>
-          <button type="button" onclick="closeCustomerDetailsModal()" style="background: transparent; border: none; color: #94a3b8; font-size: 20px; cursor: pointer; padding: 6px 10px; border-radius: 6px;">
-            <i class="fa-solid fa-xmark"></i>
-          </button>
-        </div>
-
-        <!-- Metric KPI Cards -->
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 16px 24px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-          <div style="background: #ffffff; padding: 12px 14px; border-radius: 10px; border: 1px solid #e2e8f0;">
-            <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Total Invoices</div>
-            <div style="font-size: 19px; font-weight: 800; color: #0f172a; margin-top: 4px;" id="cust-detail-total-invoices">0</div>
-          </div>
-          <div style="background: #ffffff; padding: 12px 14px; border-radius: 10px; border: 1px solid #e2e8f0;">
-            <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Total Billed</div>
-            <div style="font-size: 19px; font-weight: 800; color: #0284c7; margin-top: 4px;" id="cust-detail-total-billed">₹ 0.00</div>
-          </div>
-          <div style="background: #ffffff; padding: 12px 14px; border-radius: 10px; border: 1px solid #e2e8f0;">
-            <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Total Received</div>
-            <div style="font-size: 19px; font-weight: 800; color: #16a34a; margin-top: 4px;" id="cust-detail-total-paid">₹ 0.00</div>
-          </div>
-          <div style="background: #ffffff; padding: 12px 14px; border-radius: 10px; border: 1.5px solid #fecaca; background: #fff5f5;">
-            <div style="font-size: 11px; font-weight: 700; color: #dc2626; text-transform: uppercase;">Outstanding Due</div>
-            <div style="font-size: 19px; font-weight: 800; color: #dc2626; margin-top: 4px;" id="cust-detail-total-balance">₹ 0.00</div>
-          </div>
-        </div>
-
-        <!-- Navigation Tabs -->
-        <div style="display: flex; gap: 8px; padding: 12px 24px 0 24px; border-bottom: 1px solid #e2e8f0; background: #ffffff;">
-          <button type="button" id="btn-cust-tab-invoices" class="active" onclick="switchCustDetailTab('invoices')" style="padding: 10px 16px; font-size: 13px; font-weight: 700; border: none; background: transparent; border-bottom: 3px solid #0284c7; color: #0284c7; cursor: pointer;">
-            <i class="fa-solid fa-file-invoice"></i> Invoices Taken
-          </button>
-          <button type="button" id="btn-cust-tab-products" onclick="switchCustDetailTab('products')" style="padding: 10px 16px; font-size: 13px; font-weight: 700; border: none; background: transparent; border-bottom: 3px solid transparent; color: #64748b; cursor: pointer;">
-            <i class="fa-solid fa-boxes-stacked"></i> Products Purchased &amp; Times
-          </button>
-          <button type="button" id="btn-cust-tab-payments" onclick="switchCustDetailTab('payments')" style="padding: 10px 16px; font-size: 13px; font-weight: 700; border: none; background: transparent; border-bottom: 3px solid transparent; color: #64748b; cursor: pointer;">
-            <i class="fa-solid fa-clock-rotate-left"></i> Payment Log &amp; Settled Timestamps
-          </button>
-        </div>
-
-        <!-- Body Panes Scrollable Container -->
-        <div style="padding: 16px 24px; overflow-y: auto; flex: 1; background: #ffffff;">
           
-          <!-- Pane 1: Invoices -->
+          <div style="display: flex; align-items: center; gap: 10px; flex-shrink: 0;">
+            <div id="cust-header-due-badge"></div>
+            <button id="cust-header-wa-btn" type="button" class="btn btn-xs btn-whatsapp" onclick="window.sendWhatsAppCustomerStatement()" title="Send WhatsApp Account Statement with 1-Click UPI Payment Link" style="display: none; align-items: center; gap: 6px; background: #16a34a; color: white; border: none; padding: 7px 13px; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer;">
+              <i class="fa-brands fa-whatsapp" style="font-size: 14px;"></i> WhatsApp Reminder
+            </button>
+            <button type="button" onclick="closeCustomerDetailsModal()" title="Close Profile (Esc)" style="background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.15); color: #cbd5e1; font-size: 16px; cursor: pointer; width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease;">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Symmetrical 4-Card Financial Metric Strip -->
+        <div class="cust-modal-kpi-grid">
+          <div class="cust-modal-kpi-card kpi-invoices">
+            <div class="cust-modal-kpi-icon"><i class="fa-solid fa-file-invoice"></i></div>
+            <div>
+              <div class="cust-modal-kpi-label">Total Invoices</div>
+              <div class="cust-modal-kpi-val" id="cust-detail-total-invoices">0</div>
+            </div>
+          </div>
+          <div class="cust-modal-kpi-card kpi-billed">
+            <div class="cust-modal-kpi-icon"><i class="fa-solid fa-chart-line"></i></div>
+            <div>
+              <div class="cust-modal-kpi-label">Total Purchases</div>
+              <div class="cust-modal-kpi-val" style="color: #0284c7;" id="cust-detail-total-billed">₹ 0.00</div>
+            </div>
+          </div>
+          <div class="cust-modal-kpi-card kpi-paid">
+            <div class="cust-modal-kpi-icon"><i class="fa-solid fa-circle-check"></i></div>
+            <div>
+              <div class="cust-modal-kpi-label">Cleared / Received</div>
+              <div class="cust-modal-kpi-val" style="color: #059669;" id="cust-detail-total-paid">₹ 0.00</div>
+            </div>
+          </div>
+          <div class="cust-modal-kpi-card kpi-due" id="cust-kpi-card-due">
+            <div class="cust-modal-kpi-icon" id="cust-kpi-icon-due"><i class="fa-solid fa-wallet"></i></div>
+            <div style="flex: 1; min-width: 0;">
+              <div class="cust-modal-kpi-label" id="cust-kpi-label-due" style="color: #dc2626;">Outstanding Due</div>
+              <div class="cust-modal-kpi-val" style="color: #dc2626;" id="cust-detail-total-balance">₹ 0.00</div>
+            </div>
+            <button id="cust-kpi-settle-btn" type="button" onclick="window.settleCustomerTopDueBill()" title="Settle Pending Balance" style="display: none; padding: 5px 10px; font-size: 11px; font-weight: 800; background: #dc2626; color: #ffffff; border: none; border-radius: 6px; cursor: pointer; flex-shrink: 0;">
+              <i class="fa-solid fa-bolt"></i> Settle
+            </button>
+          </div>
+        </div>
+
+        <!-- Tabs Navigation & Realtime Filter Strip -->
+        <div class="cust-modal-tabs-bar">
+          <div class="cust-modal-tabs-group">
+            <button type="button" id="btn-cust-tab-invoices" class="cust-modal-tab-btn active" onclick="switchCustDetailTab('invoices')">
+              <i class="fa-solid fa-file-invoice"></i> Invoices Taken
+              <span id="cust-tab-badge-invoices" class="cust-modal-tab-count">0</span>
+            </button>
+            <button type="button" id="btn-cust-tab-products" class="cust-modal-tab-btn" onclick="switchCustDetailTab('products')">
+              <i class="fa-solid fa-boxes-stacked"></i> Products Purchased
+              <span id="cust-tab-badge-products" class="cust-modal-tab-count">0</span>
+            </button>
+            <button type="button" id="btn-cust-tab-payments" class="cust-modal-tab-btn" onclick="switchCustDetailTab('payments')">
+              <i class="fa-solid fa-clock-rotate-left"></i> Payment Log &amp; Audit
+              <span id="cust-tab-badge-payments" class="cust-modal-tab-count">0</span>
+            </button>
+          </div>
+          <div class="cust-modal-search-box">
+            <i class="fa-solid fa-magnifying-glass" style="color: #94a3b8; font-size: 12px;"></i>
+            <input type="text" id="cust-modal-search" placeholder="Search bill #, item, date..." oninput="window.filterCustModalRows(this.value)">
+          </div>
+        </div>
+
+        <!-- Body Content Panes -->
+        <div class="cust-modal-body">
+          
+          <!-- Pane 1: Invoices Taken -->
           <div id="pane-cust-tab-invoices">
-            <table class="dashboard-table" style="width: 100%; border-collapse: collapse; font-size: 12.5px;">
+            <table class="cust-modal-table">
               <thead>
-                <tr style="border-bottom: 2px solid #e2e8f0; color: #475569; text-align: left;">
-                  <th style="padding: 8px 10px;">INVOICE #</th>
-                  <th style="padding: 8px 10px;">BILL DATE &amp; TIME</th>
-                  <th style="padding: 8px 10px; text-align: right;">GRAND TOTAL</th>
-                  <th style="padding: 8px 10px; text-align: right;">PAID</th>
-                  <th style="padding: 8px 10px; text-align: right;">BALANCE</th>
-                  <th style="padding: 8px 10px; text-align: center;">STATUS</th>
-                  <th style="padding: 8px 10px; text-align: center;">SETTLE</th>
+                <tr>
+                  <th style="width: 130px;">INVOICE #</th>
+                  <th style="width: 170px;">BILL DATE &amp; TIME</th>
+                  <th style="width: 180px;">ITEMS PURCHASED</th>
+                  <th style="text-align: right; width: 120px;">GRAND TOTAL</th>
+                  <th style="text-align: right; width: 110px;">PAID</th>
+                  <th style="text-align: right; width: 120px;">BALANCE</th>
+                  <th style="text-align: center; width: 100px;">STATUS</th>
+                  <th style="text-align: center; width: 150px;">ACTIONS</th>
                 </tr>
               </thead>
               <tbody id="cust-detail-invoices-tbody"></tbody>
@@ -697,50 +972,56 @@
 
           <!-- Pane 2: Products Purchased -->
           <div id="pane-cust-tab-products" style="display: none;">
-            <table class="dashboard-table" style="width: 100%; border-collapse: collapse; font-size: 12.5px;">
+            <table class="cust-modal-table">
               <thead>
-                <tr style="border-bottom: 2px solid #e2e8f0; color: #475569; text-align: left;">
-                  <th style="padding: 8px 10px;">PRODUCT NAME</th>
-                  <th style="padding: 8px 10px;">BILL #</th>
-                  <th style="padding: 8px 10px;">PURCHASE DATE &amp; TIME</th>
-                  <th style="padding: 8px 10px; text-align: center;">QTY</th>
-                  <th style="padding: 8px 10px; text-align: right;">RATE</th>
-                  <th style="padding: 8px 10px; text-align: right;">TOTAL (₹)</th>
+                <tr>
+                  <th>PRODUCT NAME</th>
+                  <th style="width: 120px;">INVOICE #</th>
+                  <th style="width: 170px;">PURCHASE DATE &amp; TIME</th>
+                  <th style="text-align: center; width: 110px;">QUANTITY</th>
+                  <th style="text-align: right; width: 120px;">RATE (₹)</th>
+                  <th style="text-align: right; width: 130px;">TOTAL VALUE (₹)</th>
                 </tr>
               </thead>
               <tbody id="cust-detail-products-tbody"></tbody>
             </table>
+            <div id="cust-products-summary-strip" style="margin-top: 12px; padding: 10px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 12px; font-weight: 700; color: #475569; display: flex; justify-content: space-between;"></div>
           </div>
 
-          <!-- Pane 3: Payment History Log -->
+          <!-- Pane 3: Payments Timeline Audit Log -->
           <div id="pane-cust-tab-payments" style="display: none;">
-            <table class="dashboard-table" style="width: 100%; border-collapse: collapse; font-size: 12.5px;">
+            <table class="cust-modal-table">
               <thead>
-                <tr style="border-bottom: 2px solid #e2e8f0; color: #475569; text-align: left;">
-                  <th style="padding: 8px 10px;">EXACT PAYMENT TIME</th>
-                  <th style="padding: 8px 10px;">FOR INVOICE #</th>
-                  <th style="padding: 8px 10px; text-align: right;">AMOUNT PAID</th>
-                  <th style="padding: 8px 10px;">PAYMENT MODE</th>
-                  <th style="padding: 8px 10px;">UTR / REFERENCE / NOTE</th>
+                <tr>
+                  <th style="width: 180px;">PAYMENT DATE &amp; TIME</th>
+                  <th style="width: 120px;">FOR BILL #</th>
+                  <th style="text-align: right; width: 130px;">AMOUNT RECEIVED</th>
+                  <th style="width: 140px;">PAYMENT MODE</th>
+                  <th>UTR / TRANSACTION REFERENCE / NOTE</th>
+                  <th style="text-align: center; width: 100px;">VERIFICATION</th>
                 </tr>
               </thead>
               <tbody id="cust-detail-payments-tbody"></tbody>
             </table>
+            <div id="cust-payments-summary-strip" style="margin-top: 12px; padding: 10px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 12px; font-weight: 700; color: #475569; display: flex; justify-content: space-between;"></div>
           </div>
 
         </div>
 
-        <!-- Footer -->
-        <div style="background: #f8fafc; padding: 12px 24px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
-          <div id="cust-modal-statement-actions" style="display: flex; gap: 8px;">
+        <!-- Modern Modal Footer -->
+        <div class="cust-modal-footer">
+          <div id="cust-modal-statement-actions" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
             <button type="button" class="btn btn-sm btn-secondary" onclick="window.printCustomerStatement()" style="display: flex; align-items: center; gap: 6px; font-weight: 700; padding: 8px 14px; border-radius: 8px;">
               <i class="fa-solid fa-print"></i> Print Account Statement
             </button>
             <button type="button" class="btn btn-sm btn-whatsapp" onclick="window.sendWhatsAppCustomerStatement()" style="display: flex; align-items: center; gap: 6px; font-weight: 700; padding: 8px 14px; border-radius: 8px; background: #16a34a; color: white; border: none;">
-              <i class="fa-brands fa-whatsapp"></i> Share Statement
+              <i class="fa-brands fa-whatsapp"></i> Share Statement (WhatsApp)
+            </button>
+            <button id="cust-footer-settle-btn" type="button" class="btn btn-sm btn-primary" onclick="window.settleCustomerTopDueBill()" style="display: none; align-items: center; gap: 6px; font-weight: 800; padding: 8px 14px; border-radius: 8px; background: #0284c7; color: white; border: none;">
+              <i class="fa-solid fa-bolt"></i> Instant Settle Balance
             </button>
           </div>
-          <button type="button" class="btn btn-secondary" onclick="closeCustomerDetailsModal()" style="padding: 8px 18px; font-weight: 700; border-radius: 8px;">Close</button>
+          <button type="button" class="btn btn-secondary" onclick="closeCustomerDetailsModal()" style="padding: 8px 20px; font-weight: 700; border-radius: 8px;">Close</button>
         </div>
 
       </div>
@@ -749,6 +1030,7 @@
     document.body.appendChild(div);
     return div;
   }
+
 
   // --- 3. DEDICATED CUSTOMERS DIRECTORY SECTION VIEW ---
   let currentDirectoryLayout = "cards";
