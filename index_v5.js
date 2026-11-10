@@ -10318,10 +10318,13 @@ function prepareInvoiceItemsBeforeSave() {
 // --- UNIFIED INVOICE SAVE ENGINE ---
 window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl = null) {
   if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
-    if (typeof window.showProductBuyModal === 'function') {
+    if (typeof window.openServiceInquiryModal === 'function') {
+      window.openServiceInquiryModal("Aaryan Aqua Billing Software (To bill & give products to my customers)");
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("💬 To give products & issue official tax bills to your customers, send a message to developer Kandukuri Jagan below!", "info", 6000);
+      }
+    } else if (typeof window.showProductBuyModal === 'function') {
       window.showProductBuyModal("To create, save, or print invoices, please upgrade to a Commercial License.");
-    } else if (typeof showFloatingToast === 'function') {
-      showFloatingToast("👁️ Free View Mode: Invoice saving is disabled. Contact kandukurijagan99@gmail.com for a license.", "info", 5000);
     }
     return null;
   }
@@ -18457,6 +18460,10 @@ window.applyRolePermissions = function(role) {
       b.style.setProperty("visibility", "hidden", "important");
       b.style.setProperty("pointer-events", "none", "important");
     });
+    const floatMsgWidget = document.getElementById("demo-floating-message-widget");
+    if (floatMsgWidget) floatMsgWidget.style.setProperty("display", "flex", "important");
+    const billingMsgCard = document.getElementById("demo-billing-message-card");
+    if (billingMsgCard) billingMsgCard.style.setProperty("display", "flex", "important");
     const balMod = document.getElementById("balance-qr-modal");
     if (balMod) { balMod.classList.add("hidden"); balMod.style.cssText = "display: none !important; visibility: hidden !important; pointer-events: none !important;"; }
   } else {
@@ -18473,6 +18480,10 @@ window.applyRolePermissions = function(role) {
       b.style.removeProperty("visibility");
       b.style.removeProperty("pointer-events");
     });
+    const floatMsgWidget = document.getElementById("demo-floating-message-widget");
+    if (floatMsgWidget) floatMsgWidget.style.setProperty("display", "none", "important");
+    const billingMsgCard = document.getElementById("demo-billing-message-card");
+    if (billingMsgCard) billingMsgCard.style.setProperty("display", "none", "important");
     const balMod = document.getElementById("balance-qr-modal");
     if (balMod) {
       balMod.style.removeProperty("visibility");
