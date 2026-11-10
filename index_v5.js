@@ -4530,70 +4530,237 @@ window.closeProductBuyModal = function() {
 };
 
 // ============================================================================
-// CUSTOM CLIENT SERVICE & INQUIRY CONTROLLER (Strict 1-Submission Per Email)
+// CUSTOM CLIENT SERVICE & INQUIRY CONTROLLER (Strict 1-Message Limit Per Email)
 // ============================================================================
 
-window.openServiceInquiryModal = function(prefillService = "") {
+window._inquiryUsingAlternateEmail = false;
+
+window.getEffectiveLoggedInEmail = function() {
+  let email = "";
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      email = sessionStorage.getItem("current_user_email") || "";
+    }
+  } catch(e) {}
+  if (!email) {
+    try {
+      if (typeof localStorage !== "undefined") {
+        email = localStorage.getItem("authenticated_user_email") || localStorage.getItem("last_logged_in_email") || "";
+      }
+    } catch(e) {}
+  }
+  email = String(email || "").trim().toLowerCase();
+  if (email && email.includes("@") && !email.endsWith("@viewer") && email !== "demo@viewer.com") {
+    return email;
+  }
+  return "";
+};
+
+window.getLockedInquiryEmails = function() {
+  let list = [];
+  try {
+    const raw = localStorage.getItem("locked_inquiry_emails");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        list = parsed.map(e => String(e).trim().toLowerCase()).filter(Boolean);
+      }
+    }
+  } catch(e) {}
+
+  // Include legacy single submitted_inquiry_email if present
+  try {
+    const legacy = (localStorage.getItem("submitted_inquiry_email") || "").trim().toLowerCase();
+    if (legacy && !list.includes(legacy)) {
+      list.push(legacy);
+    }
+  } catch(e) {}
+
+  return Array.from(new Set(list));
+};
+
+window.isEmailLocked = function(email) {
+  if (!email) return false;
+  const clean = String(email).trim().toLowerCase();
+  const lockedList = window.getLockedInquiryEmails();
+  return lockedList.includes(clean);
+};
+
+window.lockInquiryEmail = function(email) {
+  if (!email) return;
+  const clean = String(email).trim().toLowerCase();
+  const lockedList = window.getLockedInquiryEmails();
+  if (!lockedList.includes(clean)) {
+    lockedList.push(clean);
+  }
+  try {
+    localStorage.setItem("locked_inquiry_emails", JSON.stringify(lockedList));
+    localStorage.setItem("submitted_inquiry_email", clean);
+    localStorage.setItem("submitted_inquiry_time_" + clean, new Date().toISOString());
+    localStorage.setItem("submitted_inquiry_time", new Date().toISOString());
+  } catch(e) {}
+
+  // Also persist to Supabase asynchronously
+  try {
+    if (typeof supabaseAdapter !== "undefined" && typeof supabaseAdapter.recordLockedInquiryEmail === "function") {
+      supabaseAdapter.recordLockedInquiryEmail(clean);
+    }
+  } catch(e) {
+    console.warn("[Inquiry] Supabase recordLockedInquiryEmail error:", e);
+  }
+};
+
+window.mergeLockedInquiryEmails = function(remoteList) {
+  if (!Array.isArray(remoteList) || remoteList.length === 0) return;
+  const localList = window.getLockedInquiryEmails();
+  const merged = Array.from(new Set([...localList, ...remoteList.map(e => String(e).trim().toLowerCase())]));
+  try {
+    localStorage.setItem("locked_inquiry_emails", JSON.stringify(merged));
+  } catch(e) {}
+};
+
+window.openServiceInquiryModal = function(prefillService = "", forcedAlternate = false) {
   const modal = document.getElementById("client-service-inquiry-modal");
   if (!modal) return;
+
+  // Background sync locked emails from Supabase
+  try {
+    if (typeof supabaseAdapter !== "undefined" && typeof supabaseAdapter.fetchLockedInquiryEmails === "function") {
+      supabaseAdapter.fetchLockedInquiryEmails().then(remoteList => {
+        if (Array.isArray(remoteList) && remoteList.length > 0) {
+          window.mergeLockedInquiryEmails(remoteList);
+        }
+      }).catch(() => {});
+    }
+  } catch(_) {}
 
   const formState = document.getElementById("inquiry-state-form");
   const alreadySubmittedState = document.getElementById("inquiry-state-already-submitted");
   const successState = document.getElementById("inquiry-state-success");
   const errorAlert = document.getElementById("inquiry-error-alert");
+  const emailInput = document.getElementById("inquiry-email");
+  const emailPill = document.getElementById("inquiry-email-pill");
+  const emailHelper = document.getElementById("inquiry-email-helper-text");
+  const submitBtn = document.getElementById("btn-submit-inquiry");
 
   if (errorAlert) {
     errorAlert.style.display = "none";
-    errorAlert.textContent = "";
+    errorAlert.innerHTML = "";
   }
+  if (submitBtn) submitBtn.disabled = false;
 
-  // Check if client has already submitted an inquiry from this browser session/storage
-  const submittedEmail = (localStorage.getItem("submitted_inquiry_email") || "").trim();
-  const submittedTime = localStorage.getItem("submitted_inquiry_time");
+  window._inquiryUsingAlternateEmail = forcedAlternate;
 
-  if (submittedEmail) {
-    // Show already submitted screen
-    if (formState) formState.style.display = "none";
-    if (successState) successState.style.display = "none";
-    if (alreadySubmittedState) {
-      alreadySubmittedState.style.display = "block";
-      const emailEl = document.getElementById("already-submitted-email-text");
-      if (emailEl) emailEl.textContent = submittedEmail;
+  const loginEmail = window.getEffectiveLoggedInEmail();
+  const isUsingAlternate = forcedAlternate || !loginEmail;
 
-      const timeEl = document.getElementById("already-submitted-time-text");
-      if (timeEl && submittedTime) {
-        try {
-          timeEl.textContent = new Date(submittedTime).toLocaleString("en-IN", {
-            dateStyle: "medium",
-            timeStyle: "short"
-          });
-        } catch (_) {
-          timeEl.textContent = submittedTime;
+  if (!isUsingAlternate && loginEmail) {
+    // Check if the user's fixed login email has ALREADY sent a message
+    if (window.isEmailLocked(loginEmail)) {
+      // Show Locked / Already Submitted Screen
+      if (formState) formState.style.display = "none";
+      if (successState) successState.style.display = "none";
+      if (alreadySubmittedState) {
+        alreadySubmittedState.style.display = "block";
+        const emailEl = document.getElementById("already-submitted-email-text");
+        if (emailEl) emailEl.textContent = loginEmail;
+
+        const timeEl = document.getElementById("already-submitted-time-text");
+        if (timeEl) {
+          const submittedTime = localStorage.getItem("submitted_inquiry_time_" + loginEmail) || localStorage.getItem("submitted_inquiry_time");
+          if (submittedTime) {
+            try {
+              timeEl.textContent = new Date(submittedTime).toLocaleString("en-IN", {
+                dateStyle: "medium",
+                timeStyle: "short"
+              });
+            } catch (_) {
+              timeEl.textContent = submittedTime;
+            }
+          } else {
+            timeEl.textContent = "Previously Delivered";
+          }
+        }
+
+        // WhatsApp direct link
+        const waBtn = document.getElementById("btn-inquiry-direct-whatsapp");
+        if (waBtn) {
+          waBtn.href = "https://wa.me/918367047947?text=" + encodeURIComponent(
+            "Hello Jagan, I previously submitted a project inquiry from account " + loginEmail + ". I would like to check the status and discuss my requirements."
+          );
         }
       }
-
-      // Configure direct WhatsApp button with prefilled message
-      const waBtn = document.getElementById("btn-inquiry-direct-whatsapp");
-      if (waBtn) {
-        waBtn.href = "https://wa.me/918367047947?text=" + encodeURIComponent(
-          "Hello Jagan, I previously submitted a project inquiry with email " + submittedEmail + ". I would like to check the status and discuss my requirements."
-        );
-      }
+      window.showAppModal(modal);
+      return;
     }
-  } else {
-    // Show fresh inquiry form
+
+    // Login email has NOT sent a message yet -> Display Form with FIXED email
     if (alreadySubmittedState) alreadySubmittedState.style.display = "none";
     if (successState) successState.style.display = "none";
     if (formState) formState.style.display = "block";
 
-    if (prefillService) {
-      const serviceSelect = document.getElementById("inquiry-service");
-      if (serviceSelect) {
-        for (let i = 0; i < serviceSelect.options.length; i++) {
-          if (serviceSelect.options[i].value.toLowerCase().includes(prefillService.toLowerCase())) {
-            serviceSelect.selectedIndex = i;
-            break;
-          }
+    if (emailInput) {
+      emailInput.value = loginEmail;
+      emailInput.readOnly = true;
+      emailInput.classList.add("input-fixed-email");
+    }
+    if (emailPill) {
+      emailPill.className = "field-pill-note pill-fixed-email";
+      emailPill.innerHTML = '<i class="fa-solid fa-lock"></i> Fixed Account Email (1-Time Send)';
+    }
+    if (emailHelper) {
+      emailHelper.innerHTML = `
+        <span><i class="fa-solid fa-shield-halved"></i> Fixed to your sign-in email. Once sent, this email will be locked.</span>
+        <button type="button" class="btn-switch-inquiry-email" onclick="window.switchToAlternateEmail()">
+          <i class="fa-solid fa-envelope"></i> Send via another email instead
+        </button>
+      `;
+    }
+
+  } else {
+    // Alternate or guest email mode
+    if (alreadySubmittedState) alreadySubmittedState.style.display = "none";
+    if (successState) successState.style.display = "none";
+    if (formState) formState.style.display = "block";
+
+    if (emailInput) {
+      emailInput.readOnly = false;
+      emailInput.classList.remove("input-fixed-email");
+      if (forcedAlternate || !emailInput.value || emailInput.value === loginEmail) {
+        emailInput.value = "";
+      }
+    }
+    if (emailPill) {
+      emailPill.className = "field-pill-note pill-alternate-email";
+      emailPill.innerHTML = '<i class="fa-solid fa-envelope-open"></i> Alternate Email (1-Time Send)';
+    }
+    if (emailHelper) {
+      if (loginEmail) {
+        emailHelper.innerHTML = `
+          <span><i class="fa-solid fa-circle-info"></i> Enter another email address. Each email can only send one message.</span>
+          <button type="button" class="btn-switch-inquiry-email" onclick="window.revertToLoginEmail()">
+            <i class="fa-solid fa-rotate-left"></i> Revert to fixed login email (${typeof escapeHtml === 'function' ? escapeHtml(loginEmail) : loginEmail})
+          </button>
+        `;
+      } else {
+        emailHelper.innerHTML = `
+          <span><i class="fa-solid fa-circle-info"></i> Enter your email address. Each email can only send one message.</span>
+        `;
+      }
+    }
+    setTimeout(() => {
+      if (emailInput && !emailInput.value) emailInput.focus();
+    }, 150);
+  }
+
+  // Handle service preselection
+  if (prefillService) {
+    const serviceSelect = document.getElementById("inquiry-service");
+    if (serviceSelect) {
+      for (let i = 0; i < serviceSelect.options.length; i++) {
+        if (serviceSelect.options[i].value.toLowerCase().includes(prefillService.toLowerCase())) {
+          serviceSelect.selectedIndex = i;
+          break;
         }
       }
     }
@@ -4606,27 +4773,39 @@ window.closeServiceInquiryModal = function() {
   window.hideAppModal("client-service-inquiry-modal");
 };
 
+window.switchToAlternateEmail = function() {
+  window.openServiceInquiryModal("", true);
+};
+
+window.revertToLoginEmail = function() {
+  window.openServiceInquiryModal("", false);
+};
+
 window.resetInquirySubmissionState = function() {
-  // Allows user to submit with a different email if needed
-  localStorage.removeItem("submitted_inquiry_email");
-  localStorage.removeItem("submitted_inquiry_time");
-  localStorage.removeItem("submitted_inquiry_data");
+  // Safe redirect: never erases the locked status of sent emails!
+  window.switchToAlternateEmail();
+};
 
-  const emailField = document.getElementById("inquiry-email");
-  if (emailField) {
-    emailField.value = "";
-    emailField.focus();
-  }
-
-  const formState = document.getElementById("inquiry-state-form");
-  const alreadySubmittedState = document.getElementById("inquiry-state-already-submitted");
-  const successState = document.getElementById("inquiry-state-success");
+window.handleInquiryEmailChange = function() {
+  const input = document.getElementById("inquiry-email");
+  if (!input || input.readOnly) return;
+  const val = (input.value || "").trim().toLowerCase();
   const errorAlert = document.getElementById("inquiry-error-alert");
+  const submitBtn = document.getElementById("btn-submit-inquiry");
 
-  if (alreadySubmittedState) alreadySubmittedState.style.display = "none";
-  if (successState) successState.style.display = "none";
-  if (errorAlert) errorAlert.style.display = "none";
-  if (formState) formState.style.display = "block";
+  if (val && window.isEmailLocked(val)) {
+    if (errorAlert) {
+      errorAlert.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> <span>⛔ The email <strong>' + (typeof escapeHtml === "function" ? escapeHtml(val) : val) + '</strong> has already sent a message and is locked. Each email is allowed only 1 message. Please enter a different email address.</span>';
+      errorAlert.style.display = "flex";
+    }
+    if (submitBtn) submitBtn.disabled = true;
+  } else {
+    if (errorAlert && errorAlert.innerHTML.includes("has already sent a message and is locked")) {
+      errorAlert.style.display = "none";
+      errorAlert.innerHTML = "";
+    }
+    if (submitBtn) submitBtn.disabled = false;
+  }
 };
 
 window.submitClientServiceInquiry = async function(e) {
@@ -4679,13 +4858,10 @@ window.submitClientServiceInquiry = async function(e) {
     return;
   }
 
-  // Pre-check localStorage for this email
-  const existingStoredEmail = (localStorage.getItem("submitted_inquiry_email") || "").toLowerCase().trim();
-  if (existingStoredEmail && existingStoredEmail === email) {
-    showError("An inquiry with this email address has already been submitted. Each email is restricted to 1 inquiry.");
-    setTimeout(() => {
-      window.openServiceInquiryModal();
-    }, 1500);
+  // STRICT 1-TIME CHECK: Is this email already locked?
+  if (window.isEmailLocked(email)) {
+    showError("⛔ An inquiry with '" + email + "' has already been sent. Each email address is strictly locked to 1 message. Please send via another email address.");
+    if (submitBtn) submitBtn.disabled = true;
     return;
   }
 
@@ -4722,10 +4898,8 @@ window.submitClientServiceInquiry = async function(e) {
     const result = await res.json();
 
     if (result && result.duplicate) {
-      // DUPLICATE EMAIL DETECTED BY BACKEND!
-      // Enforce the one-time restriction!
-      localStorage.setItem("submitted_inquiry_email", email);
-      localStorage.setItem("submitted_inquiry_time", new Date().toISOString());
+      // DUPLICATE EMAIL DETECTED BY BACKEND! Lock it immediately!
+      window.lockInquiryEmail(email);
 
       const formState = document.getElementById("inquiry-state-form");
       const alreadySubmittedState = document.getElementById("inquiry-state-already-submitted");
@@ -4734,29 +4908,22 @@ window.submitClientServiceInquiry = async function(e) {
         alreadySubmittedState.style.display = "block";
         const emailEl = document.getElementById("already-submitted-email-text");
         if (emailEl) emailEl.textContent = email;
-        const noticeEl = document.getElementById("already-submitted-notice-msg");
-        if (noticeEl && result.message) {
-          noticeEl.textContent = result.message;
-        }
         const waBtn = document.getElementById("btn-inquiry-direct-whatsapp");
         if (waBtn) {
           waBtn.href = "https://wa.me/918367047947?text=" + encodeURIComponent(
-            "Hello Jagan, I tried submitting an inquiry with " + email + ". Can we connect directly regarding my project?"
+            "Hello Jagan, I previously submitted an inquiry with " + email + ". Can we connect directly regarding my project?"
           );
         }
       }
       if (typeof showFloatingToast === "function") {
-        showFloatingToast("Notice: An inquiry with this email already exists on file.", "info", 6000);
+        showFloatingToast("Notice: An inquiry with this email already exists. It is now locked.", "info", 6000);
       }
       return;
     }
 
     if (result && (result.ok || result.success)) {
-      // SUCCESS!
-      // Record locally to prevent further submissions with this email
-      localStorage.setItem("submitted_inquiry_email", email);
-      localStorage.setItem("submitted_inquiry_time", new Date().toISOString());
-      // Privacy Compliance: Zero personal data retention - do NOT store inquiry payload locally
+      // SUCCESS! Lock this email permanently so it can NEVER send again!
+      window.lockInquiryEmail(email);
 
       // Transition to celebratory success state
       const formState = document.getElementById("inquiry-state-form");
@@ -4770,6 +4937,8 @@ window.submitClientServiceInquiry = async function(e) {
         if (clientEmailEl) clientEmailEl.textContent = email;
         const summaryServiceEl = document.getElementById("success-summary-service");
         if (summaryServiceEl) summaryServiceEl.textContent = service;
+        const lockedEmailPill = document.getElementById("success-locked-email-pill");
+        if (lockedEmailPill) lockedEmailPill.textContent = email;
 
         const waLink = document.getElementById("success-whatsapp-link");
         if (waLink) {
@@ -4780,7 +4949,7 @@ window.submitClientServiceInquiry = async function(e) {
       }
 
       if (typeof showFloatingToast === "function") {
-        showFloatingToast("🚀 Message delivered directly to Kandukuri Jagan's inbox! Confirmation sent to " + email, "success", 8000);
+        showFloatingToast("🚀 Message delivered directly to Kandukuri Jagan's inbox! Email " + email + " is now locked from further messages.", "success", 8000);
       }
     } else {
       showError(result?.error || result?.message || "Failed to submit inquiry. Please try again or chat directly on WhatsApp.");
@@ -5788,6 +5957,17 @@ window.loadAllDatabases = function loadAllDatabases() {
   if (typeof window.applyRolePermissions === 'function') {
     window.applyRolePermissions();
   }
+
+  // Background sync locked inquiry emails from Supabase
+  try {
+    if (typeof supabaseAdapter !== "undefined" && typeof supabaseAdapter.fetchLockedInquiryEmails === "function") {
+      supabaseAdapter.fetchLockedInquiryEmails().then(remoteList => {
+        if (Array.isArray(remoteList) && remoteList.length > 0 && typeof window.mergeLockedInquiryEmails === "function") {
+          window.mergeLockedInquiryEmails(remoteList);
+        }
+      }).catch(() => {});
+    }
+  } catch(_) {}
 }
 
 // Robust Helper: Normalize & locate product in master catalog (O(1) Turbo Retrieval)

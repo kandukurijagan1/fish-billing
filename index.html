@@ -451,9 +451,9 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=live_v58_airgap_demo_zero_resurrection">
+  <link rel="stylesheet" href="index.css?v=live_v59_requestboard_fixed_email_lock_engine">
 
-  <script src="invoice_utils_v5.js?v=live_v58_airgap_demo_zero_resurrection"></script>
+  <script src="invoice_utils_v5.js?v=live_v59_requestboard_fixed_email_lock_engine"></script>
 
 </head>
 
@@ -10841,8 +10841,9 @@
 
             <!-- Email Address (Key for 1-submission restriction) -->
             <div class="inquiry-form-group">
-              <label for="inquiry-email"><i class="fa-solid fa-envelope"></i> Email Address <span class="req-star">*</span> <small class="field-pill-note">1 submission per email</small></label>
-              <input type="email" id="inquiry-email" name="email" placeholder="e.g., yourname@gmail.com" required autocomplete="email">
+              <label for="inquiry-email"><i class="fa-solid fa-envelope"></i> Email Address <span class="req-star">*</span> <small id="inquiry-email-pill" class="field-pill-note">1 submission per email</small></label>
+              <input type="email" id="inquiry-email" name="email" placeholder="e.g., yourname@gmail.com" required autocomplete="email" oninput="window.handleInquiryEmailChange()">
+              <div id="inquiry-email-helper-text" class="inquiry-email-helper"></div>
             </div>
 
             <!-- WhatsApp Phone -->
@@ -10943,8 +10944,8 @@
               <i class="fa-brands fa-whatsapp"></i> Chat Directly with Jagan on WhatsApp (+91 8367047947)
             </a>
             <div class="switch-email-wrap">
-              <button type="button" class="btn-switch-email-link" onclick="window.resetInquirySubmissionState()">
-                <i class="fa-solid fa-arrows-rotate"></i> Need to submit with a different email address? Click here
+              <button type="button" class="btn-switch-email-link" onclick="window.switchToAlternateEmail()">
+                <i class="fa-solid fa-envelope-circle-check"></i> Send message via another email address
               </button>
             </div>
             <button type="button" class="btn btn-secondary btn-close-inquiry-bottom" onclick="window.closeServiceInquiryModal()">Close</button>
@@ -10978,10 +10979,20 @@
             </div>
           </div>
 
+          <div class="inquiry-lock-warning-card" style="margin-top: 14px; padding: 10px 14px; background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; border-radius: 8px; font-size: 12px; color: #fbbf24; text-align: left; display: flex; align-items: flex-start; gap: 8px;">
+            <i class="fa-solid fa-lock" style="margin-top: 2px;"></i>
+            <span><strong>One-Time Limit Enforced:</strong> Your email (<strong id="success-locked-email-pill" style="color: #ffffff;"></strong>) is now locked from sending further messages. If you need to send another message in the future, you can send via another email.</span>
+          </div>
+
           <div class="inquiry-success-actions">
             <a id="success-whatsapp-link" href="#" target="_blank" rel="noopener noreferrer" class="btn-inquiry-wa-direct">
               <i class="fa-brands fa-whatsapp"></i> Connect Instantly on WhatsApp (+91 8367047947)
             </a>
+            <div class="switch-email-wrap" style="margin-top: 6px;">
+              <button type="button" class="btn-switch-email-link" onclick="window.switchToAlternateEmail()">
+                <i class="fa-solid fa-envelope"></i> Send message via another email address
+              </button>
+            </div>
             <button type="button" class="btn btn-secondary btn-close-inquiry-bottom" onclick="window.closeServiceInquiryModal()">Return to App</button>
           </div>
         </div>
@@ -10992,13 +11003,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v58_airgap_demo_zero_resurrection"></script>
+<script src="supabase-adapter.js?v=live_v59_requestboard_fixed_email_lock_engine"></script>
 
-<script src="initial_db.js?v=live_v58_airgap_demo_zero_resurrection"></script>
+<script src="initial_db.js?v=live_v59_requestboard_fixed_email_lock_engine"></script>
 
-<script src="customer-timeline.js?v=live_v58_airgap_demo_zero_resurrection"></script>
+<script src="customer-timeline.js?v=live_v59_requestboard_fixed_email_lock_engine"></script>
 
-<script src="index_v5.js?v=live_v58_airgap_demo_zero_resurrection"></script>
+<script src="index_v5.js?v=live_v59_requestboard_fixed_email_lock_engine"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->

@@ -522,6 +522,43 @@
         return { ok: false, error };
       }
       return { ok: true, settings: data?.value || null };
+    },
+
+    // --- LOCKED INQUIRY EMAILS (Strict 1-Time Message Limit Per Email) ---
+    async fetchLockedInquiryEmails() {
+      const sb = initClient();
+      if (!sb) return [];
+      try {
+        const { data, error } = await sb.from("settings").select("value").eq("key", "submitted_inquiry_emails").maybeSingle();
+        if (data && Array.isArray(data.value)) {
+          return data.value.map(e => String(e).trim().toLowerCase()).filter(Boolean);
+        }
+      } catch (e) {
+        console.warn("[Supabase] fetchLockedInquiryEmails error:", e);
+      }
+      return [];
+    },
+
+    async recordLockedInquiryEmail(email) {
+      const sb = initClient();
+      if (!sb || !email) return { ok: false };
+      const clean = String(email).trim().toLowerCase();
+      try {
+        const { data } = await sb.from("settings").select("value").eq("key", "submitted_inquiry_emails").maybeSingle();
+        let list = (data && Array.isArray(data.value)) ? data.value.map(e => String(e).trim().toLowerCase()) : [];
+        if (!list.includes(clean)) {
+          list.push(clean);
+          await sb.from("settings").upsert({
+            key: "submitted_inquiry_emails",
+            value: list,
+            updated_at: new Date().toISOString()
+          }, { onConflict: "key" });
+        }
+        return { ok: true, list };
+      } catch (err) {
+        console.warn("[Supabase] recordLockedInquiryEmail error:", err);
+        return { ok: false, error: err };
+      }
     }
   };
 
