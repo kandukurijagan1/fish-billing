@@ -545,15 +545,15 @@
 
       <div style="margin-top: 18px; display: flex; flex-direction: column; gap: 12px; align-items: center; width: 100%;">
 
-        <!-- Native Google Rendered Button Slot -->
+        <!-- Native Google Rendered Button Slot (Official Single Sign-in Button) -->
 
-        <div id="google-signin-btn-container" style="display: flex; justify-content: center; width: 100%;"></div>
+        <div id="google-signin-btn-container" style="display: flex; justify-content: center; width: 100%; min-height: 44px;"></div>
 
 
 
-        <!-- Direct Google OAuth Prompt Button -->
+        <!-- Direct Google OAuth Prompt Button (Hidden fallback only used if GIS fails to load) -->
 
-        <button type="button" id="btn-google-direct" onclick="window.triggerDirectGoogleAuth()" style="width: 100%; padding: 13px 18px; border-radius: 8px; background: #ffffff; color: #1f2937; border: 1.5px solid #e5e7eb; font-weight: 700; font-size: 14.5px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); transition: all 0.2s ease;">
+        <button type="button" id="btn-google-direct" onclick="window.triggerDirectGoogleAuth()" style="display: none; width: 100%; max-width: 320px; padding: 13px 18px; border-radius: 8px; background: #ffffff; color: #1f2937; border: 1.5px solid #e5e7eb; font-weight: 700; font-size: 14.5px; cursor: pointer; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); transition: all 0.2s ease;">
 
           <svg style="width: 20px; height: 20px;" viewBox="0 0 24 24">
 
@@ -10999,7 +10999,7 @@
 
 <script src="customer-timeline.js?v=live_v62_google_script_endpoint_updated"></script>
 
-<script src="index_v5.js?v=live_v62_google_script_endpoint_updated"></script>
+<script src="index_v5.js?v=live_v63_single_google_button"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->

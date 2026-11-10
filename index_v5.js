@@ -18539,12 +18539,20 @@ function parseGoogleJwt(token) {
 }
 
 window.initGoogleIdentityServices = function() {
+  const directBtn = document.getElementById("btn-google-direct");
+  const gContainer = document.getElementById("google-signin-btn-container");
+
   if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
     setTimeout(() => {
       if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
         window.initGoogleIdentityServices();
+      } else {
+        // Fallback: If Google SDK fails to load after timeout, show direct button so user can still sign in
+        if (directBtn && (!gContainer || !gContainer.hasChildNodes())) {
+          directBtn.style.display = "flex";
+        }
       }
-    }, 400);
+    }, 600);
     return;
   }
   try {
@@ -18555,8 +18563,7 @@ window.initGoogleIdentityServices = function() {
       cancel_on_tap_outside: true
     });
 
-    // Render native Google Sign-in button into container if available
-    const gContainer = document.getElementById("google-signin-btn-container");
+    // Render single native Google Sign-in button into container
     if (gContainer) {
       gContainer.innerHTML = "";
       google.accounts.id.renderButton(gContainer, {
@@ -18568,9 +18575,18 @@ window.initGoogleIdentityServices = function() {
         logo_alignment: "left",
         width: 320
       });
+
+      // STRICT SINGLE BUTTON ENFORCEMENT: Hide the fallback button when GIS is rendered
+      if (directBtn) {
+        directBtn.style.display = "none";
+      }
     }
   } catch (e) {
     console.warn("GIS initialization error:", e);
+    // If rendering fails, show the fallback direct button
+    if (directBtn) {
+      directBtn.style.display = "flex";
+    }
   }
 };
 

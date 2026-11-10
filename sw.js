@@ -1,5 +1,5 @@
 // Aaryan Aqua Needs - Cache-Busting Purge Service Worker
-const CACHE_NAME = 'aaryan-aqua-v5.22.0-purge';
+const CACHE_NAME = 'aaryan-aqua-v5.23.0-purge';
 
 self.addEventListener('install', event => {
   self.skipWaiting();
