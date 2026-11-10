@@ -4012,13 +4012,8 @@ window.uploadInvoicePdfToGoogleDrive = uploadInvoicePdfToGoogleDrive;
 
 // --- DATABASE TELEMETRY & STATUS HUD ---
 window.openDatabaseTelemetryModal = async function() {
-  const modal = document.getElementById("database-telemetry-modal");
+  const modal = window.showAppModal("database-telemetry-modal");
   if (!modal) return;
-  modal.classList.remove("hidden");
-  modal.style.setProperty("display", "flex", "important");
-  modal.style.setProperty("visibility", "visible", "important");
-  modal.style.setProperty("opacity", "1", "important");
-  modal.style.setProperty("pointer-events", "auto", "important");
 
   const pingValEl = document.getElementById("telemetry-ping-ms");
   const ramCountEl = document.getElementById("telemetry-ram-count");
@@ -4071,14 +4066,7 @@ window.closeDatabaseTelemetryModal = function(e) {
   if (e && e.target && e.target.closest && e.target.closest('.modal-card') && !e.target.closest('.modal-close-btn') && !e.target.closest('.btn-secondary')) {
     return;
   }
-  const modal = document.getElementById("database-telemetry-modal");
-  if (modal) {
-    modal.classList.add("hidden");
-    modal.style.setProperty("display", "none", "important");
-    modal.style.setProperty("visibility", "hidden", "important");
-    modal.style.setProperty("opacity", "0", "important");
-    modal.style.setProperty("pointer-events", "none", "important");
-  }
+  window.hideAppModal("database-telemetry-modal");
 };
 
 window.forcePushDatabaseToCloud = async function(btnEl) {
@@ -4456,21 +4444,11 @@ window.showProductBuyModal = function(actionContext = "") {
       triggerEl.style.display = "none";
     }
   }
-  modal.classList.remove("hidden");
-  modal.style.setProperty("display", "flex", "important");
-  modal.style.setProperty("visibility", "visible", "important");
-  modal.style.setProperty("opacity", "1", "important");
-  modal.style.setProperty("pointer-events", "auto", "important");
+  window.showAppModal(modal);
 };
 
 window.closeProductBuyModal = function() {
-  const modal = document.getElementById("product-buy-modal");
-  if (!modal) return;
-  modal.classList.add("hidden");
-  modal.style.setProperty("display", "none", "important");
-  modal.style.setProperty("visibility", "hidden", "important");
-  modal.style.setProperty("opacity", "0", "important");
-  modal.style.setProperty("pointer-events", "none", "important");
+  window.hideAppModal("product-buy-modal");
 };
 
 // ============================================================================
@@ -4543,21 +4521,11 @@ window.openServiceInquiryModal = function(prefillService = "") {
     }
   }
 
-  modal.classList.remove("hidden");
-  modal.style.setProperty("display", "flex", "important");
-  modal.style.setProperty("visibility", "visible", "important");
-  modal.style.setProperty("opacity", "1", "important");
-  modal.style.setProperty("pointer-events", "auto", "important");
+  window.showAppModal(modal);
 };
 
 window.closeServiceInquiryModal = function() {
-  const modal = document.getElementById("client-service-inquiry-modal");
-  if (!modal) return;
-  modal.classList.add("hidden");
-  modal.style.setProperty("display", "none", "important");
-  modal.style.setProperty("visibility", "hidden", "important");
-  modal.style.setProperty("opacity", "0", "important");
-  modal.style.setProperty("pointer-events", "none", "important");
+  window.hideAppModal("client-service-inquiry-modal");
 };
 
 window.resetInquirySubmissionState = function() {
@@ -7360,19 +7328,11 @@ function bindBillingFormInputs() {
 
   // --- KEYBOARD SHORTCUTS ENGINE & COMMAND PALETTE ---
   window.openKeyboardShortcutsModal = function() {
-    const modal = document.getElementById("keyboard-shortcuts-modal");
-    if (modal) {
-      modal.classList.remove("hidden");
-      modal.style.display = "flex";
-    }
+    window.showAppModal("keyboard-shortcuts-modal");
   };
 
   window.closeKeyboardShortcutsModal = function() {
-    const modal = document.getElementById("keyboard-shortcuts-modal");
-    if (modal) {
-      modal.classList.add("hidden");
-      modal.style.display = "none";
-    }
+    window.hideAppModal("keyboard-shortcuts-modal");
   };
 
   // --- FREQUENT PRODUCTS QUICK-ADD BAR ---
@@ -7504,10 +7464,8 @@ function bindBillingFormInputs() {
 
   window.openCommandPalette = function() {
     if (isLocked) return;
-    const modal = document.getElementById("global-command-palette-modal");
+    const modal = window.showAppModal("global-command-palette-modal");
     if (modal) {
-      modal.classList.remove("hidden");
-      modal.style.display = "flex";
       currentTurboFilter = 'all';
       document.querySelectorAll('.turbo-filter-tab').forEach(tab => {
         tab.classList.toggle('active', tab.dataset.filter === 'all');
@@ -7525,11 +7483,7 @@ function bindBillingFormInputs() {
   };
 
   window.closeCommandPalette = function() {
-    const modal = document.getElementById("global-command-palette-modal");
-    if (modal) {
-      modal.classList.add("hidden");
-      modal.style.display = "none";
-    }
+    window.hideAppModal("global-command-palette-modal");
   };
 
   window.quickBillForParty = function(partyName, partyPhone = '') {
@@ -8942,11 +8896,47 @@ function getUniversalZxingReader() {
   return zxingReaderInstance;
 }
 
+
+// ============================================================================
+// UNIVERSAL SYMMETRIC MODAL CONTROLLER (Zero-Deadlock, Infinite Repeatability)
+// ============================================================================
+window.showAppModal = function(modalOrId, displayType = 'flex') {
+  const modal = typeof modalOrId === 'string' ? document.getElementById(modalOrId) : modalOrId;
+  if (!modal) return null;
+  modal.classList.remove('hidden');
+  modal.style.removeProperty('display');
+  modal.style.removeProperty('visibility');
+  modal.style.removeProperty('opacity');
+  modal.style.removeProperty('pointer-events');
+  modal.style.removeProperty('z-index');
+  modal.style.setProperty('display', displayType, 'important');
+  modal.style.setProperty('visibility', 'visible', 'important');
+  modal.style.setProperty('opacity', '1', 'important');
+  modal.style.setProperty('pointer-events', 'auto', 'important');
+  modal.style.setProperty('z-index', '2147483640', 'important');
+  return modal;
+};
+
+window.hideAppModal = function(modalOrId) {
+  const modal = typeof modalOrId === 'string' ? document.getElementById(modalOrId) : modalOrId;
+  if (!modal) return null;
+  modal.classList.add('hidden');
+  modal.style.removeProperty('display');
+  modal.style.removeProperty('visibility');
+  modal.style.removeProperty('opacity');
+  modal.style.removeProperty('pointer-events');
+  modal.style.removeProperty('z-index');
+  modal.style.setProperty('display', 'none', 'important');
+  modal.style.setProperty('visibility', 'hidden', 'important');
+  modal.style.setProperty('opacity', '0', 'important');
+  modal.style.setProperty('pointer-events', 'none', 'important');
+  modal.style.setProperty('z-index', '-1', 'important');
+  return modal;
+};
+
 window.openBarcodeScannerModal = async function(initialTab = 'camera') {
-  const modal = document.getElementById("barcode-scanner-modal");
+  const modal = window.showAppModal("barcode-scanner-modal");
   if (!modal) return;
-  modal.classList.remove("hidden");
-  modal.style.display = "flex";
 
   // Reset scan debounce & session tray
   lastScannedBarcodeValue = "";
@@ -8963,14 +8953,7 @@ window.openBarcodeScannerModal = async function(initialTab = 'camera') {
 };
 
 window.closeBarcodeScannerModal = function() {
-  const modal = document.getElementById("barcode-scanner-modal");
-  if (modal) {
-    modal.classList.add("hidden");
-    modal.style.setProperty("display", "none", "important");
-    modal.style.setProperty("visibility", "hidden", "important");
-    modal.style.setProperty("opacity", "0", "important");
-    modal.style.setProperty("pointer-events", "none", "important");
-  }
+  window.hideAppModal("barcode-scanner-modal");
   stopBarcodeCamera();
   lastScannedBarcodeValue = "";
   lastScannedBarcodeTimestamp = 0;
@@ -12056,6 +12039,10 @@ function showFloatingToast(message, type = "success", duration = 4500) {
     toastContainer.style.cssText = "position: fixed; top: 68px; right: 24px; z-index: 9999999; display: flex; flex-direction: column; gap: 10px; pointer-events: none; max-width: 380px; width: calc(100vw - 32px);";
     document.body.appendChild(toastContainer);
   }
+  // Cap toasts to max 2 visible so rapid clicks never stack over buttons
+  while (toastContainer.children.length >= 2) {
+    toastContainer.firstChild.remove();
+  }
 
   // Dynamic icon and accent selection based on message content & type
   let iconHtml = '<i class="fa-solid fa-circle-check" style="font-size: 18px; color: #34d399;"></i>';
@@ -13990,11 +13977,7 @@ window.openWhatsappWebChat = function() {
 };
 
 window.closeWhatsappGuideModal = function() {
-  const modalEl = document.getElementById("whatsapp-pdf-guide-modal");
-  if (modalEl) {
-    modalEl.classList.add("hidden");
-    modalEl.style.setProperty("display", "none", "important");
-  }
+  window.hideAppModal("whatsapp-pdf-guide-modal");
 };
 
 window.shareCurrentInvoiceWhatsApp = function(btnEl = null) {
@@ -14088,23 +14071,11 @@ window.openBalanceQrModal = function(id) {
     imgEl.style.display = "block";
   }
 
-  const modalEl = document.getElementById("balance-qr-modal");
-  if (modalEl) {
-    modalEl.classList.remove("hidden");
-    modalEl.style.removeProperty("display");
-    modalEl.style.setProperty("display", "flex", "important");
-  }
+  window.showAppModal("balance-qr-modal");
 };
 
 window.closeBalanceQrModal = function() {
-  const modalEl = document.getElementById("balance-qr-modal");
-  if (modalEl) {
-    modalEl.classList.add("hidden");
-    modalEl.style.setProperty("display", "none", "important");
-    modalEl.style.setProperty("visibility", "hidden", "important");
-    modalEl.style.setProperty("opacity", "0", "important");
-    modalEl.style.setProperty("pointer-events", "none", "important");
-  }
+  window.hideAppModal("balance-qr-modal");
 };
 
 window.copyBalanceUpiId = function() {
@@ -15763,16 +15734,7 @@ window.openProductModal = function(id = "") {
   if (!modalEl) return;
 
   // Fully clear any inline display/visibility locks so the modal opens reliably every single time
-  modalEl.classList.remove("hidden");
-  modalEl.style.removeProperty("display");
-  modalEl.style.removeProperty("visibility");
-  modalEl.style.removeProperty("opacity");
-  modalEl.style.removeProperty("pointer-events");
-  modalEl.style.setProperty("display", "flex", "important");
-  modalEl.style.setProperty("visibility", "visible", "important");
-  modalEl.style.setProperty("opacity", "1", "important");
-  modalEl.style.setProperty("pointer-events", "auto", "important");
-  modalEl.style.setProperty("z-index", "2147483640", "important");
+  window.showAppModal(modalEl);
 
   const form = document.getElementById("modal-product-form");
   if (form) form.reset();
@@ -15842,14 +15804,7 @@ window.openProductModal = function(id = "") {
 };
 
 window.closeProductModal = function() {
-  const modalEl = document.getElementById("product-modal");
-  if (modalEl) {
-    modalEl.classList.add("hidden");
-    modalEl.style.setProperty("display", "none", "important");
-    modalEl.style.setProperty("visibility", "hidden", "important");
-    modalEl.style.setProperty("opacity", "0", "important");
-    modalEl.style.setProperty("pointer-events", "none", "important");
-  }
+  window.hideAppModal("product-modal");
 };
 
 window.saveProductModal = function(e, andAddAnother = false) {
@@ -16648,16 +16603,7 @@ window.openPartyModal = function(type, id = "") {
   if (!modalEl) return;
 
   // Fully clear any inline display/visibility locks so the modal opens reliably every single time
-  modalEl.classList.remove("hidden");
-  modalEl.style.removeProperty("display");
-  modalEl.style.removeProperty("visibility");
-  modalEl.style.removeProperty("opacity");
-  modalEl.style.removeProperty("pointer-events");
-  modalEl.style.setProperty("display", "flex", "important");
-  modalEl.style.setProperty("visibility", "visible", "important");
-  modalEl.style.setProperty("opacity", "1", "important");
-  modalEl.style.setProperty("pointer-events", "auto", "important");
-  modalEl.style.setProperty("z-index", "2147483640", "important");
+  window.showAppModal(modalEl);
 
   const form = document.getElementById("modal-party-form");
   if (form) form.reset();
@@ -16695,14 +16641,7 @@ window.openPartyModal = function(type, id = "") {
 };
 
 window.closePartyModal = function() {
-  const modalEl = document.getElementById("party-modal");
-  if (modalEl) {
-    modalEl.classList.add("hidden");
-    modalEl.style.setProperty("display", "none", "important");
-    modalEl.style.setProperty("visibility", "hidden", "important");
-    modalEl.style.setProperty("opacity", "0", "important");
-    modalEl.style.setProperty("pointer-events", "none", "important");
-  }
+  window.hideAppModal("party-modal");
 };
 
 window.savePartyModal = function(e, andAddAnother = false) {
@@ -17487,15 +17426,7 @@ window.testTelegramConnection = async function() {
 };
 
 window.openTelegramBotModal = function() {
-  const modal = document.getElementById("telegram-bot-modal");
-  if (modal) {
-    modal.classList.remove("hidden");
-    modal.style.setProperty("display", "flex", "important");
-    modal.style.setProperty("visibility", "visible", "important");
-    modal.style.setProperty("opacity", "1", "important");
-    modal.style.setProperty("pointer-events", "auto", "important");
-    modal.style.setProperty("z-index", "2147483640", "important");
-  }
+  window.showAppModal("telegram-bot-modal");
 
   const token = (globalSettings.telegram?.token || "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g").trim();
   const chat = (globalSettings.telegram?.chatId || "6877857251, 7906132548").trim();
@@ -17512,14 +17443,7 @@ window.openTelegramBotModal = function() {
 
 window.closeTelegramBotModal = function(e) {
   if (e && e.stopPropagation) e.stopPropagation();
-  const modal = document.getElementById("telegram-bot-modal");
-  if (modal) {
-    modal.classList.add("hidden");
-    modal.style.setProperty("display", "none", "important");
-    modal.style.setProperty("visibility", "hidden", "important");
-    modal.style.setProperty("opacity", "0", "important");
-    modal.style.setProperty("pointer-events", "none", "important");
-  }
+  window.hideAppModal("telegram-bot-modal");
 };
 
 window.saveTelegramModalSettings = function() {
@@ -20400,12 +20324,13 @@ window.importDataBackupJSON = function(event) {
 // --- UNIVERSAL MODAL BACKDROP AND ESCAPE-KEY DISMISS ---
 (function() {
   function dismissAllActiveModals() {
-    document.querySelectorAll('.modal-overlay').forEach(modal => {
-      modal.classList.add('hidden');
-      modal.style.setProperty('display', 'none', 'important');
-      modal.style.setProperty('visibility', 'hidden', 'important');
-      modal.style.setProperty('opacity', '0', 'important');
-      modal.style.setProperty('pointer-events', 'none', 'important');
+    document.querySelectorAll('.modal-overlay, .turbo-omni-modal').forEach(modal => {
+      if (typeof window.hideAppModal === 'function') {
+        window.hideAppModal(modal);
+      } else {
+        modal.classList.add('hidden');
+        modal.style.setProperty('display', 'none', 'important');
+      }
     });
     if (typeof whatsappPollInterval !== 'undefined' && whatsappPollInterval) {
       clearInterval(whatsappPollInterval);
@@ -20415,12 +20340,13 @@ window.importDataBackupJSON = function(event) {
 
   // Backdrop click on any overlay
   document.addEventListener('click', function(e) {
-    if (e.target && e.target.classList && e.target.classList.contains('modal-overlay')) {
-      e.target.classList.add('hidden');
-      e.target.style.setProperty('display', 'none', 'important');
-      e.target.style.setProperty('visibility', 'hidden', 'important');
-      e.target.style.setProperty('opacity', '0', 'important');
-      e.target.style.setProperty('pointer-events', 'none', 'important');
+    if (e.target && e.target.classList && (e.target.classList.contains('modal-overlay') || e.target.classList.contains('turbo-omni-modal'))) {
+      if (typeof window.hideAppModal === 'function') {
+        window.hideAppModal(e.target);
+      } else {
+        e.target.classList.add('hidden');
+        e.target.style.setProperty('display', 'none', 'important');
+      }
       if (e.target.id === 'whatsapp-bot-modal' && typeof closeWhatsAppBotModal === 'function') {
         closeWhatsAppBotModal();
       }
@@ -20534,19 +20460,13 @@ function downloadCsvBlob(filename, csvContent) {
 // ----------------------------------------------------------------------------
 
 window.openDataSharingModal = function(initialTab = 'p2p') {
-  const modal = document.getElementById("advanced-data-sharing-modal");
+  const modal = window.showAppModal("advanced-data-sharing-modal");
   if (!modal) return;
-  modal.classList.remove("hidden");
-  modal.style.display = "flex";
-
   window.switchDataShareTab(initialTab);
 };
 
 window.closeDataSharingModal = function() {
-  const modal = document.getElementById("advanced-data-sharing-modal");
-  if (!modal) return;
-  modal.classList.add("hidden");
-  modal.style.display = "none";
+  window.hideAppModal("advanced-data-sharing-modal");
 };
 
 window.switchDataShareTab = function(tabName) {
@@ -21310,10 +21230,7 @@ window.openUniversalInvoiceShareModal = function(invoiceId) {
 };
 
 window.closeUniversalInvoiceShareModal = function() {
-  const modal = document.getElementById("universal-invoice-share-modal");
-  if (!modal) return;
-  modal.classList.add("hidden");
-  modal.style.display = "none";
+  window.hideAppModal("universal-invoice-share-modal");
 };
 
 window.executeUniversalShare = async function(channel) {
@@ -21752,13 +21669,12 @@ window.openWebsiteQrModal = function(initialTab = 'website') {
   // Render WhatsApp Chat QR
   window.renderWhatsAppChatQr(currentWaPreset);
 
-  modal.classList.remove("hidden");
+  window.showAppModal(modal);
   window.switchWebsiteQrTab(initialTab);
 };
 
 window.closeWebsiteQrModal = function() {
-  const modal = document.getElementById("website-qr-modal");
-  if (modal) modal.classList.add("hidden");
+  window.hideAppModal("website-qr-modal");
 };
 
 window.switchWebsiteQrTab = function(tabName) {
@@ -23449,13 +23365,13 @@ window.toggleQuickCalculator = function() {
   if (isLocked) return;
   const modal = document.getElementById("quick-calculator-modal");
   if (!modal) return;
-  const isHidden = modal.classList.contains("hidden");
+  const isHidden = modal.classList.contains("hidden") || modal.style.display === "none";
   if (isHidden) {
-    modal.classList.remove("hidden");
+    window.showAppModal(modal);
     if (typeof playSubtleClickAudio === "function") playSubtleClickAudio();
     updateCalcDisplay();
   } else {
-    modal.classList.add("hidden");
+    window.hideAppModal(modal);
   }
 };
 
@@ -23816,18 +23732,11 @@ window.showDynamicUpiQr = function(invOrId) {
     imgEl.style.display = "block";
   }
 
-  if (modal) {
-    modal.classList.remove("hidden");
-    modal.style.display = "flex";
-  }
+  window.showAppModal("dynamic-upi-qr-modal");
 };
 
 window.closeDynamicUpiModal = function() {
-  const modal = document.getElementById("dynamic-upi-qr-modal");
-  if (modal) {
-    modal.classList.add("hidden");
-    modal.style.display = "none";
-  }
+  window.hideAppModal("dynamic-upi-qr-modal");
 };
 
 window.copyDynamicUpiId = function() {

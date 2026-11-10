@@ -8889,11 +8889,18 @@ section.content-view.hidden {
   animation: toast-slide-down 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
-/* Ensure all hidden modals and backdrops are completely transparent to pointer-events */
+/* Universal modal hidden state: zero footprint, zero click interception */
+#app-floating-toast-container *,
+.floating-toast,
+.floating-toast * {
+  pointer-events: none !important;
+  user-select: none !important;
+}
+
 .modal.hidden,
-.modal[style*="display: none"],
+.modal-overlay.hidden,
+.turbo-omni-modal.hidden,
 [id$="-modal"].hidden,
-[id$="-modal"][style*="display: none"],
 .modal-backdrop.hidden {
   display: none !important;
   visibility: hidden !important;
