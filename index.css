@@ -13919,8 +13919,8 @@ body.demo-mode-active .demo-billing-message-card {
 }
 
 .product-input-row .flex-item-qty {
-  flex: 2 1 185px !important;
-  min-width: 175px !important;
+  flex: 2.4 1 225px !important;
+  min-width: 215px !important;
 }
 
 .product-input-row .flex-item-unit {
@@ -13960,6 +13960,7 @@ body.demo-mode-active .demo-billing-message-card {
   gap: 6px !important;
   flex-wrap: nowrap !important;
   min-height: 22px !important;
+  width: 100% !important;
 }
 
 .qty-label-bar label,
@@ -13970,6 +13971,7 @@ body.demo-mode-active .demo-billing-message-card {
   color: #334155 !important;
   white-space: nowrap !important;
   letter-spacing: 0.3px !important;
+  flex-shrink: 0 !important;
 }
 
 .qty-quick-chips,
@@ -13978,6 +13980,7 @@ body.demo-mode-active .demo-billing-message-card {
   align-items: center !important;
   gap: 4px !important;
   flex-shrink: 0 !important;
+  flex-wrap: nowrap !important;
 }
 
 .qty-chip,
@@ -14016,7 +14019,9 @@ body.demo-mode-active .demo-billing-message-card {
   color: #0284c7 !important;
   border: 1px solid #38bdf8 !important;
   font-weight: 800 !important;
-  padding: 2px 8px !important;
+  padding: 2px 9px !important;
+  font-size: 10.5px !important;
+  letter-spacing: 0.2px !important;
 }
 
 .qty-chip.qty-chip-max:hover {

@@ -369,13 +369,22 @@ window.isDemoMode = function() {
       if (isDemo && ['products', 'parties', 'invoices', 'settings'].includes(key)) {
         const snap = (typeof FIXED_DEMO_SNAPSHOT !== 'undefined' && FIXED_DEMO_SNAPSHOT) ? FIXED_DEMO_SNAPSHOT : (window.FIXED_DEMO_SNAPSHOT || null);
         if (snap) {
-          if (key === 'products') return JSON.stringify(snap.products || []);
-          if (key === 'parties') return JSON.stringify(snap.parties || []);
+          if (key === 'products') {
+            const demoProds = (typeof sessionStorage !== 'undefined') ? sessionStorage.getItem('demo_products') : null;
+            return demoProds || JSON.stringify(snap.products || []);
+          }
+          if (key === 'parties') {
+            const demoParties = (typeof sessionStorage !== 'undefined') ? sessionStorage.getItem('demo_parties') : null;
+            return demoParties || JSON.stringify(snap.parties || []);
+          }
           if (key === 'invoices') {
             const demoInvs = (typeof sessionStorage !== 'undefined') ? sessionStorage.getItem('demo_invoices') : null;
             return demoInvs || JSON.stringify(snap.invoices || []);
           }
-          if (key === 'settings') return JSON.stringify(snap.settings || {});
+          if (key === 'settings') {
+            const demoSet = (typeof sessionStorage !== 'undefined') ? sessionStorage.getItem('demo_settings') : null;
+            return demoSet || JSON.stringify(snap.settings || {});
+          }
         }
       }
     } catch(e) {} finally {
@@ -3402,11 +3411,42 @@ window.triggerDatabaseSync = async function(forceReload = false) {
         }
 
         if (prodRes && prodRes.ok && Array.isArray(prodRes.products)) {
-          const prodFingerprint = prodRes.products.length + '_' + prodRes.products.map(p => (p.id || '') + ':' + (p.stock ?? '') + ':' + (p.price ?? '')).sort().slice(0, 15).join('|');
+          const nowMs = Date.now();
+          const recentMut = window.recentProductMutations || {};
+          const timeSinceLastWrite = nowMs - (window._lastWriteTimestamp || 0);
+
+          // Optimistic Union Merge: Server products + recently mutated local products
+          const serverProdMap = new Map();
+          prodRes.products.forEach(sp => {
+            if (!sp || !sp.id) return;
+            const descKey = (sp.description || '').trim().toLowerCase();
+            const mutTime = recentMut[sp.id] || recentMut[sp.description] || recentMut[descKey] || 0;
+            if (nowMs - mutTime < 30000 || timeSinceLastWrite < 15000) {
+              const localP = (productsDb || []).find(lp => lp && (lp.id === sp.id || (lp.description && lp.description.trim().toLowerCase() === descKey)));
+              if (localP) {
+                serverProdMap.set(sp.id, localP);
+                return;
+              }
+            }
+            serverProdMap.set(sp.id, sp);
+          });
+
+          (productsDb || []).forEach(lp => {
+            if (lp && lp.id && !serverProdMap.has(lp.id)) {
+              const descKey = (lp.description || '').trim().toLowerCase();
+              const hasMatchingDesc = Array.from(serverProdMap.values()).some(p => (p.description || '').trim().toLowerCase() === descKey);
+              if (!hasMatchingDesc) {
+                serverProdMap.set(lp.id, lp);
+              }
+            }
+          });
+
+          const mergedProducts = Array.from(serverProdMap.values());
+          const prodFingerprint = mergedProducts.length + '_' + mergedProducts.map(p => (p.id || '') + ':' + (p.stock ?? '') + ':' + (p.price ?? '')).sort().slice(0, 15).join('|');
           if (prodFingerprint !== window._lastProdFingerprint) {
             window._lastProdFingerprint = prodFingerprint;
             hasProductsChanged = true;
-            productsDb = prodRes.products;
+            productsDb = mergedProducts;
             window.productsDb = productsDb;
             try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
           }
@@ -3443,8 +3483,11 @@ window.triggerDatabaseSync = async function(forceReload = false) {
         }
 
         if ((hasProductsChanged || forceReload) && !isTyping) {
-          if (activeTab === 'view-products' && typeof loadProductsDatabaseTable === 'function') {
-            loadProductsDatabaseTable();
+          const timeSinceLastWrite = Date.now() - (window._lastWriteTimestamp || 0);
+          if (timeSinceLastWrite >= 15000 || forceReload) {
+            if (activeTab === 'view-products' && typeof loadProductsDatabaseTable === 'function') {
+              loadProductsDatabaseTable();
+            }
           }
         }
 
@@ -5083,10 +5126,13 @@ function initializeApp() {
 
   async function performCloudHeartbeat(force = false) {
     const now = Date.now();
-    // Continuous 2-second polling as explicitly requested
-    if (force || (now - lastCloudSyncPoll >= 2000)) {
+    const timeSinceLastWrite = now - (window._lastWriteTimestamp || 0);
+    if (timeSinceLastWrite < 15000) {
+      return; // Skip background/forced cloud poll while user is actively making changes!
+    }
+    if (force || (now - lastCloudSyncPoll >= 15000)) {
       lastCloudSyncPoll = now;
-      nextStaggeredPollInterval = 2000;
+      nextStaggeredPollInterval = 15000;
       try {
         if (navigator.onLine && typeof window.triggerDatabaseSync === "function" && !isSyncing) {
           await window.triggerDatabaseSync(false);
@@ -5101,7 +5147,7 @@ function initializeApp() {
   // Unthrottled Web Worker Heartbeat (Keeps HUD clock live and triggers 15s cloud checks even in background)
   try {
     const workerBlob = new Blob([
-      "setInterval(function(){ self.postMessage('tick'); }, 1000);"
+      "setInterval(function(){ self.postMessage('tick'); }, 15000);"
     ], { type: 'application/javascript' });
     const syncWorker = new Worker(URL.createObjectURL(workerBlob));
     syncWorker.onmessage = function(e) {
@@ -5111,7 +5157,7 @@ function initializeApp() {
     };
   } catch (workerErr) {
     console.warn("Background worker heartbeat note, using standard interval:", workerErr);
-    setInterval(() => performCloudHeartbeat(false), 1000);
+    setInterval(() => performCloudHeartbeat(false), 15000);
   }
 
   // Complementary foreground heartbeat
@@ -5120,7 +5166,7 @@ function initializeApp() {
     multiUserSyncTimer = setTimeout(async () => {
       await performCloudHeartbeat(false);
       scheduleNextCloudHeartbeat();
-    }, 1000);
+    }, 15000);
   }
   scheduleNextCloudHeartbeat();
 
@@ -7261,7 +7307,9 @@ function bindBillingFormInputs() {
           .filter(it => it !== item && ((it.productId && prod.id && it.productId === prod.id) || ((it.description || '').trim().toLowerCase() === (prod.description || '').trim().toLowerCase())))
           .reduce((sum, it) => sum + (parseFloat(it.quantity) || 0), 0);
 
-        if (totalOtherInCart + newQty > effectiveAvailable) {
+        const isDemoSessionForStep = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                                     (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser());
+        if (totalOtherInCart + newQty > effectiveAvailable && !isDemoSessionForStep) {
           const maxCan = Math.max(0, effectiveAvailable - totalOtherInCart);
           showFloatingToast(`❌ Cannot increase: "${prod.description}" has only ${effectiveAvailable} in stock. Maximum total is ${maxCan}.`, "warning");
           window.playAudioFeedback("warn");
@@ -8069,6 +8117,9 @@ function bindBillingFormInputs() {
     const remainingCanAdd = Math.max(0, effectiveAvailable - currentInCart);
     const requestedQty = parsedLot.total || parseFloat(qtyInput.value) || 0;
 
+    const isDemoSessionForInput = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                                  (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser());
+
     if (effectiveAvailable <= 0 || remainingCanAdd <= 0) {
       qtyInput.classList.add("qty-input-warning");
       qtyInput.classList.remove("qty-input-valid");
@@ -8078,8 +8129,13 @@ function bindBillingFormInputs() {
         if (maxCountSpan) maxCountSpan.textContent = "0";
       }
       if (addBtn) {
-        addBtn.disabled = true;
-        addBtn.innerHTML = `<i class="fa-solid fa-ban"></i> Out of Stock`;
+        if (!isDemoSessionForInput) {
+          addBtn.disabled = true;
+          addBtn.innerHTML = `<i class="fa-solid fa-ban"></i> Out of Stock`;
+        } else {
+          addBtn.disabled = false;
+          addBtn.innerHTML = `<i class="fa-solid fa-plus"></i> Add Item`;
+        }
       }
     } else if (requestedQty > remainingCanAdd) {
       qtyInput.classList.add("qty-input-warning");
@@ -8090,8 +8146,13 @@ function bindBillingFormInputs() {
         if (maxCountSpan) maxCountSpan.textContent = remainingCanAdd;
       }
       if (addBtn) {
-        addBtn.disabled = true;
-        addBtn.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Max ${remainingCanAdd}`;
+        if (!isDemoSessionForInput) {
+          addBtn.disabled = true;
+          addBtn.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Max ${remainingCanAdd}`;
+        } else {
+          addBtn.disabled = false;
+          addBtn.innerHTML = `<i class="fa-solid fa-plus"></i> Add Item`;
+        }
       }
     } else {
       qtyInput.classList.remove("qty-input-warning");
@@ -8175,6 +8236,19 @@ function bindBillingFormInputs() {
           }
         }
       }
+    }
+
+    const isDemoSessionForMax = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                                (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser());
+    if (targetMax <= 0 && isDemoSessionForMax) {
+      if (!prod && Array.isArray(productsDb) && productsDb.length > 0) {
+        prod = productsDb[0];
+        window.currentSelectedBillingProduct = prod;
+        if (typeof window.selectSmartProduct === 'function') {
+          window.selectSmartProduct(prod.id);
+        }
+      }
+      targetMax = (prod && prod.stock !== undefined && prod.stock !== null && prod.stock !== '') ? Math.max(1, parseInt(prod.stock, 10) || 50) : 50;
     }
 
     if (targetMax > 0) {
@@ -10270,6 +10344,20 @@ window.addBillingItemRow = function() {
     }
 
     if (!desc) {
+      const isDemo = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                     (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser());
+      const availableProds = Array.isArray(productsDb) && productsDb.length > 0 ? productsDb : [];
+      if (availableProds.length > 0) {
+        const nextIdx = (currentInvoice?.items?.length || 0) % availableProds.length;
+        const autoProd = availableProds[nextIdx];
+        if (autoProd) {
+          desc = autoProd.description;
+          prod = autoProd;
+        }
+      }
+    }
+
+    if (!desc) {
       if (typeof showFloatingToast === 'function') {
         showFloatingToast("⚠️ Please enter a product name or select from catalog!", "warning");
       }
@@ -10330,13 +10418,16 @@ window.addBillingItemRow = function() {
 
       const totalRequested = currentInCart + qty;
 
-      if (effectiveAvailable <= 0) {
+      const isDemoSession = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                            (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser());
+
+      if (effectiveAvailable <= 0 && !isDemoSession) {
         showFloatingToast(`❌ Out of Stock: "${prod.description}" is currently OUT OF STOCK (Available: 0). Cannot add to invoice.`, "warning");
         if (elements.billItemSelect) elements.billItemSelect.focus();
         return false;
       }
 
-      if (totalRequested > effectiveAvailable) {
+      if (totalRequested > effectiveAvailable && !isDemoSession) {
         const maxCanAdd = Math.max(0, effectiveAvailable - currentInCart);
         if (maxCanAdd > 0) {
           showFloatingToast(`❌ Insufficient Stock: "${prod.description}" has only ${effectiveAvailable} ${prod.unit || 'units'} available (Current bill: ${currentInCart}, requested: ${qty}). Maximum you can add is ${maxCanAdd}.`, "warning");
@@ -15962,9 +16053,13 @@ window.quickRestockProduct = function(id) {
   const valAfterDisc = Math.max(0, rate - (rate * disc / 100));
   prod.totalValue = Math.round((newStock * valAfterDisc) * 100) / 100;
 
+  window._lastWriteTimestamp = Date.now();
   if (!window.recentProductMutations) window.recentProductMutations = {};
   const nowMs = Date.now();
   window.recentProductMutations[id] = nowMs;
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured() && !(typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser())) {
+    window.SupabaseDB.upsertProduct(prod).catch(() => {});
+  }
   if (prod.description) {
     window.recentProductMutations[prod.description] = nowMs;
     window.recentProductMutations[prod.description.trim().toLowerCase()] = nowMs;
@@ -16031,9 +16126,13 @@ window.adjustProductStock = function(id, delta) {
   const valAfterDisc = Math.max(0, rate - (rate * disc / 100));
   prod.totalValue = Math.round((newStock * valAfterDisc) * 100) / 100;
 
+  window._lastWriteTimestamp = Date.now();
   if (!window.recentProductMutations) window.recentProductMutations = {};
   const nowMs = Date.now();
   window.recentProductMutations[id] = nowMs;
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured() && !(typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser())) {
+    window.SupabaseDB.upsertProduct(prod).catch(() => {});
+  }
   if (prod.description) {
     window.recentProductMutations[prod.description] = nowMs;
     window.recentProductMutations[prod.description.trim().toLowerCase()] = nowMs;
@@ -16107,6 +16206,24 @@ window.setProductStockDirect = function(id, explicitStockVal) {
   const disc = parseFloat(prod.discount || 0);
   const valAfterDisc = Math.max(0, rate - (rate * disc / 100));
   prod.totalValue = Math.round((newStock * valAfterDisc) * 100) / 100;
+
+  window._lastWriteTimestamp = Date.now();
+  if (!window.recentProductMutations) window.recentProductMutations = {};
+  const directNowMs = Date.now();
+  window.recentProductMutations[id] = directNowMs;
+  if (prod.description) {
+    window.recentProductMutations[prod.description] = directNowMs;
+    window.recentProductMutations[prod.description.trim().toLowerCase()] = directNowMs;
+  }
+  try {
+    let storedMut = JSON.parse(localStorage.getItem("recent_product_mutations") || "{}");
+    storedMut[id] = directNowMs;
+    if (prod.description) {
+      storedMut[prod.description] = directNowMs;
+      storedMut[prod.description.trim().toLowerCase()] = directNowMs;
+    }
+    localStorage.setItem("recent_product_mutations", JSON.stringify(storedMut));
+  } catch(e){}
 
   try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch (e) {}
   if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts(productsDb);
@@ -17898,8 +18015,19 @@ function unlockSystemSilently(shouldBroadcast = false) {
   localStorage.setItem("last_active_time", lastActivityRecordTime);
   document.body.classList.remove("app-is-locked");
   
-  const overlay = document.getElementById("lock-screen-overlay");
-  if (overlay) overlay.classList.add("hidden");
+  if (typeof window.hideAppModal === 'function') {
+    window.hideAppModal("lock-screen-overlay");
+  } else {
+    const overlay = document.getElementById("lock-screen-overlay");
+    if (overlay) {
+      overlay.classList.add("hidden");
+      overlay.style.setProperty("display", "none", "important");
+      overlay.style.setProperty("visibility", "hidden", "important");
+      overlay.style.setProperty("opacity", "0", "important");
+      overlay.style.setProperty("pointer-events", "none", "important");
+      overlay.style.setProperty("z-index", "-1", "important");
+    }
+  }
   const wrapper = document.querySelector('.dashboard-wrapper');
   if (wrapper) wrapper.classList.remove("blur-dashboard-wrapper");
 
@@ -17978,8 +18106,19 @@ window.triggerUserLogout = function(shouldBroadcast = true) {
   isLocked = true;
   document.body.classList.add("app-is-locked");
 
-  const overlay = document.getElementById("lock-screen-overlay");
-  if (overlay) overlay.classList.remove("hidden");
+  if (typeof window.showAppModal === 'function') {
+    window.showAppModal("lock-screen-overlay");
+  } else {
+    const overlay = document.getElementById("lock-screen-overlay");
+    if (overlay) {
+      overlay.classList.remove("hidden");
+      overlay.style.setProperty("display", "flex", "important");
+      overlay.style.setProperty("visibility", "visible", "important");
+      overlay.style.setProperty("opacity", "1", "important");
+      overlay.style.setProperty("pointer-events", "auto", "important");
+      overlay.style.setProperty("z-index", "2147483647", "important");
+    }
+  }
   const wrapper = document.querySelector('.dashboard-wrapper');
   if (wrapper) wrapper.classList.add("blur-dashboard-wrapper");
 
