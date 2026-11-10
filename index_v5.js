@@ -4361,7 +4361,7 @@ window.submitClientServiceInquiry = async function(e) {
       }
 
       if (typeof showFloatingToast === "function") {
-        showFloatingToast("🚀 Project inquiry sent! Jagan will contact you within 24 hours.", "success", 8000);
+        showFloatingToast("🚀 Message delivered directly to Kandukuri Jagan's inbox! Confirmation sent to " + email, "success", 8000);
       }
     } else {
       showError(result?.error || result?.message || "Failed to submit inquiry. Please try again or chat directly on WhatsApp.");

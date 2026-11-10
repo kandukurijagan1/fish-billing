@@ -1257,6 +1257,12 @@ function handleApiGet(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
+  // 1.5 Prospective Client Service Inquiries via GET (Authentication-exempt & URL-safe)
+  if (action === "submit_client_inquiry") {
+    var getData = (e && e.parameter) ? e.parameter : {};
+    return handleClientInquirySubmission(getData);
+  }
+
   // 2. Authoritative Sync / Pull from Google Sheets with Fast RAM Cache & Delta Validation
   if (action === "sync" || action === "pull") {
     var auth = authenticateRequest(e, null);
@@ -1826,13 +1832,45 @@ function handleClientInquirySubmission(data) {
     ];
     sheet.appendRow(rowData);
 
-    // 4. Send Email Notification to Developer (kandukurijagan99@gmail.com)
-    var developerEmail = "kandukurijagan99@gmail.com";
+    // 4. Direct Email Notification to Developer Inbox (kandukurijagan99@gmail.com & script owner)
+    var devEmailList = ["kandukurijagan99@gmail.com"];
+    try {
+      var eff = (Session.getEffectiveUser().getEmail() || "").toLowerCase().trim();
+      if (eff && devEmailList.indexOf(eff) === -1) devEmailList.push(eff);
+    } catch (_) {}
+    try {
+      var act = (Session.getActiveUser().getEmail() || "").toLowerCase().trim();
+      if (act && devEmailList.indexOf(act) === -1) devEmailList.push(act);
+    } catch (_) {}
+    var developerEmail = devEmailList.join(", ");
+
     var whatsappUrl = "https://wa.me/91" + tenDigitPhone + "?text=" + encodeURIComponent(
       "Hello " + rawName + ", this is Kandukuri Jagan. I received your project inquiry for " + (rawService || "software development") + " (" + (rawBusiness || "") + "). Let's discuss your project requirements!"
     );
 
-    var devEmailSubject = "🚀 [NEW LEAD] Project Inquiry from " + rawName + " (" + (rawBusiness || "Custom Software") + ")";
+    var devEmailSubject = "📥 [NEW CLIENT INQUIRY] " + rawName + " • " + (rawService || "Aaryan Aqua Billing");
+    
+    // Plain text alternative for guaranteed primary inbox placement
+    var devPlainTextBody = 
+      "====================================================\n" +
+      "📥 NEW CLIENT INQUIRY RECEIVED VIA AARYAN AQUA BILLING\n" +
+      "====================================================\n\n" +
+      "Client Name:       " + rawName + "\n" +
+      "Email Address:     " + rawEmail + "\n" +
+      "WhatsApp Phone:    +91 " + tenDigitPhone + "\n" +
+      "Business / Farm:   " + (rawBusiness || "Individual / Not Specified") + "\n" +
+      "Service Requested: " + rawService + "\n" +
+      "Industry Sector:   " + rawIndustry + "\n" +
+      "Project Timeline:  " + rawTimeline + "\n" +
+      "Received On:       " + nowTimestamp + "\n\n" +
+      "----------------------------------------------------\n" +
+      "CLIENT PROJECT REQUIREMENTS / SCOPE:\n" +
+      (rawRequirements || "No additional requirements provided.") + "\n" +
+      "----------------------------------------------------\n\n" +
+      "QUICK ACTIONS:\n" +
+      "• Chat on WhatsApp: " + whatsappUrl + "\n" +
+      "• Reply via Email: Click 'Reply' in your email client to write directly to " + rawEmail + "\n\n" +
+      "Device & IP Context: " + clientDevice + "\n";
     var devEmailBody = 
       "<div style='font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: #0f172a; padding: 32px 16px; color: #f8fafc;'>" +
         "<div style='max-width: 620px; margin: 0 auto; background: #1e293b; border: 1px solid #334155; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5);'>" +
@@ -1872,14 +1910,38 @@ function handleClientInquirySubmission(data) {
         "</div>" +
       "</div>";
 
+    var devMailSuccess = false;
+    // Method 1: GmailApp (sends directly from authenticated Google Account, best inbox delivery)
     try {
-      MailApp.sendEmail({
-        to: developerEmail,
-        subject: devEmailSubject,
-        htmlBody: devEmailBody
-      });
-    } catch (e1) {
-      Logger.log("Failed to send lead email to developer: " + e1.message);
+      if (typeof GmailApp !== "undefined" && GmailApp.sendEmail) {
+        GmailApp.sendEmail(developerEmail, devEmailSubject, devPlainTextBody, {
+          name: "Aqua Billing Client Intake • " + rawName,
+          replyTo: rawEmail,
+          htmlBody: devEmailBody
+        });
+        devMailSuccess = true;
+        Logger.log("Inquiry delivered to developer inbox via GmailApp to: " + developerEmail);
+      }
+    } catch (gmErr) {
+      Logger.log("GmailApp dispatch failed, trying MailApp: " + gmErr.message);
+    }
+
+    // Method 2: MailApp fallback if GmailApp lacks scope
+    if (!devMailSuccess) {
+      try {
+        MailApp.sendEmail({
+          to: developerEmail,
+          subject: devEmailSubject,
+          body: devPlainTextBody,
+          htmlBody: devEmailBody,
+          name: "Aqua Billing Client Intake • " + rawName,
+          replyTo: rawEmail
+        });
+        devMailSuccess = true;
+        Logger.log("Inquiry delivered to developer inbox via MailApp to: " + developerEmail);
+      } catch (mlErr) {
+        Logger.log("MailApp dispatch failed: " + mlErr.message);
+      }
     }
 
     // 5. Send Polite Confirmation Email to Client
@@ -1926,12 +1988,31 @@ function handleClientInquirySubmission(data) {
         "</div>" +
       "</div>";
 
+    var clientPlainTextBody = 
+      "Hello " + rawName + ",\n\n" +
+      "Thank you for reaching out! Your project inquiry for " + rawService + " has been safely received.\n\n" +
+      "I am personally reviewing your requirements and will connect with you directly on WhatsApp / Phone (+91 " + tenDigitPhone + ") within 24 hours to discuss your workflow and specifications.\n\n" +
+      "Summary of your submission:\n" +
+      "• Business / Farm: " + (rawBusiness || "Individual") + "\n" +
+      "• Service: " + rawService + "\n" +
+      "• Timeline: " + rawTimeline + "\n" +
+      "• Registered Email: " + rawEmail + "\n" +
+      "• Submitted On: " + nowTimestamp + "\n\n" +
+      "Need immediate assistance? Feel free to message me directly on WhatsApp: https://wa.me/918367047947\n\n" +
+      "Best regards,\n" +
+      "Kandukuri Jagan\n" +
+      "Software Development Services | kandukurijagan99@gmail.com\n";
+
     try {
       MailApp.sendEmail({
         to: rawEmail,
         subject: clientEmailSubject,
-        htmlBody: clientEmailBody
+        body: clientPlainTextBody,
+        htmlBody: clientEmailBody,
+        name: "Kandukuri Jagan • Software Engineer",
+        replyTo: "kandukurijagan99@gmail.com"
       });
+      Logger.log("Confirmation email delivered to client: " + rawEmail);
     } catch (e2) {
       Logger.log("Failed to send acknowledgment email to client: " + e2.message);
     }
