@@ -315,11 +315,8 @@ window.isDemoMode = function() {
     }
   }
 
-  // Explicit demo session flags
+  // Explicit demo session flags (Per-tab session scoped)
   if (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer" || sessionStorage.getItem("current_user_role") === "demo")) {
-    return true;
-  }
-  if (typeof localStorage !== 'undefined' && localStorage.getItem("is_demo_mode") === "true") {
     return true;
   }
   if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
@@ -342,10 +339,14 @@ window.isDemoMode = function() {
     if (inProxy) return originalSetItem.call(this, key, val);
     inProxy = true;
     try {
+      if (key === 'is_demo_mode') {
+        try { sessionStorage.setItem('is_demo_mode', val); } catch(e) {}
+        return; // Never pollute shared origin localStorage with demo flag
+      }
+
       const isDemo = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
                      (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
-                     (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) ||
-                     (originalGetItem.call(this, "is_demo_mode") === "true");
+                     (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer"));
 
       if (isDemo && ['products', 'parties', 'invoices', 'settings', 'recent_product_mutations', 'deleted_invoice_ids', 'deleted_party_ids'].includes(key)) {
         try { sessionStorage.setItem('demo_' + key, val); } catch(e) {}
@@ -361,10 +362,13 @@ window.isDemoMode = function() {
     if (inProxy) return originalGetItem.call(this, key);
     inProxy = true;
     try {
+      if (key === 'is_demo_mode') {
+        return (typeof sessionStorage !== 'undefined') ? sessionStorage.getItem('is_demo_mode') : null;
+      }
+
       const isDemo = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
                      (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
-                     (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) ||
-                     (originalGetItem.call(this, "is_demo_mode") === "true");
+                     (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer"));
 
       if (isDemo && ['products', 'parties', 'invoices', 'settings'].includes(key)) {
         const snap = (typeof FIXED_DEMO_SNAPSHOT !== 'undefined' && FIXED_DEMO_SNAPSHOT) ? FIXED_DEMO_SNAPSHOT : (window.FIXED_DEMO_SNAPSHOT || null);
@@ -420,7 +424,7 @@ if (isElectronApp && typeof document !== 'undefined') {
 try {
   const isDemo = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
                  (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) ||
-                 (typeof localStorage !== 'undefined' && localStorage.getItem("is_demo_mode") === "true");
+                 (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser());
   const snapDemo = (typeof FIXED_DEMO_SNAPSHOT !== 'undefined' && FIXED_DEMO_SNAPSHOT) ? FIXED_DEMO_SNAPSHOT : (typeof window !== 'undefined' ? window.FIXED_DEMO_SNAPSHOT : null);
   const snapLive = (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && INITIAL_BOOTSTRAP_SNAPSHOT) ? INITIAL_BOOTSTRAP_SNAPSHOT : {};
 
@@ -436,7 +440,15 @@ try {
     if (!globalSettings.upiId && snapDemo.upiId) globalSettings.upiId = snapDemo.upiId;
   } else {
     const localProds = JSON.parse(localStorage.getItem("products") || "null");
-    productsDb = (Array.isArray(localProds) && localProds.length > 0) ? localProds : (snapLive.products || []);
+    const prodsSeeded = (typeof localStorage !== "undefined" && localStorage.getItem("products_seeded") === "true");
+    if (Array.isArray(localProds)) {
+      productsDb = localProds;
+    } else if (!prodsSeeded && snapLive && Array.isArray(snapLive.products)) {
+      productsDb = snapLive.products;
+      try { localStorage.setItem("products_seeded", "true"); } catch(e){}
+    } else {
+      productsDb = [];
+    }
     
     // Client-side self-healing: Backfill barcodes and stock from master snapshot
     if (Array.isArray(productsDb) && snapLive && Array.isArray(snapLive.products)) {
@@ -462,16 +474,28 @@ try {
     }
     
     const localParties = JSON.parse(localStorage.getItem("parties") || "null");
-    partiesDb = (Array.isArray(localParties) && localParties.length > 0) ? localParties : (snapLive.parties || []);
+    const partiesSeeded = (typeof localStorage !== "undefined" && localStorage.getItem("parties_seeded") === "true");
+    if (Array.isArray(localParties)) {
+      partiesDb = localParties;
+    } else if (!partiesSeeded && snapLive && Array.isArray(snapLive.parties)) {
+      partiesDb = snapLive.parties;
+      try { localStorage.setItem("parties_seeded", "true"); } catch(e){}
+    } else {
+      partiesDb = [];
+    }
     
     const localInvs = JSON.parse(localStorage.getItem("invoices") || "null");
     const isHistoryCleared = (typeof localStorage !== "undefined" && (localStorage.getItem("database_history_cleared") === "true" || !!localStorage.getItem("database_history_cleared_at")));
+    const invoicesSeeded = (typeof localStorage !== "undefined" && localStorage.getItem("invoices_seeded") === "true");
     if (isHistoryCleared) {
-      invoicesDb = Array.isArray(localInvs) ? localInvs : [];
+      invoicesDb = [];
     } else if (Array.isArray(localInvs)) {
       invoicesDb = localInvs;
+    } else if (!invoicesSeeded && snapLive && Array.isArray(snapLive.invoices) && snapLive.invoices.length > 0) {
+      invoicesDb = snapLive.invoices;
+      try { localStorage.setItem("invoices_seeded", "true"); } catch(e){}
     } else {
-      invoicesDb = (snapLive && Array.isArray(snapLive.invoices)) ? snapLive.invoices : [];
+      invoicesDb = [];
     }
     
     const localSettings = JSON.parse(localStorage.getItem("settings") || "null");
@@ -1314,28 +1338,11 @@ TurboDataStore.rebuildIndexes();
     const tombstones = typeof window.getDeletedInvoiceTombstones === 'function' ? window.getDeletedInvoiceTombstones() : [];
     if (tombstones.length === 0) return invoices.filter(Boolean);
     
-    const tombstoneSet = new Set(tombstones.map(t => String(t || '').trim().toLowerCase()));
-
     return invoices.filter(inv => {
       if (!inv) return false;
-      const invId = String(inv.id || (inv.details && inv.details.id) || "").trim().toLowerCase();
-      const cleanId = invId.replace(/^inv_/, '');
-
-      // Check if unique record ID was explicitly deleted
-      if (invId && tombstoneSet.has(invId)) return false;
-      if (cleanId && tombstoneSet.has(cleanId)) return false;
-
-      // Note: Do not drop valid invoices solely by invoice number (e.g. 0001) as numbers are recycled
-      const hasContent = (Array.isArray(inv.items) && inv.items.length > 0) ||
-                         (inv.details && Array.isArray(inv.details.items) && inv.details.items.length > 0) ||
-                         (parseFloat(inv.total) > 0);
-      if (!hasContent) {
-        const invNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || "").trim().toLowerCase();
-        const cleanNo = invNo.replace(/^#/, '');
-        if (invNo && tombstoneSet.has(invNo)) return false;
-        if (cleanNo && tombstoneSet.has(cleanNo)) return false;
+      if (typeof window.isInvoiceDeleted === 'function' && window.isInvoiceDeleted(inv, tombstones)) {
+        return false;
       }
-
       return true;
     });
   };
@@ -1969,7 +1976,9 @@ const processedRealtimeMsgIds = new Set();
 
 function processRealtimeSyncMessage(msg, source = 'mesh') {
   if (!msg || !msg.type) return;
-  if ((typeof window.isDemoMode === 'function' && window.isDemoMode()) || (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser())) {
+  if ((typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+      (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+      (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer"))) {
     return; // NEVER process realtime sync updates into demo mode!
   }
   if (msg.isDemo) return; // NEVER process demo messages into real database!
@@ -2373,7 +2382,10 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
     } catch (err) {}
 
   } else if (msg.type === 'SYNC_REQUEST' && msg.requesterId && msg.requesterId !== MY_SYNC_CLIENT_ID) {
-    if (invoicesDb.length > 0 || productsDb.length > 0) {
+    const isDemoTab = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                      (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+                      (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_demo_mode") === "true");
+    if (!isDemoTab && (invoicesDb.length > 0 || productsDb.length > 0)) {
       broadcastInterTabEvent('SYNC_RESPONSE', {
         targetId: msg.requesterId,
         invoices: invoicesDb,
@@ -2384,6 +2396,10 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
     }
 
   } else if (msg.type === 'SYNC_RESPONSE' && msg.targetId === MY_SYNC_CLIENT_ID) {
+    const isDemoTab = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                      (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+                      (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_demo_mode") === "true");
+    if (isDemoTab) return; // Strict air-gap: Demo sessions must NEVER merge mesh peer databases!
     console.log("⚡ Received instant peer sync response from mesh!");
     let changed = false;
     if (Array.isArray(msg.invoices) && msg.invoices.length > 0) {
@@ -2458,6 +2474,10 @@ function processRealtimeSyncMessage(msg, source = 'mesh') {
 // --- HIGH-SPEED RETAINED DATABASE MESH PROCESSOR (<15ms Instant Hydration) ---
 function processRetainedDatabaseMessage(bundle) {
   if (!bundle || typeof bundle !== 'object') return;
+  const isDemoSession = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                        (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+                        (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer"));
+  if (isDemoSession) return; // STRICT AIR-GAP: Demo sessions must NEVER ingest retained mesh state!
   let changed = false;
 
   // 1. Invoices (Zero-Loss Union Merge)
@@ -2662,6 +2682,10 @@ function initRealtimeMeshSync() {
     realtimeMeshClient.on('message', (topic, message) => {
       try {
         if (topic === RETAINED_DB_TOPIC) {
+          const isDemoSession = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                                (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+                                (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer"));
+          if (isDemoSession) return;
           const rawPayload = message.toString();
           AppWireSecurity.unpack(rawPayload, { allowRetained: true }).then(bundle => {
             if (!bundle) {
@@ -2869,6 +2893,10 @@ function broadcastInterTabEvent(type, payload = {}) {
 
 window.publishRetainedDatabaseState = function() {
   if (!realtimeMeshClient || !realtimeMeshClient.connected) return;
+  const isDemoSession = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                        (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+                        (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer"));
+  if (isDemoSession) return; // Strict air-gap: Demo sessions must NEVER broadcast to retained topic!
   try {
     const bundle = {
       invoices: invoicesDb,
@@ -3344,8 +3372,7 @@ window.triggerDatabaseSync = async function(forceReload = false) {
   // STRICT DATA ISOLATION: Never sync live database for demo users or view-only mode!
   if ((typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
       (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
-      (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) ||
-      (typeof localStorage !== 'undefined' && localStorage.getItem("is_demo_mode") === "true")) {
+      (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer"))) {
     return null;
   }
 
@@ -3381,6 +3408,14 @@ window.triggerDatabaseSync = async function(forceReload = false) {
           window.SupabaseDB.fetchCustomers(),
           window.SupabaseDB.fetchSettings()
         ]);
+
+        const isDemoNow = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                          (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+                          (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer"));
+        if (isDemoNow) {
+          isSyncing = false;
+          return null;
+        }
 
         let hasInvoicesChanged = false;
         let hasProductsChanged = false;
@@ -5426,38 +5461,42 @@ window.seedDatabasesIfEmpty = function seedDatabasesIfEmpty() {
     window.productsDb = productsDb;
   }
 
-  // 3. Seed Parties if empty
+  // 3. Seed Parties if empty (First boot only)
   try {
-    const localParties = JSON.parse(localStorage.getItem("parties") || "[]");
-    if (!Array.isArray(localParties) || localParties.length === 0) {
+    const localParties = JSON.parse(localStorage.getItem("parties") || "null");
+    const partiesSeeded = (typeof localStorage !== "undefined" && localStorage.getItem("parties_seeded") === "true");
+    if (Array.isArray(localParties)) {
+      partiesDb = localParties;
+    } else if (!partiesSeeded && typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.parties)) {
       localStorage.setItem("parties", JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.parties));
+      localStorage.setItem("parties_seeded", "true");
       partiesDb = INITIAL_BOOTSTRAP_SNAPSHOT.parties;
       window.partiesDb = partiesDb;
+    } else {
+      partiesDb = [];
     }
   } catch (e) {
-    localStorage.setItem("parties", JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.parties));
-    partiesDb = INITIAL_BOOTSTRAP_SNAPSHOT.parties;
-    window.partiesDb = partiesDb;
+    partiesDb = [];
   }
 
   // 4. Invoices Database - seed from snapshot on first load for 0ms instant loading
   try {
     const localInvs = JSON.parse(localStorage.getItem("invoices") || "null");
     const hasClearedHistory = (typeof localStorage !== "undefined" && (localStorage.getItem("database_history_cleared") === "true" || !!localStorage.getItem("database_history_cleared_at")));
+    const invoicesSeeded = (typeof localStorage !== "undefined" && localStorage.getItem("invoices_seeded") === "true");
     if (hasClearedHistory) {
-      invoicesDb = Array.isArray(localInvs) ? localInvs : [];
+      invoicesDb = [];
     } else if (Array.isArray(localInvs)) {
       invoicesDb = localInvs;
-    } else if (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.invoices) && INITIAL_BOOTSTRAP_SNAPSHOT.invoices.length > 0) {
+    } else if (!invoicesSeeded && typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.invoices) && INITIAL_BOOTSTRAP_SNAPSHOT.invoices.length > 0) {
       invoicesDb = INITIAL_BOOTSTRAP_SNAPSHOT.invoices;
       localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+      localStorage.setItem("invoices_seeded", "true");
     } else {
       invoicesDb = [];
-      localStorage.setItem("invoices", JSON.stringify([]));
     }
   } catch (e) {
     invoicesDb = [];
-    localStorage.setItem("invoices", JSON.stringify([]));
   }
   if (typeof window.filterOutDeletedInvoices === 'function') {
     invoicesDb = window.filterOutDeletedInvoices(invoicesDb);
@@ -5473,7 +5512,6 @@ window.loadAllDatabases = function loadAllDatabases() {
 
   const isDemo = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
                  (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) ||
-                 (typeof localStorage !== 'undefined' && localStorage.getItem("is_demo_mode") === "true") ||
                  (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser());
   const snapDemo = (typeof FIXED_DEMO_SNAPSHOT !== 'undefined' && FIXED_DEMO_SNAPSHOT) ? FIXED_DEMO_SNAPSHOT : (typeof window !== 'undefined' ? window.FIXED_DEMO_SNAPSHOT : null);
 
@@ -5492,6 +5530,9 @@ window.loadAllDatabases = function loadAllDatabases() {
     window.productsDb = productsDb;
     window.partiesDb = partiesDb;
     window.globalSettings = globalSettings;
+    if (window.TurboDataStore && typeof window.TurboDataStore.rebuildIndexes === 'function') {
+      window.TurboDataStore.rebuildIndexes();
+    }
     return;
   }
 
@@ -5572,14 +5613,26 @@ window.loadAllDatabases = function loadAllDatabases() {
   } catch(e) {}
 
   try {
-    const partyLocal = JSON.parse(localStorage.getItem("parties") || "[]");
-    if (Array.isArray(partyLocal) && partyLocal.length > 0) {
+    const partyLocal = JSON.parse(localStorage.getItem("parties") || "null");
+    const partiesSeeded = (typeof localStorage !== "undefined" && localStorage.getItem("parties_seeded") === "true");
+    if (Array.isArray(partyLocal)) {
       partiesDb = partyLocal;
-    } else if ((!partiesDb || partiesDb.length === 0) && typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.parties)) {
+    } else if (!partiesSeeded && (!partiesDb || partiesDb.length === 0) && typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.parties)) {
       partiesDb = INITIAL_BOOTSTRAP_SNAPSHOT.parties;
-      try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
+      try { localStorage.setItem("parties", JSON.stringify(partiesDb)); localStorage.setItem("parties_seeded", "true"); } catch(e){}
+    } else {
+      partiesDb = [];
     }
-  } catch(e) {}
+  } catch(e) {
+    partiesDb = [];
+  }
+
+  // Filter out any explicitly deleted party IDs or names
+  let dpiList = [];
+  try { dpiList = JSON.parse(localStorage.getItem("deleted_party_ids")) || []; } catch(e){}
+  if (dpiList.length > 0 && Array.isArray(partiesDb)) {
+    partiesDb = partiesDb.filter(p => p && !dpiList.includes(String(p.id)) && !dpiList.includes(String(p.name)));
+  }
 
   // In Real-World Mode: Filter out any sample placeholder parties
   if (!isDemo && Array.isArray(partiesDb)) {
@@ -6679,7 +6732,7 @@ function updateDashboardOverview() {
 
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td style="font-weight: 700; color: var(--primary-teal); white-space: nowrap; ${isViewOnlyUser ? '' : 'cursor: pointer;'}" ${isViewOnlyUser ? (balance > 0.01 ? `onclick="openInvoiceVerificationModal('${inv.invoiceNo || inv.id}')" title="Click to Settle Bill #${inv.invoiceNo}" style="cursor: pointer;"` : `onclick="if(typeof showFloatingToast === 'function') showFloatingToast('🔒 Detailed invoice preview is restricted in Demo mode.', 'info', 4000);" title="Invoice #${inv.invoiceNo} (Paid)"`) : `onclick="openInvoicePrintPreview('${inv.id || inv.invoiceNo}', 'a4')" title="Click to preview &amp; print invoice"`}>
+          <td style="font-weight: 700; color: var(--primary-teal); white-space: nowrap; ${isViewOnlyUser ? '' : 'cursor: pointer;'}" ${isViewOnlyUser ? `onclick="if(typeof showFloatingToast === 'function') showFloatingToast('🔒 Bill preview is restricted in Demo mode.', 'info', 4000);" title="Demo Invoice #${inv.invoiceNo}"` : `onclick="openInvoicePrintPreview('${inv.id || inv.invoiceNo}', 'a4')" title="Click to preview &amp; print invoice"`}>
             <i class="fa-solid fa-file-invoice" style="margin-right: 4px; opacity: 0.7;"></i>#${inv.invoiceNo}
           </td>
           <td style="white-space: nowrap;">${formatInputDateString(inv.invoiceDate)}</td>
@@ -6693,10 +6746,7 @@ function updateDashboardOverview() {
           </td>
           <td class="actions-cell">
             ${isViewOnlyUser
-              ? (!isPaid && balance > 0.01
-                  ? `<button class="btn btn-xs btn-settle-demo" onclick="openInvoiceVerificationModal('${inv.invoiceNo || inv.id}')" style="background: linear-gradient(135deg, #0284c7, #0369a1); color: #ffffff; border: none; padding: 4px 10px; font-size: 11.5px; font-weight: 700; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(2, 132, 199, 0.35);" title="Settle Invoice Balance"><i class="fa-solid fa-bolt" style="color: #38bdf8;"></i> Settle</button>`
-                  : `<span class="badge-status badge-paid" style="font-size: 11px; padding: 3px 8px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-circle-check"></i> Paid</span>`
-                )
+              ? `<span class="badge-status" style="font-size: 11px; padding: 4px 10px; font-weight: 600; color: #475569; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-eye" style="color: #64748b;"></i> View Only</span>`
               : `${(!isEstimate && !isPaid && balance > 0 && !isCustomerRole) ? `<button class="action-btn share action-btn-qr" onclick="openBalanceQrModal('${inv.id}')" title="Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode"></i></button>` : ''}
             <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${safeInvId}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
             <button class="action-btn print action-btn-thermal" onclick="openInvoicePrintPreview('${inv.id}', 'thermal')" title="Preview &amp; Print POS Thermal"><i class="fa-solid fa-receipt"></i></button>
@@ -14079,10 +14129,12 @@ window.shareCurrentInvoiceWhatsApp = function(btnEl = null) {
 let currentBalanceQrInv = null;
 
 window.openBalanceQrModal = function(id) {
-  const isDemo = (typeof window.isDemoMode === 'function') && window.isDemoMode();
-  if (!isDemo && typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+  const isDemo = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                 (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+                 (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_demo_mode") === "true");
+  if (isDemo) {
     if (typeof showFloatingToast === 'function') {
-      showFloatingToast("⛔ Access Denied: Payment collection and settlement are disabled in View-Only mode.", "warning", 4000);
+      showFloatingToast("⛔ Access Denied: Payment collection and settlement are disabled in Preview mode.", "warning", 4000);
     }
     return;
   }
@@ -14954,7 +15006,7 @@ function renderHistoryTableRows(records) {
 
     htmlBuffer.push(`
       <tr>
-        <td style="font-weight: 700; color: var(--primary-teal); ${isViewOnlyUser ? '' : 'cursor: pointer;'}" ${isViewOnlyUser ? (balance > 0.01 ? `onclick="openInvoiceVerificationModal('${inv.invoiceNo || inv.id}')" title="Click to Settle Bill #${inv.invoiceNo}" style="cursor: pointer;"` : `onclick="if(typeof showFloatingToast === 'function') showFloatingToast('🔒 Detailed bill preview is restricted in Demo mode.', 'info', 4000);" title="Invoice #${inv.invoiceNo} (Paid)"`) : `onclick="openInvoicePrintPreview('${inv.id || inv.invoiceNo}', 'a4')" title="Click to preview bill"`}>
+        <td style="font-weight: 700; color: var(--primary-teal); ${isViewOnlyUser ? '' : 'cursor: pointer;'}" ${isViewOnlyUser ? `onclick="if(typeof showFloatingToast === 'function') showFloatingToast('🔒 Bill preview is restricted in Demo mode.', 'info', 4000);" title="Demo Invoice #${inv.invoiceNo}"` : `onclick="openInvoicePrintPreview('${inv.id || inv.invoiceNo}', 'a4')" title="Click to preview bill"`}>
           <i class="fa-solid fa-file-invoice" style="margin-right: 4px; opacity: 0.7;"></i>#${inv.invoiceNo}
         </td>
         <td>${formatInputDateString(invDate)}</td>
@@ -14975,10 +15027,7 @@ function renderHistoryTableRows(records) {
         </td>
         <td class="actions-cell">
           ${isViewOnlyUser
-            ? (!isPaid && balance > 0.01
-                ? `<button class="btn btn-xs btn-settle-demo" onclick="openInvoiceVerificationModal('${inv.invoiceNo || inv.id}')" style="background: linear-gradient(135deg, #0284c7, #0369a1); color: #ffffff; border: none; padding: 4px 10px; font-size: 11.5px; font-weight: 700; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(2, 132, 199, 0.35);" title="Settle Invoice Balance"><i class="fa-solid fa-bolt" style="color: #38bdf8;"></i> Settle</button>`
-                : `<span class="badge-status badge-paid" style="font-size: 11px; padding: 3px 8px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-circle-check"></i> Paid</span>`
-              )
+            ? `<span class="badge-status" style="font-size: 11px; padding: 4px 10px; font-weight: 600; color: #475569; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-eye" style="color: #64748b;"></i> View Only</span>`
             : `${balanceQrBtn}
               <button class="action-btn print action-btn-print" onclick="openInvoicePrintPreview('${inv.id}', 'a4')" title="Preview &amp; Print A4 Tax Invoice"><i class="fa-solid fa-print"></i></button>
               <button class="action-btn print action-btn-thermal" onclick="openInvoicePrintPreview('${safeInvId}', 'thermal')" title="Preview &amp; Print Thermal POS"><i class="fa-solid fa-receipt"></i></button>
@@ -15625,6 +15674,7 @@ window.deleteSavedInvoice = function(identifier, skipConfirm = false) {
   window.invoicesDb = invoicesDb;
   try {
     localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+    localStorage.setItem("invoices_seeded", "true");
   } catch (e) {}
 
   // 4. Purge from IndexedDB
@@ -17035,7 +17085,10 @@ window.deletePartyRowDb = async function(id, name = "") {
   // 2. Instant optimistic local update
   partiesDb = (partiesDb || []).filter(p => p && String(p.id || "").trim() !== targetId && String(p.name || "").trim() !== targetId && String(p.name || "").trim() !== targetName);
   window.partiesDb = partiesDb;
-  try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
+  try {
+    localStorage.setItem("parties", JSON.stringify(partiesDb));
+    localStorage.setItem("parties_seeded", "true");
+  } catch(e){}
   if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllParties(partiesDb);
   if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
 
@@ -17049,7 +17102,7 @@ window.deletePartyRowDb = async function(id, name = "") {
   // 4. Delete from Supabase Cloud Database (<50ms)
   if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
     try {
-      await window.SupabaseDB.deleteCustomer(targetId);
+      await window.SupabaseDB.deleteCustomer(targetId, targetName);
     } catch (err) {
       console.warn("[Supabase] Delete customer error:", err);
     }
@@ -22870,15 +22923,9 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
       `;
     }
 
-    if (balDue > 0.01) {
-      if (adminSettleControls) adminSettleControls.style.display = "block";
-      if (fullyPaidSection) fullyPaidSection.style.display = "none";
-      if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-bolt" style="color: #0284c7;"></i> Demo Mode: Payment Settlement Simulation`;
-    } else {
-      if (adminSettleControls) adminSettleControls.style.display = "none";
-      if (fullyPaidSection) fullyPaidSection.style.display = "block";
-      if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-circle-check text-green"></i> Verified &amp; 100% Settled`;
-    }
+    if (adminSettleControls) adminSettleControls.style.display = "none";
+    if (fullyPaidSection) fullyPaidSection.style.display = balDue <= 0.01 ? "block" : "none";
+    if (footerStatus) footerStatus.innerHTML = `<i class="fa-solid fa-shield-halved" style="color: #0284c7;"></i> Demo Preview Mode (Read-Only)`;
   } else {
     if (custShopCard) custShopCard.style.display = "block";
     if (itemsCard) itemsCard.style.display = "block";
@@ -23023,13 +23070,19 @@ window.toggleVerifyCustomAmount = function(status) {
 window.submitInvoicePaymentSettlement = function() {
   // Strict Security: Allowed ONLY when authenticated inside the admin dashboard as authorized admin
   const isViewOnly = (typeof window.isViewOnlyUser === 'function') && window.isViewOnlyUser();
-  const isDemo = (sessionStorage.getItem("is_demo_mode") === "true") || 
-                 (localStorage.getItem("is_demo_mode") === "true") ||
+  const isDemo = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                 (sessionStorage.getItem("is_demo_mode") === "true") || 
                  (sessionStorage.getItem("current_user_role") === "viewer") || 
                  (sessionStorage.getItem("current_user_role") === "customer") || 
                  (sessionStorage.getItem("current_user_role") === "demo") || 
                  (sessionStorage.getItem("current_user_role") === "guest") || 
                  isViewOnly;
+
+  if (isDemo) {
+    if (typeof showFloatingToast === "function") showFloatingToast("🔒 Payment collection & settlement are disabled in Demo Preview.", "warning", 4000);
+    return;
+  }
+
   const currentUserEmail = (sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
   const mainAdminEmail = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
   const isMainAdmin = (currentUserEmail === mainAdminEmail) || (sessionStorage.getItem("is_main_admin") === "true");
@@ -23037,9 +23090,9 @@ window.submitInvoicePaymentSettlement = function() {
   const isSessionAuth = (sessionStorage.getItem("session_authenticated") === "true") || (localStorage.getItem("app_authenticated") === "true");
   const isAppLocked = (typeof isLocked !== "undefined" && isLocked) || (sessionStorage.getItem("manual_locked") === "true");
 
-  const isAdminLoggedIn = !isDemo && isAuthorized && isSessionAuth && !isAppLocked;
-  if (!isDemo && !isAdminLoggedIn) {
-    if (typeof showFloatingToast === "function") showFloatingToast("🔒 Access Denied: Payment settlement is disabled in View-Only mode.", "warning");
+  const isAdminLoggedIn = isAuthorized && isSessionAuth && !isAppLocked;
+  if (!isAdminLoggedIn) {
+    if (typeof showFloatingToast === "function") showFloatingToast("🔒 Access Denied: Authorized Admin credentials required to settle payments.", "warning", 4000);
     return;
   }
 

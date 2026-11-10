@@ -19,10 +19,9 @@
 
   function isDemoActive() {
     if (typeof window === 'undefined') return false;
-    if (typeof window.isDemoMode === 'function' && window.isDemoMode()) return true;
+    if (typeof window.isDemoMode === 'function') return window.isDemoMode();
     if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) return true;
     if (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) return true;
-    if (typeof localStorage !== 'undefined' && localStorage.getItem("is_demo_mode") === "true") return true;
     return false;
   }
 
@@ -178,13 +177,16 @@
 
       const clean = String(idOrInvoiceNo).trim().replace(/^#/, '');
       try {
-        await sb.from("invoices")
+        const filter = `id.eq.${idOrInvoiceNo},id.eq.${clean},invoice_no.eq.${idOrInvoiceNo},invoice_no.eq.${clean}`;
+        const upRes = await sb.from("invoices")
           .update({ is_deleted: true, updated_at: new Date().toISOString() })
-          .or(`id.eq.${idOrInvoiceNo},id.eq.${clean},invoice_no.eq.${idOrInvoiceNo},invoice_no.eq.${clean}`);
+          .or(filter);
+        if (upRes && upRes.error) console.error("[Supabase] deleteInvoice update error:", upRes.error);
 
-        await sb.from("invoices")
+        const delRes = await sb.from("invoices")
           .delete()
-          .or(`id.eq.${idOrInvoiceNo},id.eq.${clean},invoice_no.eq.${idOrInvoiceNo},invoice_no.eq.${clean}`);
+          .or(filter);
+        if (delRes && delRes.error) console.error("[Supabase] deleteInvoice delete error:", delRes.error);
 
         return { ok: true };
       } catch (err) {
@@ -392,17 +394,24 @@
       const sb = initClient();
       if (!sb) return { ok: false, error: "not_configured" };
 
+      let deletedPartyIds = [];
+      try {
+        if (typeof localStorage !== "undefined") {
+          deletedPartyIds = JSON.parse(localStorage.getItem("deleted_party_ids")) || [];
+        }
+      } catch(e){}
+
       // 1. First retrieve rich parties_list from settings table (contains type, state, etc.)
       try {
         const { data: pData } = await sb.from("settings").select("value").eq("key", "parties_list").maybeSingle();
-        if (pData && Array.isArray(pData.value) && pData.value.length > 0) {
-          let deletedPartyIds = [];
-          try {
-            if (typeof localStorage !== "undefined") {
-              deletedPartyIds = JSON.parse(localStorage.getItem("deleted_party_ids")) || [];
-            }
-          } catch(e){}
-          const parties = pData.value.filter(p => p && !deletedPartyIds.includes(String(p.id)) && !deletedPartyIds.includes(String(p.name)));
+        if (pData && Array.isArray(pData.value)) {
+          const parties = pData.value.filter(p => {
+            if (!p) return false;
+            const pId = String(p.id || '').trim();
+            const pName = String(p.name || '').trim();
+            if (deletedPartyIds.includes(pId) || deletedPartyIds.includes(pName)) return false;
+            return true;
+          });
           return { ok: true, customers: parties };
         }
       } catch (e) {
@@ -418,36 +427,58 @@
 
       if (error) return { ok: false, error };
 
-      const customers = (data || []).map((row) => ({
-        id: row.id,
-        name: row.name,
-        type: row.type || "receiver",
-        phone: row.phone || "",
-        email: row.email || "",
-        address: row.address || "",
-        gstin: row.gstin || "",
-        balance: Number(row.balance || 0),
-        state: row.state || "Andhra Pradesh",
-        stateCode: row.state_code || row.stateCode || "37",
-        company: row.company || row.name || ""
-      }));
+      const customers = (data || [])
+        .filter(row => {
+          if (!row) return false;
+          const rId = String(row.id || '').trim();
+          const rName = String(row.name || '').trim();
+          if (deletedPartyIds.includes(rId) || deletedPartyIds.includes(rName)) return false;
+          return true;
+        })
+        .map((row) => ({
+          id: row.id,
+          name: row.name,
+          type: row.type || "receiver",
+          phone: row.phone || "",
+          email: row.email || "",
+          address: row.address || "",
+          gstin: row.gstin || "",
+          balance: Number(row.balance || 0),
+          state: row.state || "Andhra Pradesh",
+          stateCode: row.state_code || row.stateCode || "37",
+          company: row.company || row.name || ""
+        }));
 
       return { ok: true, customers };
     },
 
-    async deleteCustomer(id) {
+    async deleteCustomer(id, name = "") {
       if (isDemoActive()) return { ok: true, isDemo: true, blocked: true };
       const sb = initClient();
-      if (!sb || !id) return { ok: false };
-      const targetId = String(id).trim();
+      if (!sb || (!id && !name)) return { ok: false };
+      const targetId = String(id || "").trim();
+      const targetName = String(name || "").trim();
       try {
-        await sb.from("customers").update({ is_deleted: true, updated_at: new Date().toISOString() }).eq("id", targetId);
-        await sb.from("customers").delete().eq("id", targetId);
+        let filter = targetId ? `id.eq.${targetId}` : '';
+        if (targetName) {
+          filter = filter ? `${filter},name.eq.${targetName}` : `name.eq.${targetName}`;
+        }
+        if (filter) {
+          await sb.from("customers").update({ is_deleted: true, updated_at: new Date().toISOString() }).or(filter);
+          await sb.from("customers").delete().or(filter);
+        }
 
         // Also remove from settings.parties_list
         const { data: pData } = await sb.from("settings").select("value").eq("key", "parties_list").maybeSingle();
         if (pData && Array.isArray(pData.value)) {
-          const filtered = pData.value.filter(p => p && String(p.id).trim() !== targetId && String(p.name).trim() !== targetId);
+          const filtered = pData.value.filter(p => {
+            if (!p) return false;
+            const pId = String(p.id || '').trim();
+            const pName = String(p.name || '').trim();
+            if (targetId && (pId === targetId || pName === targetId)) return false;
+            if (targetName && (pId === targetName || pName === targetName)) return false;
+            return true;
+          });
           await sb.from("settings").upsert({
             key: "parties_list",
             value: filtered,
