@@ -432,7 +432,7 @@
         var email = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
         var role = (sessionStorage.getItem("current_user_role") || "").toLowerCase().trim();
         var isDemo = sessionStorage.getItem("is_demo_mode") === "true" || localStorage.getItem("is_demo_mode") === "true" || role === "viewer" || role === "demo" || role === "guest";
-        var isJagan = email === "kandukurijagan99@gmail.com" || email === "kandukurijagan88@gmail.com" || email.indexOf("kandukurijagan") === 0;
+        var isJagan = email === "kandukurijagan99@gmail.com" || email === "kandukurijagan88@gmail.com";
         if (isDemo && !isJagan) {
           document.documentElement.classList.add("view-only-mode", "demo-mode-active");
         }
@@ -451,9 +451,9 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=live_v60_demo_only_contact_form_strict_email_lock">
+  <link rel="stylesheet" href="index.css?v=live_v61_user_deletion_and_suspension_engine">
 
-  <script src="invoice_utils_v5.js?v=live_v60_demo_only_contact_form_strict_email_lock"></script>
+  <script src="invoice_utils_v5.js?v=live_v61_user_deletion_and_suspension_engine"></script>
 
 </head>
 
@@ -10993,13 +10993,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v60_demo_only_contact_form_strict_email_lock"></script>
+<script src="supabase-adapter.js?v=live_v61_user_deletion_and_suspension_engine"></script>
 
-<script src="initial_db.js?v=live_v60_demo_only_contact_form_strict_email_lock"></script>
+<script src="initial_db.js?v=live_v61_user_deletion_and_suspension_engine"></script>
 
-<script src="customer-timeline.js?v=live_v60_demo_only_contact_form_strict_email_lock"></script>
+<script src="customer-timeline.js?v=live_v61_user_deletion_and_suspension_engine"></script>
 
-<script src="index_v5.js?v=live_v60_demo_only_contact_form_strict_email_lock"></script>
+<script src="index_v5.js?v=live_v61_user_deletion_and_suspension_engine"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->

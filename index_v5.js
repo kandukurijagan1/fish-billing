@@ -291,9 +291,7 @@ window.isDemoMode = function() {
   ).toLowerCase().trim();
 
   const isJagan = currentEmail === "kandukurijagan99@gmail.com" ||
-                  currentEmail === "kandukurijagan88@gmail.com" ||
-                  currentEmail.startsWith("kandukurijagan") ||
-                  currentEmail.startsWith("jagan");
+                  currentEmail === "kandukurijagan88@gmail.com";
 
   if (isJagan || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_main_admin") === "true")) {
     try {
@@ -3379,8 +3377,7 @@ window.triggerDatabaseSync = async function(forceReload = false) {
   // Never sync live business database for unauthenticated / unauthorized sessions
   const currentEmail = ((typeof sessionStorage !== 'undefined' ? sessionStorage.getItem("current_user_email") : "") || "").toLowerCase().trim();
   const isMainAdmin = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_main_admin") === "true") ||
-                      currentEmail === "kandukurijagan99@gmail.com" || currentEmail === "kandukurijagan88@gmail.com" ||
-                      currentEmail.startsWith("kandukurijagan") || currentEmail.startsWith("jagan");
+                      currentEmail === "kandukurijagan99@gmail.com" || currentEmail === "kandukurijagan88@gmail.com";
   const isAuthStaff = typeof window.isUserAuthorizedByAdmin === 'function' && currentEmail && window.isUserAuthorizedByAdmin(currentEmail);
   const isPinUnlocked = (typeof localStorage !== 'undefined' && localStorage.getItem("app_authenticated") === "true" && localStorage.getItem("app_locked") !== "true" && (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_demo_mode") !== "true"));
 
@@ -4279,9 +4276,7 @@ window.clearPersistentAuthSession = function() {
 window.getCurrentResolvedRole = function() {
   const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
   const isJagan = currentEmail === "kandukurijagan99@gmail.com" ||
-                  currentEmail === "kandukurijagan88@gmail.com" ||
-                  currentEmail.startsWith("kandukurijagan") ||
-                  currentEmail.startsWith("jagan");
+                  currentEmail === "kandukurijagan88@gmail.com";
 
   if (isJagan || sessionStorage.getItem("is_main_admin") === "true") {
     return "super_admin";
@@ -4301,7 +4296,7 @@ window.getCurrentResolvedRole = function() {
         return "viewer";
       }
       const pEmail = (pSess.email || "").toLowerCase().trim();
-      if (pEmail === "kandukurijagan99@gmail.com" || pEmail === "kandukurijagan88@gmail.com" || pEmail.startsWith("kandukurijagan") || pSess.isMainAdmin) {
+      if (pEmail === "kandukurijagan99@gmail.com" || pEmail === "kandukurijagan88@gmail.com" || pSess.isMainAdmin) {
         return "super_admin";
       }
       return pSess.role;
@@ -4326,9 +4321,7 @@ window.getCurrentResolvedRole = function() {
 window.isViewOnlyUser = function() {
   const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
   const isJagan = currentEmail === "kandukurijagan99@gmail.com" ||
-                  currentEmail === "kandukurijagan88@gmail.com" ||
-                  currentEmail.startsWith("kandukurijagan") ||
-                  currentEmail.startsWith("jagan");
+                  currentEmail === "kandukurijagan88@gmail.com";
 
   // 1. Permanent Main Admin ALWAYS has full edit access and is NEVER view-only
   if (isJagan || sessionStorage.getItem("is_main_admin") === "true") {
@@ -4624,12 +4617,17 @@ window.openServiceInquiryModal = function(prefillService = "") {
   if (!modal) return;
 
   // STRICT RULE: Contact form is ONLY available in Demo / Free View mode!
-  // Main Admin / live store accounts NEVER show or open the contact inquiry form!
+  // STRICT RULE: Contact form is ONLY available in Demo / Free View mode!
+  // Main Admin / authenticated store accounts NEVER show or open the contact inquiry form!
+  const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
+  const isSuperAdmin = (currentEmail === (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim() || sessionStorage.getItem("is_main_admin") === "true");
   const isDemo = (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
                  (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer"));
 
-  if (!isDemo) {
-    console.warn("[Inquiry] Contact form is only available in Demo / Free View mode.");
+  if (!isDemo || isSuperAdmin) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("ℹ️ Contact / Inquiry form is only available in Demo account preview.", "info", 3500);
+    }
     return;
   }
 
@@ -5123,7 +5121,7 @@ function initializeApp() {
                       (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) ||
                       (typeof localStorage !== 'undefined' && localStorage.getItem("is_demo_mode") === "true");
   const curEmailEarly = ((typeof sessionStorage !== 'undefined' ? sessionStorage.getItem("current_user_email") : "") || "").toLowerCase().trim();
-  const isMainAdminEarly = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_main_admin") === "true") || curEmailEarly.startsWith("kandukurijagan") || curEmailEarly.startsWith("jagan");
+  const isMainAdminEarly = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_main_admin") === "true") || curEmailEarly === "kandukurijagan99@gmail.com" || curEmailEarly === "kandukurijagan88@gmail.com";
   const isStaffEarly = typeof window.isUserAuthorizedByAdmin === 'function' && curEmailEarly && window.isUserAuthorizedByAdmin(curEmailEarly);
   const isUnlockedEarly = (typeof localStorage !== 'undefined' && localStorage.getItem("app_authenticated") === "true" && localStorage.getItem("app_locked") !== "true" && !isDemoEarly);
 
@@ -18597,33 +18595,23 @@ window.DEFAULT_AUTHORIZED_USERS = [
     role: "super_admin",
     status: "active",
     isMainAdmin: true
-  },
-  {
-    email: "manasakokkiligadda11@gmail.com",
-    name: "Aaryan aqua",
-    password: "2024",
-    role: "admin",
-    status: "active"
-  },
-  {
-    email: "kandukurijagan7@gmail.com",
-    name: "kandukurijagan7@gmail.com",
-    role: "admin",
-    status: "active"
-  },
-  {
-    email: "kandukurijagan642@gmail.com",
-    name: "jagann",
-    role: "admin",
-    status: "active"
-  },
-  {
-    email: "192472374.simats@saveetha.com",
-    name: "jagan",
-    role: "admin",
-    status: "active"
   }
 ];
+
+// Helper to determine if an account is explicitly suspended by Main Admin
+window.isUserSuspendedByAdmin = function(email) {
+  const norm = (email || "").toLowerCase().trim();
+  if (!norm) return false;
+  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  if (norm === mainAdminNorm) return false;
+
+  const list = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
+  const matched = list.find(u => (u.email || "").toLowerCase().trim() === norm);
+  if (matched && String(matched.status || "").toLowerCase().trim() === "suspended") {
+    return true;
+  }
+  return false;
+};
 
 // 1. Authoritative list of authorized users (Main Admin is permanent master)
 window.getAuthorizedUsersList = function() {
@@ -18640,6 +18628,14 @@ window.getAuthorizedUsersList = function() {
       globalArr = Array.isArray(rawGlobal) ? rawGlobal : (typeof rawGlobal === 'string' ? JSON.parse(rawGlobal) : []);
     }
     
+    // Revoked tombstone emails (permanently deleted users)
+    let revoked = [];
+    try {
+      const rawRevoked = localStorage.getItem("revoked_authorized_emails");
+      if (rawRevoked) revoked = JSON.parse(rawRevoked);
+    } catch(_) {}
+    const isRevoked = (em) => Array.isArray(revoked) && revoked.includes(String(em).toLowerCase().trim());
+
     // Combine all sources: bundled defaults -> localStorage -> globalSettings
     const map = new Map();
     (window.DEFAULT_AUTHORIZED_USERS || []).forEach(u => {
@@ -18658,6 +18654,8 @@ window.getAuthorizedUsersList = function() {
       }
     });
     list = Array.from(map.values());
+    // Filter out revoked tombstone emails
+    list = list.filter(u => u && u.email && !isRevoked(u.email));
   } catch (e) {
     list = Array.from(window.DEFAULT_AUTHORIZED_USERS || []);
   }
@@ -18749,10 +18747,17 @@ window.isUserAuthorizedByAdmin = function(email) {
   const norm = (email || "").toLowerCase().trim();
   if (!norm) return false;
 
-  // BANNED emails are NEVER authorized, regardless of any list
+  // BANNED or REVOKED emails are NEVER authorized
   if (typeof window.isEmailBanned === 'function' && window.isEmailBanned(norm)) {
     return false;
   }
+  try {
+    const rawRevoked = localStorage.getItem("revoked_authorized_emails");
+    if (rawRevoked) {
+      const revoked = JSON.parse(rawRevoked);
+      if (Array.isArray(revoked) && revoked.includes(norm)) return false;
+    }
+  } catch(_) {}
 
   const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
   if (norm === mainAdminNorm) return true;
@@ -18765,7 +18770,7 @@ window.isUserAuthorizedByAdmin = function(email) {
   return status === "active";
 };
 
-// 2. Persist user access list locally and to Google Sheets Cloud
+// 2. Persist user access list locally, to Google Sheets Cloud, and to Supabase DB
 window.saveAuthorizedUsersList = function(list, skipSync = false) {
   if (!Array.isArray(list)) return;
   try {
@@ -18777,6 +18782,14 @@ window.saveAuthorizedUsersList = function(list, skipSync = false) {
     try {
       localStorage.setItem("settings", JSON.stringify(globalSettings));
     } catch (e) {}
+
+    // Persist immediately to Supabase PostgreSQL Database!
+    if (window.SupabaseDB && typeof window.SupabaseDB.saveSettings === 'function') {
+      window.SupabaseDB.saveSettings(globalSettings).catch(e => {
+        console.warn("[Supabase] Failed to save settings in saveAuthorizedUsersList:", e);
+      });
+    }
+
     if (!skipSync && typeof syncDatabaseToServer === 'function') {
       syncDatabaseToServer("settings", globalSettings);
     }
@@ -18815,6 +18828,36 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
   if (!normEmail) {
     if (errBlock) {
       errBlock.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> No email returned from Google.`;
+      errBlock.classList.remove("hidden");
+    }
+    return false;
+  }
+
+  // 1. STRICT BLOCK FOR SUSPENDED ACCOUNTS
+  if (!isMainAdmin && typeof window.isUserSuspendedByAdmin === 'function' && window.isUserSuspendedByAdmin(normEmail)) {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+            <i class="fa-solid fa-user-lock"></i> Account Suspended
+          </div>
+          <div style="font-size: 11.5px; color: #cbd5e1;">
+            Your account (<strong style="color: #fca5a5;">${escapeHtml(normEmail)}</strong>) has been paused by the Main Administrator. Access is blocked.
+          </div>
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`⛔ Account ${normEmail} is suspended by Main Admin.`, "error", 6000);
+    }
+    return false;
+  }
+
+  // 2. STRICT BLOCK FOR BANNED ACCOUNTS
+  if (typeof window.isEmailBanned === 'function' && window.isEmailBanned(normEmail)) {
+    if (errBlock) {
+      errBlock.innerHTML = `<div style="color: #f43f5e; font-weight: 700;">Account Banned</div>`;
       errBlock.classList.remove("hidden");
     }
     return false;
@@ -19174,9 +19217,10 @@ window.saveUserAccessSubmit = function(e) {
   window.closeUserModal();
 };
 
-window.toggleUserStatus = function(email) {
+window.toggleUserStatus = async function(email) {
   const normEmail = (email || "").toLowerCase().trim();
-  if (normEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim()) {
+  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  if (normEmail === mainAdminNorm) {
     showFloatingToast("⚠️ Main Admin account cannot be suspended!", "warning");
     return;
   }
@@ -19185,9 +19229,24 @@ window.toggleUserStatus = function(email) {
   if (!user) return;
 
   user.status = (user.status === "active") ? "suspended" : "active";
+  
+  // Persist locally and to cloud
   window.saveAuthorizedUsersList(list);
+
+  if (typeof globalSettings !== 'undefined' && window.SupabaseDB && typeof window.SupabaseDB.saveSettings === 'function') {
+    try {
+      await window.SupabaseDB.saveSettings(globalSettings);
+    } catch(err) {
+      console.warn("[Supabase] Failed to persist toggleUserStatus to Supabase:", err);
+    }
+  }
+
+  if (typeof window.renderUserManagerTable === 'function') {
+    window.renderUserManagerTable();
+  }
+
   const statusLabel = user.status === "active" ? "Activated" : "Suspended";
-  showFloatingToast(`ℹ️ Account access for ${email} is now ${statusLabel}.`, "info", 3500);
+  showFloatingToast(`ℹ️ Account access for ${email} is now ${statusLabel}.`, user.status === "active" ? "success" : "info", 3500);
 };
 
 window.customConfirm = function(msg) {
@@ -19195,9 +19254,10 @@ window.customConfirm = function(msg) {
   return Promise.resolve(window.confirm(cleanMsg));
 };
 
-window.deleteAuthorizedUser = function(email) {
+window.deleteAuthorizedUser = async function(email) {
   const normEmail = (email || "").toLowerCase().trim();
-  if (normEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim()) {
+  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  if (normEmail === mainAdminNorm) {
     showFloatingToast("⚠️ Main Admin account cannot be deleted!", "warning");
     return;
   }
@@ -19205,10 +19265,56 @@ window.deleteAuthorizedUser = function(email) {
   const confirmed = confirm(`Are you sure you want to revoke Google login access for ${email}? They will no longer be able to log into the billing system.`);
   if (!confirmed) return;
 
+  // 1. Add to permanent revoked tombstone list in localStorage
+  try {
+    let revoked = [];
+    const rawRevoked = localStorage.getItem("revoked_authorized_emails");
+    if (rawRevoked) {
+      try { revoked = JSON.parse(rawRevoked); } catch(_) {}
+    }
+    if (!Array.isArray(revoked)) revoked = [];
+    if (!revoked.includes(normEmail)) {
+      revoked.push(normEmail);
+      localStorage.setItem("revoked_authorized_emails", JSON.stringify(revoked));
+    }
+  } catch(_) {}
+
+  // 2. Remove from local list
   let list = window.getAuthorizedUsersList();
   list = list.filter(u => (u.email || "").toLowerCase().trim() !== normEmail);
+
+  // 3. Save to localStorage and update globalSettings
   window.saveAuthorizedUsersList(list);
-  showFloatingToast(`🗑️ Login access revoked for ${email}.`, "info", 4000);
+
+  // 4. Save IMMEDIATELY to Supabase DB
+  if (typeof globalSettings !== 'undefined') {
+    globalSettings.authorizedUsers = list;
+    if (window.SupabaseDB && typeof window.SupabaseDB.saveSettings === 'function') {
+      try {
+        await window.SupabaseDB.saveSettings(globalSettings);
+      } catch(err) {
+        console.warn("[Supabase] Failed to persist deleteAuthorizedUser to Supabase:", err);
+      }
+    }
+  }
+
+  // 5. If this user is currently in session on this device, force logout
+  const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
+  if (currentEmail === normEmail) {
+    sessionStorage.clear();
+    localStorage.removeItem("aaryan_auth_session");
+    localStorage.removeItem("last_logged_in_email");
+    localStorage.setItem("is_demo_mode", "true");
+    window.location.reload();
+    return;
+  }
+
+  // 6. Force immediate re-render of user management table
+  if (typeof window.renderUserManagerTable === 'function') {
+    window.renderUserManagerTable();
+  }
+
+  showFloatingToast(`🗑️ Login access revoked and user deleted for ${email}.`, "success", 4000);
 };
 
 // 7. Role Permissions Application
@@ -19479,6 +19585,28 @@ window.sendLoginOtpCodeDirectly = async function() {
     return false;
   }
 
+  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  const isMainAdmin = (enteredEmail === mainAdminNorm);
+
+  // STRICT BLOCK FOR SUSPENDED ACCOUNTS
+  if (!isMainAdmin && typeof window.isUserSuspendedByAdmin === 'function' && window.isUserSuspendedByAdmin(enteredEmail)) {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+            <i class="fa-solid fa-user-lock"></i> Account Suspended
+          </div>
+          <div style="font-size: 11.5px; color: #cbd5e1;">
+            Your account (<strong style="color: #fca5a5;">${escapeHtml(enteredEmail)}</strong>) has been paused by the Main Administrator. Access is blocked.
+          </div>
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    showFloatingToast(`⛔ Account ${enteredEmail} is suspended by Main Admin.`, "error", 6000);
+    return false;
+  }
+
   // Clear previous error
   if (errBlock) errBlock.classList.add("hidden");
 
@@ -19562,6 +19690,28 @@ window.handleMailLoginSubmit = async function(e) {
     return;
   }
 
+  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  const isMainAdmin = (enteredEmail === mainAdminNorm);
+
+  // STRICT BLOCK FOR SUSPENDED ACCOUNTS
+  if (!isMainAdmin && typeof window.isUserSuspendedByAdmin === 'function' && window.isUserSuspendedByAdmin(enteredEmail)) {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+            <i class="fa-solid fa-user-lock"></i> Account Suspended
+          </div>
+          <div style="font-size: 11.5px; color: #cbd5e1;">
+            Your account (<strong style="color: #fca5a5;">${escapeHtml(enteredEmail)}</strong>) has been paused by the Main Administrator. Access is blocked.
+          </div>
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    showFloatingToast(`⛔ Account ${enteredEmail} is suspended by Main Admin.`, "error", 6000);
+    return;
+  }
+
   // If OTP container is hidden or passcode not yet entered, send OTP first
   const otpContainer = document.getElementById("otp-input-container");
   if (!otpContainer || otpContainer.style.display === "none" || !enteredOtp) {
@@ -19617,30 +19767,52 @@ window.handleMailLoginSubmit = async function(e) {
     }
 
     // Role assignment & Permissions
-    const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-    const isMainAdmin = (enteredEmail === mainAdminNorm);
-    const isKnownAdmin = (
-      isMainAdmin ||
-      enteredEmail.includes("admin") ||
-      enteredEmail.startsWith("jagan") ||
-      (typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(enteredEmail))
-    );
+    const usersList = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
+    const matchedUser = isMainAdmin
+      ? { email: window.AUTHORIZED_LOGIN_EMAIL, name: "Jagan Kandukuri (Main Admin)", role: "super_admin", status: "active", isMainAdmin: true }
+      : usersList.find(u => (u.email || "").toLowerCase().trim() === enteredEmail);
 
-    let customerName = "";
-    if (!isKnownAdmin && Array.isArray(window.invoices)) {
-      const match = window.invoices.find(inv => {
-        const b = inv.buyer || inv.details?.buyer || {};
-        const be = (b.email || "").toLowerCase().trim();
-        return (be && be === enteredEmail);
-      });
-      if (match) {
-        const b = match.buyer || match.details?.buyer || {};
-        customerName = b.name || b.tradeName || match.customerName || "Customer";
+    if (matchedUser && String(matchedUser.status).toLowerCase().trim() === "suspended") {
+      if (errBlock) {
+        errBlock.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+            <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+              <i class="fa-solid fa-user-lock"></i> Account Suspended
+            </div>
+            <div style="font-size: 11.5px; color: #cbd5e1;">
+              Your account (<strong style="color: #fca5a5;">${escapeHtml(enteredEmail)}</strong>) has been paused by the Main Administrator. Access is blocked.
+            </div>
+          </div>
+        `;
+        errBlock.classList.remove("hidden");
       }
+      return;
     }
 
-    const assignedRole = isKnownAdmin ? (isMainAdmin ? "super_admin" : "admin") : (customerName ? "customer" : "viewer");
-    const displayName = isKnownAdmin ? (isMainAdmin ? "Jagan Kandukuri (Main Admin)" : enteredEmail.split("@")[0]) : (customerName || enteredEmail.split("@")[0] || "Guest Viewer");
+    const isAuthorized = isMainAdmin || (matchedUser && matchedUser.status === "active");
+
+    let assignedRole = "viewer";
+    let displayName = enteredEmail.split("@")[0] || "User";
+
+    if (isAuthorized) {
+      assignedRole = isMainAdmin ? "super_admin" : (matchedUser?.role || "admin");
+      displayName = isMainAdmin ? "Jagan Kandukuri (Main Admin)" : (matchedUser?.name || enteredEmail.split("@")[0]);
+    } else {
+      let customerName = "";
+      if (Array.isArray(window.invoices)) {
+        const match = window.invoices.find(inv => {
+          const b = inv.buyer || inv.details?.buyer || {};
+          const be = (b.email || "").toLowerCase().trim();
+          return (be && be === enteredEmail);
+        });
+        if (match) {
+          const b = match.buyer || match.details?.buyer || {};
+          customerName = b.name || b.tradeName || match.customerName || "Customer";
+        }
+      }
+      assignedRole = customerName ? "customer" : "viewer";
+      displayName = customerName || enteredEmail.split("@")[0] || "Guest Viewer";
+    }
 
     // Set persistent & session state
     sessionStorage.setItem("current_user_email", enteredEmail);
@@ -19776,6 +19948,31 @@ window.handleTraditionalLoginSubmit = async function(e) {
     return;
   }
 
+  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  const isMainAdmin = (enteredEmail === mainAdminNorm);
+
+  // STRICT BLOCK FOR SUSPENDED ACCOUNTS
+  if (!isMainAdmin && enteredEmail && typeof window.isUserSuspendedByAdmin === 'function' && window.isUserSuspendedByAdmin(enteredEmail)) {
+    if (submitBtn) submitBtn.disabled = false;
+    if (btnText) btnText.classList.remove("hidden");
+    if (btnSpinner) btnSpinner.classList.add("hidden");
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+            <i class="fa-solid fa-user-lock"></i> Account Suspended
+          </div>
+          <div style="font-size: 11.5px; color: #cbd5e1;">
+            Your account (<strong style="color: #fca5a5;">${escapeHtml(enteredEmail)}</strong>) has been paused by the Main Administrator. Access is blocked.
+          </div>
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    showFloatingToast(`⛔ Account ${enteredEmail} is suspended by Main Admin.`, "error", 6000);
+    return;
+  }
+
   const sysPin = String(globalSettings?.security?.securityPin || globalSettings?.security?.pin || "2024").trim();
   const sysPass = String(globalSettings?.security?.password || "Aaryan@2024").trim();
 
@@ -19838,8 +20035,6 @@ window.handleTraditionalLoginSubmit = async function(e) {
   let isOtpValid = false;
   let verifiedRole = "admin";
   let matchedUser = null;
-  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-  const isMainAdmin = (enteredEmail === mainAdminNorm);
 
   const checkUserPassword = (u, pass) => {
     if (!u) return false;
@@ -19854,6 +20049,25 @@ window.handleTraditionalLoginSubmit = async function(e) {
   const pendingOtp = sessionStorage.getItem("pending_login_otp");
   const pendingEmail = (sessionStorage.getItem("pending_login_email") || "").toLowerCase().trim();
   if (pendingOtp && enteredPass === pendingOtp && (!pendingEmail || pendingEmail === enteredEmail)) {
+    if (!isMainAdmin && typeof window.isUserSuspendedByAdmin === 'function' && window.isUserSuspendedByAdmin(enteredEmail)) {
+      if (submitBtn) submitBtn.disabled = false;
+      if (btnText) btnText.classList.remove("hidden");
+      if (btnSpinner) btnSpinner.classList.add("hidden");
+      if (errBlock) {
+        errBlock.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+            <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+              <i class="fa-solid fa-user-lock"></i> Account Suspended
+            </div>
+            <div style="font-size: 11.5px; color: #cbd5e1;">
+              Your account (<strong style="color: #fca5a5;">${escapeHtml(enteredEmail)}</strong>) has been paused by the Main Administrator. Access is blocked.
+            </div>
+          </div>
+        `;
+        errBlock.classList.remove("hidden");
+      }
+      return;
+    }
     isOtpValid = true;
     sessionStorage.removeItem("pending_login_otp");
     sessionStorage.removeItem("pending_login_email");
@@ -19861,11 +20075,12 @@ window.handleTraditionalLoginSubmit = async function(e) {
       verifiedRole = "super_admin";
       matchedUser = { email: window.AUTHORIZED_LOGIN_EMAIL, name: "Jagan Kandukuri (Main Admin)", role: "super_admin", status: "active", isMainAdmin: true };
     } else {
-      verifiedRole = "admin";
+      let uRec = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList().find(u => (u.email || "").toLowerCase().trim() === enteredEmail) : null;
+      verifiedRole = uRec?.role || "admin";
       matchedUser = {
         email: enteredEmail,
-        name: enteredEmail.split("@")[0],
-        role: "admin",
+        name: uRec?.name || enteredEmail.split("@")[0],
+        role: verifiedRole,
         status: "active"
       };
     }
@@ -19939,6 +20154,25 @@ window.handleTraditionalLoginSubmit = async function(e) {
 
   // Step 2.5: If entered password is the Master PIN 2024, ANY non-suspended email or terminal operator gets Admin Edit access!
   if (!isOtpValid && (enteredPass === sysPin || enteredPass === "2024")) {
+    if (!isMainAdmin && enteredEmail && typeof window.isUserSuspendedByAdmin === 'function' && window.isUserSuspendedByAdmin(enteredEmail)) {
+      if (submitBtn) submitBtn.disabled = false;
+      if (btnText) btnText.classList.remove("hidden");
+      if (btnSpinner) btnSpinner.classList.add("hidden");
+      if (errBlock) {
+        errBlock.innerHTML = `
+          <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+            <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+              <i class="fa-solid fa-user-lock"></i> Account Suspended
+            </div>
+            <div style="font-size: 11.5px; color: #cbd5e1;">
+              Your account (<strong style="color: #fca5a5;">${escapeHtml(enteredEmail)}</strong>) has been paused by the Main Admin. Access is blocked.
+            </div>
+          </div>
+        `;
+        errBlock.classList.remove("hidden");
+      }
+      return;
+    }
     isOtpValid = true;
     verifiedRole = "admin";
     matchedUser = {

@@ -13165,9 +13165,16 @@ body.demo-mode-active #verify-delete-btn {
 }
 
 /* Contact / Inquiry navigation button is STRICTLY DEMO-ONLY */
-body.demo-mode-active .btn-custom-service-nav,
-body.view-only-mode .btn-custom-service-nav {
+body.demo-mode-active:not(.logged-in-admin):not(.logged-in-staff) .btn-custom-service-nav,
+body.view-only-mode:not(.logged-in-admin):not(.logged-in-staff) .btn-custom-service-nav {
   display: flex !important;
+}
+
+body.logged-in-admin .btn-custom-service-nav,
+body.logged-in-admin #sidebar-custom-service-btn,
+body.logged-in-staff .btn-custom-service-nav,
+body.logged-in-staff #sidebar-custom-service-btn {
+  display: none !important;
 }
 
 .custom-dev-pill-badge {
