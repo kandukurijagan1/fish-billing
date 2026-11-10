@@ -6676,6 +6676,7 @@ function bindBillingFormInputs() {
       ? window.TurboDataStore.getProduct(prodId)
       : productsDb.find(p => p && p.id === prodId);
     if (!prod) return;
+    window.currentSelectedBillingProduct = prod;
 
     if (elements.billItemSelect) {
       elements.billItemSelect.value = prod.id;
@@ -7620,6 +7621,7 @@ function bindBillingFormInputs() {
   };
 
   window.updateBillingStockTelemetry = function(prod) {
+    window.currentSelectedBillingProduct = prod || null;
     const stockPill = document.getElementById("bill-stock-pill");
     const stockPillText = document.getElementById("bill-stock-pill-text");
     const hiddenInput = document.getElementById("bill-item-stock-qty");
@@ -7763,13 +7765,97 @@ function bindBillingFormInputs() {
 
   window.setMaxAvailableQty = function() {
     const qtyInput = elements.billItemQty || document.getElementById("bill-item-qty");
-    const maxCountSpan = document.getElementById("qty-max-count");
-    if (qtyInput && maxCountSpan) {
-      const maxVal = parseInt(maxCountSpan.textContent, 10) || 1;
-      qtyInput.value = Math.max(1, maxVal);
-      handleBillingQtyInput();
-      if (typeof calculateBillingItemNetVal === 'function') calculateBillingItemNetVal();
+    if (!qtyInput) return;
+
+    let targetMax = 0;
+
+    // 1. Direct active product reference
+    let prod = window.currentSelectedBillingProduct;
+
+    // 2. Resolve via billItemSelect or billItemName or smart chip
+    if (!prod) {
+      const prodId = elements.billItemSelect ? elements.billItemSelect.value : "";
+      if (prodId && prodId !== '__custom__') {
+        prod = productsDb.find(p => p && (p.id === prodId || p.description === prodId));
+      }
     }
+    if (!prod && elements.billItemName && elements.billItemName.value) {
+      const name = elements.billItemName.value.trim().toLowerCase();
+      prod = productsDb.find(p => p && (p.description || "").trim().toLowerCase() === name);
+    }
+    if (!prod) {
+      const titleEl = document.getElementById("smart-picker-selected-title");
+      if (titleEl && titleEl.textContent) {
+        const titleText = titleEl.textContent.trim().toLowerCase();
+        prod = productsDb.find(p => p && (p.description || "").trim().toLowerCase() === titleText);
+      }
+    }
+
+    if (prod) {
+      window.currentSelectedBillingProduct = prod;
+    }
+
+    // 3. Compute available stock taking cart reservations into account
+    if (prod && prod.stock !== undefined && prod.stock !== null && prod.stock !== "") {
+      const availableStock = Math.max(0, parseInt(prod.stock, 10) || 0);
+      let previouslyInvoicedQty = 0;
+      if (currentInvoice && currentInvoice.isEditing && currentInvoice.id) {
+        const origInv = invoicesDb.find(inv => inv && inv.id === currentInvoice.id);
+        if (origInv && origInv.details && Array.isArray(origInv.details.items)) {
+          const matchingOld = origInv.details.items.find(it => 
+            (it.productId && prod.id && it.productId === prod.id) ||
+            (it.description && prod.description && it.description.trim().toLowerCase() === prod.description.trim().toLowerCase())
+          );
+          if (matchingOld) previouslyInvoicedQty = parseFloat(matchingOld.quantity) || 0;
+        }
+      }
+      const effectiveAvailable = availableStock + previouslyInvoicedQty;
+      const currentInCart = (currentInvoice?.items || [])
+        .filter(item => 
+          (item.productId && prod.id && item.productId === prod.id) ||
+          (item.description && prod.description && item.description.trim().toLowerCase() === prod.description.trim().toLowerCase())
+        )
+        .reduce((sum, item) => sum + (parseFloat(item.quantity) || 0), 0);
+
+      targetMax = Math.max(0, effectiveAvailable - currentInCart);
+    }
+
+    // 4. Fallback to hidden stock input or pill display text
+    if (!targetMax || targetMax <= 0) {
+      const hiddenInput = document.getElementById("bill-item-stock-qty");
+      if (hiddenInput && hiddenInput.value && !isNaN(parseInt(hiddenInput.value, 10)) && parseInt(hiddenInput.value, 10) > 0) {
+        targetMax = parseInt(hiddenInput.value, 10);
+      } else {
+        const stockPillText = document.getElementById("bill-stock-pill-text");
+        if (stockPillText) {
+          const match = (stockPillText.textContent || "").match(/\d+/);
+          if (match && parseInt(match[0], 10) > 0) {
+            targetMax = parseInt(match[0], 10);
+          }
+        }
+      }
+    }
+
+    if (targetMax > 0) {
+      qtyInput.value = targetMax;
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast(`⚡ Quantity set to max available stock (${targetMax}).`, "info", 2500);
+      }
+      if (typeof window.playAudioFeedback === 'function') window.playAudioFeedback("click");
+    } else {
+      if (prod && parseInt(prod.stock, 10) === 0) {
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast(`⚠️ "${prod.description || 'Selected item'}" is out of stock (0 available).`, "warning", 3000);
+        }
+      } else {
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast("⚠️ Please choose a product from the catalog first to determine maximum available stock.", "warning", 3000);
+        }
+      }
+    }
+
+    handleBillingQtyInput();
+    if (typeof calculateBillingItemNetVal === 'function') calculateBillingItemNetVal();
   };
 
   window.triggerQuickInwardFromBilling = function() {

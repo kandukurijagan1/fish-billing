@@ -13878,3 +13878,138 @@ body.demo-mode-active .demo-billing-message-card {
     font-size: 12px;
   }
 }
+
+
+/* ============================================================================
+   PRODUCT INPUT ROW ALIGNMENT & STRUCTURED COLUMN GRID
+   ============================================================================ */
+
+.product-input-row {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 12px 14px !important;
+  align-items: flex-start !important;
+}
+
+/* Row 1 / Row 2 Column Perfect Alignment */
+.product-input-row .flex-item-hsn {
+  flex: 1 1 110px !important;
+  min-width: 95px !important;
+  max-width: 140px !important;
+}
+
+.product-input-row .flex-item-qty {
+  flex: 2 1 185px !important;
+  min-width: 175px !important;
+}
+
+.product-input-row .flex-item-unit {
+  flex: 1 1 95px !important;
+  min-width: 85px !important;
+  max-width: 130px !important;
+}
+
+.product-input-row .flex-item-pack {
+  flex: 1 1 110px !important;
+  min-width: 95px !important;
+  max-width: 140px !important;
+}
+
+.product-input-row .flex-item-discount {
+  flex: 2 1 185px !important;
+  min-width: 175px !important;
+}
+
+.product-input-row .flex-item-rate {
+  flex: 1 1 120px !important;
+  min-width: 100px !important;
+}
+
+.product-input-row .flex-item-netrate {
+  flex: 1.5 1 140px !important;
+  min-width: 130px !important;
+}
+
+/* Header label bar for QTY and Discount with quick chips */
+.qty-label-bar,
+.disc-label-bar {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  margin-bottom: 5px !important;
+  gap: 6px !important;
+  flex-wrap: nowrap !important;
+  min-height: 22px !important;
+}
+
+.qty-label-bar label,
+.disc-label-bar label {
+  margin: 0 !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  color: #334155 !important;
+  white-space: nowrap !important;
+  letter-spacing: 0.3px !important;
+}
+
+.qty-quick-chips,
+.disc-quick-chips {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  flex-shrink: 0 !important;
+}
+
+.qty-chip,
+.disc-chip {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  background: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 5px !important;
+  padding: 2px 7px !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  color: #475569 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  user-select: none !important;
+  line-height: 1 !important;
+  height: 20px !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+
+.qty-chip:hover,
+.disc-chip:hover {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  border-color: #0284c7 !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 2px 5px rgba(2, 132, 199, 0.25) !important;
+}
+
+/* High-visibility MAX button styling */
+.qty-chip.qty-chip-max {
+  background: rgba(2, 132, 199, 0.12) !important;
+  color: #0284c7 !important;
+  border: 1px solid #38bdf8 !important;
+  font-weight: 800 !important;
+  padding: 2px 8px !important;
+}
+
+.qty-chip.qty-chip-max:hover {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
+  color: #ffffff !important;
+  border-color: #0284c7 !important;
+}
+
+.qty-chip.qty-chip-max i {
+  font-size: 9px !important;
+  color: #0284c7 !important;
+}
+
+.qty-chip.qty-chip-max:hover i {
+  color: #ffffff !important;
+}

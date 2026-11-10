@@ -2051,20 +2051,13 @@
 
                 <div class="form-group flex-item-qty" style="position: relative;">
 
-                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-
-                    <label style="margin: 0;">QTY / WEIGHT</label>
-
+                  <div class="qty-label-bar">
+                    <label class="qty-main-label">QTY / WEIGHT</label>
                     <div class="qty-quick-chips">
-
-                      <span class="qty-chip" onclick="setBillingQtyPreset(5)" title="Add 5">+5</span>
-
-                      <span class="qty-chip" onclick="setBillingQtyPreset(10)" title="Add 10">+10</span>
-
-                      <span class="qty-chip" onclick="setMaxAvailableQty()" title="Set to Max Available">Max</span>
-
+                      <button type="button" class="qty-chip" onclick="setBillingQtyPreset(5)" title="Add 5 to quantity">+5</button>
+                      <button type="button" class="qty-chip" onclick="setBillingQtyPreset(10)" title="Add 10 to quantity">+10</button>
+                      <button type="button" class="qty-chip qty-chip-max" onclick="setMaxAvailableQty()" title="Set to Maximum Available Warehouse Stock"><i class="fa-solid fa-bolt"></i> Max</button>
                     </div>
-
                   </div>
 
                   <div class="qty-stepper-box">
@@ -2173,20 +2166,13 @@
 
                 <div class="form-group flex-item-discount">
 
-                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-
-                    <label style="margin: 0;">DISC %</label>
-
+                  <div class="disc-label-bar">
+                    <label class="disc-main-label">DISC %</label>
                     <div class="disc-quick-chips">
-
-                      <span class="disc-chip" onclick="setBillingDiscountPreset(0)">0%</span>
-
-                      <span class="disc-chip" onclick="setBillingDiscountPreset(5)">5%</span>
-
-                      <span class="disc-chip" onclick="setBillingDiscountPreset(10)">10%</span>
-
+                      <button type="button" class="disc-chip" onclick="setBillingDiscountPreset(0)" title="Set 0% discount">0%</button>
+                      <button type="button" class="disc-chip" onclick="setBillingDiscountPreset(5)" title="Set 5% discount">5%</button>
+                      <button type="button" class="disc-chip" onclick="setBillingDiscountPreset(10)" title="Set 10% discount">10%</button>
                     </div>
-
                   </div>
 
                   <input type="number" step="0.01" id="bill-item-discount" value="0" oninput="calculateBillingItemNetVal()">
