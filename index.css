@@ -13159,9 +13159,15 @@ body.demo-mode-active #verify-delete-btn {
 
 .btn-custom-service-nav {
   position: relative;
+  display: none !important;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Contact / Inquiry navigation button is STRICTLY DEMO-ONLY */
+body.demo-mode-active .btn-custom-service-nav,
+body.view-only-mode .btn-custom-service-nav {
   display: flex !important;
-  align-items: center !important;
-  gap: 10px !important;
 }
 
 .custom-dev-pill-badge {

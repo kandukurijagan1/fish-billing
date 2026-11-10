@@ -4619,9 +4619,19 @@ window.mergeLockedInquiryEmails = function(remoteList) {
   } catch(e) {}
 };
 
-window.openServiceInquiryModal = function(prefillService = "", forcedAlternate = false) {
+window.openServiceInquiryModal = function(prefillService = "") {
   const modal = document.getElementById("client-service-inquiry-modal");
   if (!modal) return;
+
+  // STRICT RULE: Contact form is ONLY available in Demo / Free View mode!
+  // Main Admin / live store accounts NEVER show or open the contact inquiry form!
+  const isDemo = (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+                 (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer"));
+
+  if (!isDemo) {
+    console.warn("[Inquiry] Contact form is only available in Demo / Free View mode.");
+    return;
+  }
 
   // Background sync locked emails from Supabase
   try {
@@ -4649,13 +4659,10 @@ window.openServiceInquiryModal = function(prefillService = "", forcedAlternate =
   }
   if (submitBtn) submitBtn.disabled = false;
 
-  window._inquiryUsingAlternateEmail = forcedAlternate;
-
   const loginEmail = window.getEffectiveLoggedInEmail();
-  const isUsingAlternate = forcedAlternate || !loginEmail;
 
-  if (!isUsingAlternate && loginEmail) {
-    // Check if the user's fixed login email has ALREADY sent a message
+  if (loginEmail) {
+    // 1. Check if this logged-in email has ALREADY sent a message
     if (window.isEmailLocked(loginEmail)) {
       // Show Locked / Already Submitted Screen
       if (formState) formState.style.display = "none";
@@ -4694,7 +4701,7 @@ window.openServiceInquiryModal = function(prefillService = "", forcedAlternate =
       return;
     }
 
-    // Login email has NOT sent a message yet -> Display Form with FIXED email
+    // 2. Login email has NOT sent a message yet -> Display Form with STRICTLY FIXED email
     if (alreadySubmittedState) alreadySubmittedState.style.display = "none";
     if (successState) successState.style.display = "none";
     if (formState) formState.style.display = "block";
@@ -4709,16 +4716,11 @@ window.openServiceInquiryModal = function(prefillService = "", forcedAlternate =
       emailPill.innerHTML = '<i class="fa-solid fa-lock"></i> Fixed Account Email (1-Time Send)';
     }
     if (emailHelper) {
-      emailHelper.innerHTML = `
-        <span><i class="fa-solid fa-shield-halved"></i> Fixed to your sign-in email. Once sent, this email will be locked.</span>
-        <button type="button" class="btn-switch-inquiry-email" onclick="window.switchToAlternateEmail()">
-          <i class="fa-solid fa-envelope"></i> Send via another email instead
-        </button>
-      `;
+      emailHelper.innerHTML = `<span><i class="fa-solid fa-shield-halved"></i> Fixed to your sign-in email. 1 message limit per account.</span>`;
     }
 
   } else {
-    // Alternate or guest email mode
+    // Guest or generic demo viewer without explicit login email
     if (alreadySubmittedState) alreadySubmittedState.style.display = "none";
     if (successState) successState.style.display = "none";
     if (formState) formState.style.display = "block";
@@ -4726,27 +4728,14 @@ window.openServiceInquiryModal = function(prefillService = "", forcedAlternate =
     if (emailInput) {
       emailInput.readOnly = false;
       emailInput.classList.remove("input-fixed-email");
-      if (forcedAlternate || !emailInput.value || emailInput.value === loginEmail) {
-        emailInput.value = "";
-      }
+      emailInput.value = "";
     }
     if (emailPill) {
-      emailPill.className = "field-pill-note pill-alternate-email";
-      emailPill.innerHTML = '<i class="fa-solid fa-envelope-open"></i> Alternate Email (1-Time Send)';
+      emailPill.className = "field-pill-note";
+      emailPill.innerHTML = '<i class="fa-solid fa-envelope"></i> 1-Time Message Limit';
     }
     if (emailHelper) {
-      if (loginEmail) {
-        emailHelper.innerHTML = `
-          <span><i class="fa-solid fa-circle-info"></i> Enter another email address. Each email can only send one message.</span>
-          <button type="button" class="btn-switch-inquiry-email" onclick="window.revertToLoginEmail()">
-            <i class="fa-solid fa-rotate-left"></i> Revert to fixed login email (${typeof escapeHtml === 'function' ? escapeHtml(loginEmail) : loginEmail})
-          </button>
-        `;
-      } else {
-        emailHelper.innerHTML = `
-          <span><i class="fa-solid fa-circle-info"></i> Enter your email address. Each email can only send one message.</span>
-        `;
-      }
+      emailHelper.innerHTML = `<span><i class="fa-solid fa-circle-info"></i> Enter your email address. Each email is limited to 1 message.</span>`;
     }
     setTimeout(() => {
       if (emailInput && !emailInput.value) emailInput.focus();
@@ -4774,16 +4763,15 @@ window.closeServiceInquiryModal = function() {
 };
 
 window.switchToAlternateEmail = function() {
-  window.openServiceInquiryModal("", true);
+  window.openServiceInquiryModal();
 };
 
 window.revertToLoginEmail = function() {
-  window.openServiceInquiryModal("", false);
+  window.openServiceInquiryModal();
 };
 
 window.resetInquirySubmissionState = function() {
-  // Safe redirect: never erases the locked status of sent emails!
-  window.switchToAlternateEmail();
+  window.openServiceInquiryModal();
 };
 
 window.handleInquiryEmailChange = function() {
@@ -19246,6 +19234,12 @@ window.applyRolePermissions = function(role) {
     if (floatMsgWidget) floatMsgWidget.style.setProperty("display", "flex", "important");
     const billingMsgCard = document.getElementById("demo-billing-message-card");
     if (billingMsgCard) billingMsgCard.style.setProperty("display", "flex", "important");
+    const sidebarServiceBtn = document.getElementById("sidebar-custom-service-btn") || document.querySelector(".btn-custom-service-nav");
+    if (sidebarServiceBtn) {
+      sidebarServiceBtn.style.setProperty("display", "flex", "important");
+      sidebarServiceBtn.style.setProperty("visibility", "visible", "important");
+      sidebarServiceBtn.style.removeProperty("pointer-events");
+    }
     const balMod = document.getElementById("balance-qr-modal");
     if (balMod) { balMod.classList.add("hidden"); balMod.style.cssText = "display: none !important; visibility: hidden !important; pointer-events: none !important;"; }
   } else {
@@ -19266,6 +19260,15 @@ window.applyRolePermissions = function(role) {
     if (floatMsgWidget) floatMsgWidget.style.setProperty("display", "none", "important");
     const billingMsgCard = document.getElementById("demo-billing-message-card");
     if (billingMsgCard) billingMsgCard.style.setProperty("display", "none", "important");
+    const sidebarServiceBtn = document.getElementById("sidebar-custom-service-btn") || document.querySelector(".btn-custom-service-nav");
+    if (sidebarServiceBtn) {
+      sidebarServiceBtn.style.setProperty("display", "none", "important");
+      sidebarServiceBtn.style.setProperty("visibility", "hidden", "important");
+      sidebarServiceBtn.style.setProperty("pointer-events", "none", "important");
+    }
+    if (typeof window.closeServiceInquiryModal === 'function') {
+      window.closeServiceInquiryModal();
+    }
     const balMod = document.getElementById("balance-qr-modal");
     if (balMod) {
       balMod.style.removeProperty("visibility");
