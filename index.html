@@ -405,34 +405,28 @@
 
   <meta name="msapplication-TileColor" content="#004b73">
 
-  <!-- PWA Active Service Worker Registration for Instant App Speed & Installability -->
-
+    <!-- Complete PWA Cache Busting & Service Worker Reset -->
   <script>
-
-    if ('serviceWorker' in navigator && (window.location.protocol.startsWith('http') || window.location.protocol === 'file:')) {
-
-      window.addEventListener('load', function() {
-
-        navigator.serviceWorker.register('./sw.js?v=419_enterprise_security_hardened')
-
-          .then(function(reg) {
-
-            console.log('[PWA] Service Worker active, scope:', reg.scope);
-
-          })
-
-          .catch(function(err) {
-
-            console.warn('[PWA] Service Worker note:', err);
-
-          });
-
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for (var registration of registrations) {
+          registration.unregister();
+        }
+      }).catch(function(err) {
+        console.warn('[PWA] SW unregister error:', err);
       });
-
+    }
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      caches.keys().then(function(names) {
+        for (var name of names) {
+          caches.delete(name);
+        }
+      }).catch(function(err) {
+        console.warn('[PWA] Cache delete error:', err);
+      });
     }
 
-    // Build Version Enforcement
-
+    // Build Version Enforcement & Early Demo Isolation
     (function() {
       try {
         var email = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
@@ -444,31 +438,22 @@
         }
       } catch(e) {}
     })();
-    window.__APP_BUILD_VERSION__ = "v428_instant_retained_mesh_sync";
-
+    window.__APP_BUILD_VERSION__ = "v55_perpetual_fresh";
     try {
-
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
-
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
-
         localStorage.setItem("aaryan_app_build_version", window.__APP_BUILD_VERSION__);
-
         localStorage.removeItem("aaryan_last_sync_time");
-
         localStorage.removeItem("aaryandb_migrated_v2");
-
       }
-
     } catch (e) {}
-
   </script>
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=live_v47">
+  <link rel="stylesheet" href="index.css?v=live_v55_perpetual_fresh">
 
-  <script src="invoice_utils_v5.js?v=live_v47"></script>
+  <script src="invoice_utils_v5.js?v=live_v55_perpetual_fresh"></script>
 
 </head>
 
@@ -11007,13 +10992,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v47"></script>
+<script src="supabase-adapter.js?v=live_v55_perpetual_fresh"></script>
 
-<script src="initial_db.js?v=live_v47"></script>
+<script src="initial_db.js?v=live_v55_perpetual_fresh"></script>
 
-<script src="customer-timeline.js?v=live_v47"></script>
+<script src="customer-timeline.js?v=live_v55_perpetual_fresh"></script>
 
-<script src="index_v5.js?v=live_v47"></script>
+<script src="index_v5.js?v=live_v55_perpetual_fresh"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->

@@ -8966,7 +8966,10 @@ window.closeBarcodeScannerModal = function() {
   const modal = document.getElementById("barcode-scanner-modal");
   if (modal) {
     modal.classList.add("hidden");
-    modal.style.display = "none";
+    modal.style.setProperty("display", "none", "important");
+    modal.style.setProperty("visibility", "hidden", "important");
+    modal.style.setProperty("opacity", "0", "important");
+    modal.style.setProperty("pointer-events", "none", "important");
   }
   stopBarcodeCamera();
   lastScannedBarcodeValue = "";
@@ -12099,7 +12102,7 @@ function showFloatingToast(message, type = "success", duration = 4500) {
     opacity: 0;
     transform: translateY(20px) scale(0.96);
     transition: all 0.32s cubic-bezier(0.16, 1, 0.3, 1);
-    pointer-events: auto;
+    pointer-events: none !important;
     cursor: default;
   `;
   toast.innerHTML = `${iconHtml} <span style="flex: 1;">${message}</span>`;
@@ -14098,6 +14101,9 @@ window.closeBalanceQrModal = function() {
   if (modalEl) {
     modalEl.classList.add("hidden");
     modalEl.style.setProperty("display", "none", "important");
+    modalEl.style.setProperty("visibility", "hidden", "important");
+    modalEl.style.setProperty("opacity", "0", "important");
+    modalEl.style.setProperty("pointer-events", "none", "important");
   }
 };
 
