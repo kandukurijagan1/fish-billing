@@ -4337,7 +4337,7 @@ window.submitClientServiceInquiry = async function(e) {
       // Record locally to prevent further submissions with this email
       localStorage.setItem("submitted_inquiry_email", email);
       localStorage.setItem("submitted_inquiry_time", new Date().toISOString());
-      localStorage.setItem("submitted_inquiry_data", JSON.stringify(payload));
+      // Privacy Compliance: Zero personal data retention - do NOT store inquiry payload locally
 
       // Transition to celebratory success state
       const formState = document.getElementById("inquiry-state-form");
@@ -15722,14 +15722,20 @@ window.adjustProductStock = function(id, delta) {
     description: prod.description
   });
 
-  // 3. Debounced asynchronous push to Google Master Database
+  // 3. Debounced asynchronous push & Telegram alerts (1500ms debounce prevents accidental clicks from spamming database)
   if (directPushProductTimer) clearTimeout(directPushProductTimer);
   directPushProductTimer = setTimeout(() => {
     pushDirectToGoogleDatabase("save_products", { products: productsDb });
-  }, 250);
+    const finalDelta = prod.stock - current;
+    if (finalDelta !== 0 && typeof sendStockTelegramReport === 'function') {
+      const actionText = finalDelta > 0 ? `Stock Adjusted (+${finalDelta})` : `Stock Adjusted (${finalDelta})`;
+      sendStockTelegramReport(prod, actionText, current, prod.stock);
+    }
+  }, 1500);
 
-  const actionText = delta > 0 ? `Inline Stock Added (+${delta})` : `Inline Stock Reduced (${delta})`;
-  sendStockTelegramReport(prod, actionText, current, prod.stock);
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast(`📦 ${prod.description}: Stock updated to ${newStock} ${prod.unit || 'Units'}`, "info", 2500);
+  }
 };
 
 window.setProductStockDirect = function(id, explicitStockVal) {

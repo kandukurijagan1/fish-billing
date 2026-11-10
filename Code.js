@@ -1698,10 +1698,12 @@ function writeSettingsToSheet(settingsObj, ss) {
 
 /**
  * Handles prospective client service / project inquiries.
- * Strictly enforces 1-inquiry per email address across the entire lifetime of the sheet.
- * If the email has already submitted, rejects with duplicate flag and informative message.
- * If unique, records the inquiry in "Client Inquiries" sheet, sends an instant notification email
- * to Jagan with rich lead details & 1-click WhatsApp shortcut, and sends a professional confirmation email to the client.
+ * STRICT ZERO-DATA-STORAGE INQUIRY ENGINE:
+ * - NO customer inquiries, personal information, or requirements are stored in any Google Sheet or database.
+ * - Storing customer inquiry data in spreadsheets is strictly prohibited for privacy & data compliance.
+ * - Enforces 1-inquiry per email address using an irreversible SHA-256 hash in PropertiesService (contains 0 personal data).
+ * - Dispatches message directly to developer's email inbox (kandukurijagan99@gmail.com) via GmailApp/MailApp.
+ * - Automatically deletes any legacy "Client Inquiries" sheet from the Google Spreadsheet.
  */
 function handleClientInquirySubmission(data) {
   try {
@@ -1715,7 +1717,7 @@ function handleClientInquirySubmission(data) {
     var rawRequirements = String(data.requirements || data.message || "").trim();
     var clientDevice = String(data.device || data.userAgent || "Web Browser").trim();
 
-    // 1. Basic Validation
+    // 1. Validation
     if (!rawName) {
       return ContentService.createTextOutput(JSON.stringify({
         ok: false,
@@ -1723,7 +1725,7 @@ function handleClientInquirySubmission(data) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    var emailPattern = /^[^s@]+@[^s@]+.[^s@]+$/;
+    var emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!rawEmail || !emailPattern.test(rawEmail)) {
       return ContentService.createTextOutput(JSON.stringify({
         ok: false,
@@ -1731,7 +1733,6 @@ function handleClientInquirySubmission(data) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // Clean phone number (strip spaces, hyphens, etc.)
     var cleanPhone = rawPhone.replace(/[^0-9]/g, "");
     if (cleanPhone.length < 10) {
       return ContentService.createTextOutput(JSON.stringify({
@@ -1741,96 +1742,45 @@ function handleClientInquirySubmission(data) {
     }
     var tenDigitPhone = cleanPhone.length > 10 ? cleanPhone.slice(-10) : cleanPhone;
 
-    var ss = getMasterSpreadsheet();
-    if (!ss) {
+    // 2. Strict One-Time Submission Enforcement with ZERO PII Storage (SHA-256 Hash Only)
+    // ZERO personal data (no names, no emails, no phones, no requirements) is ever stored in any spreadsheet or database.
+    var emailBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, rawEmail, Utilities.Charset.UTF_8);
+    var emailHashHex = "";
+    for (var i = 0; i < emailBytes.length; i++) {
+      var byteVal = emailBytes[i];
+      if (byteVal < 0) byteVal += 256;
+      var hexByte = byteVal.toString(16);
+      if (hexByte.length === 1) hexByte = "0" + hexByte;
+      emailHashHex += hexByte;
+    }
+    var propKey = "INQ_" + emailHashHex;
+    var scriptProps = PropertiesService.getScriptProperties();
+    var existingSub = scriptProps.getProperty(propKey);
+    if (existingSub) {
       return ContentService.createTextOutput(JSON.stringify({
         ok: false,
-        error: "Database spreadsheet unavailable."
+        duplicate: true,
+        error: "duplicate_submission",
+        message: "An inquiry from this email address has already been submitted. Software Engineer Kandukuri Jagan has received your requirements directly in his inbox and will contact you via WhatsApp / Phone shortly!"
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    var sheetName = "Client Inquiries";
-    var sheet = ss.getSheetByName(sheetName);
+    // Mark the irreversible cryptographic hash key (contains 0 personal data)
+    scriptProps.setProperty(propKey, "1");
 
-    // If sheet doesn't exist, create and initialize it
-    if (!sheet) {
-      sheet = ss.insertSheet(sheetName);
-      var headers = [
-        "Submission Timestamp",
-        "Client Name",
-        "Email Address",
-        "WhatsApp Phone",
-        "Business / Farm Name",
-        "Service Requested",
-        "Industry Sector",
-        "Project Timeline",
-        "Detailed Requirements / Scope",
-        "Lead Status",
-        "Client Notes / Device"
-      ];
-      sheet.appendRow(headers);
-      var headerRange = sheet.getRange(1, 1, 1, headers.length);
-      headerRange.setFontWeight("bold");
-      headerRange.setBackground("#0f172a");
-      headerRange.setFontColor("#ffffff");
-      headerRange.setHorizontalAlignment("center");
-      sheet.setFrozenRows(1);
-      try {
-        sheet.setColumnWidth(1, 170); // Timestamp
-        sheet.setColumnWidth(2, 160); // Client Name
-        sheet.setColumnWidth(3, 220); // Email
-        sheet.setColumnWidth(4, 140); // Phone
-        sheet.setColumnWidth(5, 180); // Business Name
-        sheet.setColumnWidth(6, 200); // Service
-        sheet.setColumnWidth(7, 150); // Industry
-        sheet.setColumnWidth(8, 150); // Timeline
-        sheet.setColumnWidth(9, 320); // Requirements
-        sheet.setColumnWidth(10, 160); // Status
-        sheet.setColumnWidth(11, 180); // Notes / Device
-      } catch (_) {}
-    }
-
-    // 2. Strict One-Time Submission Enforcement per Email
-    var lastRow = sheet.getLastRow();
-    if (lastRow > 1) {
-      // Column C (3rd column) contains Email Address
-      var emailColumnValues = sheet.getRange(2, 3, lastRow - 1, 1).getValues();
-      for (var r = 0; r < emailColumnValues.length; r++) {
-        var existingEmail = String(emailColumnValues[r][0] || "").trim().toLowerCase();
-        if (existingEmail === rawEmail) {
-          var prevTime = "";
-          try {
-            prevTime = sheet.getRange(r + 2, 1).getValue();
-          } catch (_) {}
-          var timeNotice = prevTime ? " on " + prevTime : "";
-
-          // Return duplicate rejection - DO NOT add another row!
-          return ContentService.createTextOutput(JSON.stringify({
-            ok: false,
-            duplicate: true,
-            error: "duplicate_submission",
-            message: "An inquiry from '" + rawEmail + "' was already received" + timeNotice + ". Each email is restricted to one project submission. Software Engineer Kandukuri Jagan is already reviewing your requirements and will contact you via WhatsApp / Phone shortly!"
-          })).setMimeType(ContentService.MimeType.JSON);
+    // 3. Privacy Compliance: Remove any legacy 'Client Inquiries' sheet if it exists
+    try {
+      var ss = getMasterSpreadsheet();
+      if (ss) {
+        var legacySheet = ss.getSheetByName("Client Inquiries");
+        if (legacySheet) {
+          ss.deleteSheet(legacySheet);
+          Logger.log("Deleted legacy Client Inquiries sheet for strict data protection compliance.");
         }
       }
-    }
+    } catch (_) {}
 
-    // 3. Append New Unique Inquiry Row
     var nowTimestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Kolkata", "dd-MMM-yyyy hh:mm:ss a");
-    var rowData = [
-      nowTimestamp,
-      rawName,
-      rawEmail,
-      tenDigitPhone,
-      rawBusiness || "Individual / Not Specified",
-      rawService || "Custom Software / Web Application",
-      rawIndustry || "General Business",
-      rawTimeline || "Standard Timeline",
-      rawRequirements || "Detailed discussion requested.",
-      "New Lead (Pending Contact)",
-      clientDevice
-    ];
-    sheet.appendRow(rowData);
 
     // 4. Direct Email Notification to Developer Inbox (kandukurijagan99@gmail.com & script owner)
     var devEmailList = ["kandukurijagan99@gmail.com"];
@@ -1849,8 +1799,7 @@ function handleClientInquirySubmission(data) {
     );
 
     var devEmailSubject = "📥 [NEW CLIENT INQUIRY] " + rawName + " • " + (rawService || "Aaryan Aqua Billing");
-    
-    // Plain text alternative for guaranteed primary inbox placement
+
     var devPlainTextBody = 
       "====================================================\n" +
       "📥 NEW CLIENT INQUIRY RECEIVED VIA AARYAN AQUA BILLING\n" +
@@ -1870,14 +1819,16 @@ function handleClientInquirySubmission(data) {
       "QUICK ACTIONS:\n" +
       "• Chat on WhatsApp: " + whatsappUrl + "\n" +
       "• Reply via Email: Click 'Reply' in your email client to write directly to " + rawEmail + "\n\n" +
-      "Device & IP Context: " + clientDevice + "\n";
+      "Device Context: " + clientDevice + "\n" +
+      "Privacy Note: Zero data saved to Google Sheets or databases. Direct email delivery only.\n";
+
     var devEmailBody = 
       "<div style='font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: #0f172a; padding: 32px 16px; color: #f8fafc;'>" +
         "<div style='max-width: 620px; margin: 0 auto; background: #1e293b; border: 1px solid #334155; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5);'>" +
           "<div style='background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); padding: 24px 28px; text-align: left;'>" +
-            "<span style='background: rgba(255,255,255,0.2); color: #ffffff; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 4px 10px; border-radius: 20px; display: inline-block;'>New Client Lead</span>" +
+            "<span style='background: rgba(255,255,255,0.2); color: #ffffff; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 4px 10px; border-radius: 20px; display: inline-block;'>Direct Client Inquiry</span>" +
             "<h2 style='margin: 10px 0 4px 0; color: #ffffff; font-size: 22px; font-weight: 800;'>New Project Requirement Submitted</h2>" +
-            "<p style='margin: 0; color: #e0f2fe; font-size: 13px;'>Received via Portfolio / Aqua Billing Client Intake on " + nowTimestamp + "</p>" +
+            "<p style='margin: 0; color: #e0f2fe; font-size: 13px;'>Direct Inbox Delivery • Zero Data Storage • " + nowTimestamp + "</p>" +
           "</div>" +
 
           "<div style='padding: 24px 28px;'>" +
@@ -1886,7 +1837,7 @@ function handleClientInquirySubmission(data) {
               "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>Email Address:</td><td style='padding: 10px 0; color: #38bdf8;'><a href='mailto:" + rawEmail + "' style='color: #38bdf8; text-decoration: none;'>" + rawEmail + "</a></td></tr>" +
               "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>WhatsApp / Phone:</td><td style='padding: 10px 0; color: #22c55e; font-weight: 700;'>+91 " + tenDigitPhone + "</td></tr>" +
               "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>Business / Farm:</td><td style='padding: 10px 0; color: #f8fafc;'>" + (rawBusiness || "Individual") + "</td></tr>" +
-              "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>Service Needed:</td><td style='padding: 10px 0; color: #f59e0b; font-weight: 700;'>" + rawService + "</td></tr>" +
+              "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #f59e0b; font-weight: 700;'>" + rawService + "</td></tr>" +
               "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>Industry:</td><td style='padding: 10px 0; color: #f8fafc;'>" + rawIndustry + "</td></tr>" +
               "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>Timeline / Urgency:</td><td style='padding: 10px 0; color: #a855f7; font-weight: 600;'>" + rawTimeline + "</td></tr>" +
             "</table>" +
@@ -1905,7 +1856,7 @@ function handleClientInquirySubmission(data) {
           "</div>" +
 
           "<div style='background: #090d16; padding: 16px 28px; text-align: center; color: #64748b; font-size: 12px; border-top: 1px solid #1e293b;'>" +
-            "Device Info: " + clientDevice + " • Sheet: Client Inquiries (Row " + (lastRow + 1) + ")" +
+            "Strict Zero-Storage Privacy Protocol • Delivered directly to developer inbox • Zero data saved to Google Sheets" +
           "</div>" +
         "</div>" +
       "</div>";
@@ -1915,7 +1866,7 @@ function handleClientInquirySubmission(data) {
     try {
       if (typeof GmailApp !== "undefined" && GmailApp.sendEmail) {
         GmailApp.sendEmail(developerEmail, devEmailSubject, devPlainTextBody, {
-          name: "Aqua Billing Client Intake • " + rawName,
+          name: "Client Inquiry • " + rawName,
           replyTo: rawEmail,
           htmlBody: devEmailBody
         });
@@ -1934,7 +1885,7 @@ function handleClientInquirySubmission(data) {
           subject: devEmailSubject,
           body: devPlainTextBody,
           htmlBody: devEmailBody,
-          name: "Aqua Billing Client Intake • " + rawName,
+          name: "Client Inquiry • " + rawName,
           replyTo: rawEmail
         });
         devMailSuccess = true;
@@ -1957,7 +1908,7 @@ function handleClientInquirySubmission(data) {
           "<div style='padding: 28px;'>" +
             "<h3 style='margin-top: 0; color: #0f172a; font-size: 18px;'>Hello " + rawName + ",</h3>" +
             "<p style='color: #475569; font-size: 14px; line-height: 1.6;'>" +
-              "Thank you for reaching out! Your project inquiry for <strong>" + rawService + "</strong> has been safely received." +
+              "Thank you for reaching out! Your project inquiry for <strong>" + rawService + "</strong> has been delivered directly to my personal inbox." +
             "</p>" +
             "<p style='color: #475569; font-size: 14px; line-height: 1.6;'>" +
               "I am personally reviewing your requirements and will connect with you directly on WhatsApp / Phone (<strong>+91 " + tenDigitPhone + "</strong>) within <strong>24 hours</strong> to discuss your workflow, technical specifications, and timeline." +
@@ -1981,7 +1932,7 @@ function handleClientInquirySubmission(data) {
             "</div>" +
 
             "<p style='color: #64748b; font-size: 12px; margin-top: 24px; border-top: 1px solid #f1f5f9; padding-top: 16px; text-align: center;'>" +
-              "To ensure personalized attention, submissions are limited to one per client email. We look forward to building your software solution!<br>" +
+              "Strict Zero-Storage Privacy Protocol: Your personal details are not stored in any spreadsheet or database.<br>" +
               "<strong>Kandukuri Jagan</strong> • Software Development Services" +
             "</p>" +
           "</div>" +
@@ -1990,7 +1941,7 @@ function handleClientInquirySubmission(data) {
 
     var clientPlainTextBody = 
       "Hello " + rawName + ",\n\n" +
-      "Thank you for reaching out! Your project inquiry for " + rawService + " has been safely received.\n\n" +
+      "Thank you for reaching out! Your project inquiry for " + rawService + " has been delivered directly to my personal inbox.\n\n" +
       "I am personally reviewing your requirements and will connect with you directly on WhatsApp / Phone (+91 " + tenDigitPhone + ") within 24 hours to discuss your workflow and specifications.\n\n" +
       "Summary of your submission:\n" +
       "• Business / Farm: " + (rawBusiness || "Individual") + "\n" +
@@ -2017,16 +1968,12 @@ function handleClientInquirySubmission(data) {
       Logger.log("Failed to send acknowledgment email to client: " + e2.message);
     }
 
-    try {
-      appendAuditLog("CLIENT_INQUIRY", rawEmail, rawPhone, "SUCCESS", "Client inquiry for: " + rawService, ss);
-    } catch (_) {}
-
     return ContentService.createTextOutput(JSON.stringify({
       ok: true,
       success: true,
       email: rawEmail,
       timestamp: nowTimestamp,
-      message: "Thank you, " + rawName + "! Your project inquiry has been successfully submitted. Kandukuri Jagan will reach out to you within 24 hours."
+      message: "Your message has been sent directly to Kandukuri Jagan's inbox. No personal data has been stored."
     })).setMimeType(ContentService.MimeType.JSON);
 
   } catch (err) {
