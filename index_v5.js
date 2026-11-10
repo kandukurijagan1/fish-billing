@@ -1518,7 +1518,7 @@ elements.sumIgstRow = elements.sumIgst ? elements.sumIgst.closest('.summary-row'
 window.lastSyncETag = null;
 window.lastSyncTimestamp = parseInt(localStorage.getItem("aaryan_last_sync_time") || "0", 10);
 
-const GOOGLE_SCRIPT_URL = window.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbyNkALvgRbXAXtN4rdbe6dEHwO27MgRbcqxUDQqs5Y25BHbem3K1TbgJLH19_nLJ-LAkQ/exec";
+const GOOGLE_SCRIPT_URL = window.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbxHi4L_xLrfRhx1KWxRxQD1QcqbVEZVMcYR37DJEGSPe2ykZyy-ATnYyZFxnSySS6OF/exec";
 const API_SECRET_TOKEN = (typeof window.API_SECRET_TOKEN !== "undefined" && window.API_SECRET_TOKEN)
   ? String(window.API_SECRET_TOKEN).trim()
   : "AARYAN_AQUA_SECURE_KEY_2026";
@@ -4873,7 +4873,7 @@ window.submitClientServiceInquiry = async function(e) {
 
     const targetUrl = typeof GOOGLE_SCRIPT_URL !== "undefined"
       ? GOOGLE_SCRIPT_URL
-      : "https://script.google.com/macros/s/AKfycbyNkALvgRbXAXtN4rdbe6dEHwO27MgRbcqxUDQqs5Y25BHbem3K1TbgJLH19_nLJ-LAkQ/exec";
+      : "https://script.google.com/macros/s/AKfycbxHi4L_xLrfRhx1KWxRxQD1QcqbVEZVMcYR37DJEGSPe2ykZyy-ATnYyZFxnSySS6OF/exec";
 
     const res = await fetch(targetUrl, {
       method: "POST",
