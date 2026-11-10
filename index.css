@@ -13567,3 +13567,118 @@ body.demo-mode-active #verify-admin-actions-bar {
     max-height: 94vh;
   }
 }
+
+/* ==========================================================================
+   ADVANCED UNIVERSAL MULTI-SCAN BARCODE & CONTINUOUS POS SCANNER STYLES
+   ========================================================================== */
+
+.btn-continuous-scan-toggle {
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.btn-continuous-scan-toggle:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.btn-continuous-scan-toggle.active {
+  background: rgba(16, 185, 129, 0.18) !important;
+  color: #34d399 !important;
+  border-color: #10b981 !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
+}
+
+.barcode-scan-flash {
+  position: absolute;
+  inset: 0;
+  background: rgba(16, 185, 129, 0.45);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 5;
+}
+
+@keyframes scanGreenFlashAnim {
+  0% { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+
+.scan-flash-active {
+  animation: scanGreenFlashAnim 0.35s ease-out forwards !important;
+}
+
+.barcode-live-scan-card {
+  animation: scanCardPopIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes scanCardPopIn {
+  0% {
+    transform: translateY(-8px) scale(0.96);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.scanner-session-tray {
+  animation: sessionTrayFade 0.3s ease-out;
+}
+
+@keyframes sessionTrayFade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.session-items-list {
+  scrollbar-width: thin;
+  scrollbar-color: #475569 transparent;
+}
+
+.session-items-list::-webkit-scrollbar {
+  width: 5px;
+}
+.session-items-list::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
+}
+
+.session-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 11.5px;
+}
+
+.session-item-row:last-child {
+  border-bottom: none;
+}
+
+.session-item-name {
+  color: #f1f5f9;
+  font-weight: 600;
+  max-width: 65%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-item-meta {
+  color: #38bdf8;
+  font-weight: 700;
+  text-align: right;
+}

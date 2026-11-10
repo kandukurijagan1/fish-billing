@@ -1,5 +1,5 @@
 // Aaryan Aqua Needs - Professional PWA Offline Shell Service Worker
-const CACHE_NAME = 'aaryan-aqua-v5.14.6';
+const CACHE_NAME = 'aaryan-aqua-v5.14.7';
 
 const PRECACHE_ASSETS = [
   './',
@@ -18,7 +18,8 @@ const PRECACHE_ASSETS = [
   './signature.png',
   './rallis_logo.png',
   './mqtt.min.js',
-  './jsqr.min.js'
+  './jsqr.min.js',
+  './zxing.min.js'
 ];
 
 // URLs that must NEVER be cached (real-time cloud mesh & external APIs)

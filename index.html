@@ -365,16 +365,18 @@
 
   <!-- Real-Time Client-Side QR & Barcode Decoder for Device Image Uploads -->
 
+  <!-- Real-Time Client-Side QR & Universal 1D Barcode Decoders -->
   <script src="jsqr.min.js"></script>
-
   <script>
-
     if (typeof jsQR === 'undefined') {
-
       document.write('<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"><\/script>');
-
     }
-
+  </script>
+  <script src="zxing.min.js"></script>
+  <script>
+    if (typeof ZXing === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"><\/script>');
+    }
   </script>
 
   <!-- PWA Manifest & App Icons -->
@@ -464,9 +466,9 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=live_v46">
+  <link rel="stylesheet" href="index.css?v=live_v47">
 
-  <script src="invoice_utils_v5.js?v=live_v46"></script>
+  <script src="invoice_utils_v5.js?v=live_v47"></script>
 
 </head>
 
@@ -6259,11 +6261,14 @@
 
         </div>
 
-        <button type="button" class="modal-close-btn" onclick="closeBarcodeScannerModal()" aria-label="Close" style="color: #cbd5e1; background: rgba(255,255,255,0.1); border: none; font-size: 18px; cursor: pointer; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-
-          <i class="fa-solid fa-xmark"></i>
-
-        </button>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button type="button" id="btn-toggle-continuous-scan" onclick="toggleContinuousScanMode()" class="btn-continuous-scan-toggle active" title="Toggle between continuous multi-barcode scanning and single scan">
+            <i class="fa-solid fa-repeat"></i> <span id="continuous-mode-label">Continuous: ON</span>
+          </button>
+          <button type="button" class="modal-close-btn" onclick="closeBarcodeScannerModal()" aria-label="Close" style="color: #cbd5e1; background: rgba(255,255,255,0.1); border: none; font-size: 18px; cursor: pointer; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
 
       </div>
 
@@ -6300,6 +6305,19 @@
           <div style="position: relative; width: 100%; height: 250px; background: #020617; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center;">
 
             <video id="barcode-scanner-video" playsinline autoplay muted style="width: 100%; height: 100%; object-fit: cover;"></video>
+
+            <!-- Green Flash on Scan -->
+            <div id="barcode-scan-flash" class="barcode-scan-flash" style="position: absolute; inset: 0; background: rgba(16, 185, 129, 0.4); pointer-events: none; opacity: 0; transition: opacity 0.25s ease;"></div>
+
+            <!-- Live Scanned Product Overlay Card -->
+            <div id="barcode-live-scan-card" class="barcode-live-scan-card" style="display: none; position: absolute; top: 10px; left: 10px; right: 10px; background: rgba(15, 23, 42, 0.94); border: 1.5px solid #10b981; border-radius: 10px; padding: 10px 14px; text-align: left; box-shadow: 0 8px 20px rgba(0,0,0,0.6); z-index: 10;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 11px; font-weight: 800; color: #34d399; display: flex; align-items: center; gap: 5px;"><i class="fa-solid fa-circle-check"></i> ADDED TO INVOICE</span>
+                <span id="live-scan-qty-badge" style="font-size: 11px; background: #065f46; color: #a7f3d0; padding: 2px 7px; border-radius: 4px; font-weight: 800;">Qty: 1</span>
+              </div>
+              <div id="live-scan-name" style="font-size: 13.5px; font-weight: 800; color: #ffffff; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Product Name</div>
+              <div id="live-scan-price" style="font-size: 12px; color: #94a3b8; margin-top: 2px;">Rate: ₹0.00</div>
+            </div>
 
             
 
@@ -6359,6 +6377,18 @@
 
             </div>
 
+          </div>
+
+          <!-- Continuous Session Scanned Items Basket Tray -->
+          <div id="scanner-session-tray" class="scanner-session-tray" style="display: none; margin-top: 12px; background: #1e293b; border: 1.5px solid rgba(56, 189, 248, 0.35); border-radius: 10px; padding: 10px 12px; text-align: left;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 11.5px; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 6px;"><i class="fa-solid fa-basket-shopping"></i> Scanned Items (<strong id="session-scanned-count">0</strong>)</span>
+              <span style="font-size: 12px; color: #10b981; font-weight: 800;">Bill Total: ₹<strong id="session-scanned-total">0.00</strong></span>
+            </div>
+            <div id="session-scanned-items-list" class="session-items-list" style="max-height: 95px; overflow-y: auto; font-size: 11.5px; color: #cbd5e1; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;"></div>
+            <button type="button" class="btn btn-sm btn-cyan" onclick="closeBarcodeScannerModal()" style="width: 100%; margin-top: 8px; padding: 7px; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;">
+              <i class="fa-solid fa-check"></i> Done Scanning &amp; View Bill
+            </button>
           </div>
 
         </div>
@@ -10948,13 +10978,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v46"></script>
+<script src="supabase-adapter.js?v=live_v47"></script>
 
-<script src="initial_db.js?v=live_v46"></script>
+<script src="initial_db.js?v=live_v47"></script>
 
-<script src="customer-timeline.js?v=live_v46"></script>
+<script src="customer-timeline.js?v=live_v47"></script>
 
-<script src="index_v5.js?v=live_v46"></script>
+<script src="index_v5.js?v=live_v47"></script>
 
 </body>
 
