@@ -5,7 +5,273 @@ var INITIAL_BOOTSTRAP_SNAPSHOT = (typeof window !== 'undefined' && window.INITIA
   : (_dbExport.INITIAL_BOOTSTRAP_SNAPSHOT || _dbExport || { invoices: [], products: [], parties: [], settings: {} });
 var FIXED_DEMO_SNAPSHOT = (typeof window !== 'undefined' && window.FIXED_DEMO_SNAPSHOT)
   ? window.FIXED_DEMO_SNAPSHOT
-  : (_dbExport.FIXED_DEMO_SNAPSHOT || null);
+  : (_dbExport.FIXED_DEMO_SNAPSHOT || {
+      version: "1.0.0-demo",
+      company: {
+        name: "Demo Aqua Needs & Feeds",
+        tagline: "Commercial Software Preview",
+        address: "Aqua Commercial Center, Main Road, Nellore, AP - 524001",
+        phones: "+91 98765 43210",
+        email: "demo@aaryan-aqua.com",
+        gstin: "37DEMOGST1234Z5",
+        state: "Andhra Pradesh",
+        stateCode: "37",
+        website: "www.aaryan-aqua.com"
+      },
+      bank: {
+        name: "State Bank of India (Demo)",
+        accountName: "Demo Aqua Commercial Account",
+        accountNo: "000000000000",
+        ifsc: "SBIN0000000",
+        branch: "Demo Branch"
+      },
+      upiId: "kandukurijagan88@ybl",
+      products: [
+        {
+          id: "demo_prod_1",
+          description: "Demo Vannamei Shrimp Feed 25KG",
+          hsn: "230990",
+          packSize: "25 KG",
+          unit: "Bag",
+          rate: 1650,
+          discount: 0,
+          price: 1650,
+          stock: 50,
+          totalValue: 82500,
+          status: "In Stock",
+          barcode: "8901001990011",
+          isDemo: true
+        },
+        {
+          id: "demo_prod_2",
+          description: "Demo Aqua Zeolite Pond Cleaner 50KG",
+          hsn: "253090",
+          packSize: "50 KG",
+          unit: "Bag",
+          rate: 750,
+          discount: 0,
+          price: 750,
+          stock: 100,
+          totalValue: 75000,
+          status: "In Stock",
+          barcode: "8901001990028",
+          isDemo: true
+        },
+        {
+          id: "demo_prod_3",
+          description: "Demo BioShield Anti-Bacterial 5L",
+          hsn: "380899",
+          packSize: "5 Litre",
+          unit: "Can",
+          rate: 3200,
+          discount: 0,
+          price: 3200,
+          stock: 20,
+          totalValue: 64000,
+          status: "In Stock",
+          barcode: "8901001990035",
+          isDemo: true
+        },
+        {
+          id: "demo_prod_4",
+          description: "Demo Mineral Pro Pond Salt 25KG",
+          hsn: "250100",
+          packSize: "25 KG",
+          unit: "Bag",
+          rate: 600,
+          discount: 0,
+          price: 600,
+          stock: 60,
+          totalValue: 36000,
+          status: "In Stock",
+          barcode: "8901001990042",
+          isDemo: true
+        },
+        {
+          id: "demo_prod_5",
+          description: "Demo Soil Rich Pond Conditioner 20KG",
+          hsn: "310590",
+          packSize: "20 KG",
+          unit: "Bucket",
+          rate: 2100,
+          discount: 0,
+          price: 2100,
+          stock: 25,
+          totalValue: 52500,
+          status: "In Stock",
+          barcode: "8901001990059",
+          isDemo: true
+        },
+        {
+          id: "demo_prod_6",
+          description: "Demo Super Oxygen Tablets 5KG",
+          hsn: "283699",
+          packSize: "5 KG",
+          unit: "Can",
+          rate: 1200,
+          discount: 0,
+          price: 1200,
+          stock: 35,
+          totalValue: 42000,
+          status: "In Stock",
+          barcode: "8901001990066",
+          isDemo: true
+        }
+      ],
+      parties: [
+        {
+          id: "demo_party_1",
+          name: "Demo Coastal Shrimp Farm",
+          phone: "9876543210",
+          email: "coastal.demo@example.com",
+          address: "Pond Block 4, Beach Road",
+          city: "Nellore",
+          state: "Andhra Pradesh",
+          stateCode: "37",
+          gstin: "37AAACD1234F1Z5",
+          type: "receiver",
+          currentBalance: 0,
+          isDemo: true
+        },
+        {
+          id: "demo_party_2",
+          name: "Sample Marine Hatcheries Ltd",
+          phone: "9123456780",
+          email: "hatchery.sample@example.com",
+          address: "Plot 12, Aqua Corridor",
+          city: "Kakinada",
+          state: "Andhra Pradesh",
+          stateCode: "37",
+          gstin: "37BBBCE5678G2Z1",
+          type: "receiver",
+          currentBalance: 8500,
+          isDemo: true
+        },
+        {
+          id: "demo_party_3",
+          name: "Sample Aqua Feeds & Supplies",
+          phone: "9988776655",
+          email: "supplier.sample@example.com",
+          address: "Industrial Area, Phase 2",
+          city: "Vijayawada",
+          state: "Andhra Pradesh",
+          stateCode: "37",
+          gstin: "37CCCDF9012H3Z8",
+          type: "vendor",
+          currentBalance: 0,
+          isDemo: true
+        }
+      ],
+      invoices: [
+        {
+          id: "demo_inv_1",
+          invoiceNo: "DEMO-0001",
+          invoiceDate: "10-Nov-2026",
+          date: "10-Nov-2026",
+          customerName: "Demo Coastal Shrimp Farm",
+          customerPhone: "9876543210",
+          paymentStatus: "Paid",
+          subtotal: 16500,
+          taxAmount: 0,
+          totalAmount: 16500,
+          paidAmount: 16500,
+          balanceAmount: 0,
+          isDemo: true,
+          details: {
+            invoiceNo: "DEMO-0001",
+            date: "10-Nov-2026",
+            docType: "Bill of Supply",
+            buyer: {
+              name: "Demo Coastal Shrimp Farm",
+              phone: "9876543210",
+              address: "Pond Block 4, Beach Road, Nellore, AP",
+              state: "Andhra Pradesh"
+            },
+            items: [
+              {
+                productId: "demo_prod_1",
+                description: "Demo Vannamei Shrimp Feed 25KG",
+                hsn: "230990",
+                quantity: 10,
+                unit: "Bag",
+                rate: 1650,
+                discount: 0,
+                taxRate: 0,
+                amount: 16500
+              }
+            ],
+            paymentStatus: "Paid",
+            grandTotal: 16500,
+            paidAmount: 16500,
+            balanceDue: 0
+          }
+        },
+        {
+          id: "demo_inv_2",
+          invoiceNo: "DEMO-0002",
+          invoiceDate: "05-Nov-2026",
+          date: "05-Nov-2026",
+          customerName: "Sample Marine Hatcheries Ltd",
+          customerPhone: "9123456780",
+          paymentStatus: "Partial",
+          subtotal: 15000,
+          taxAmount: 0,
+          totalAmount: 15000,
+          paidAmount: 6500,
+          balanceAmount: 8500,
+          isDemo: true,
+          details: {
+            invoiceNo: "DEMO-0002",
+            date: "05-Nov-2026",
+            docType: "Bill of Supply",
+            buyer: {
+              name: "Sample Marine Hatcheries Ltd",
+              phone: "9123456780",
+              address: "Plot 12, Aqua Corridor, Kakinada, AP",
+              state: "Andhra Pradesh"
+            },
+            items: [
+              {
+                productId: "demo_prod_2",
+                description: "Demo Aqua Zeolite Pond Cleaner 50KG",
+                hsn: "253090",
+                quantity: 20,
+                unit: "Bag",
+                rate: 750,
+                discount: 0,
+                taxRate: 0,
+                amount: 15000
+              }
+            ],
+            paymentStatus: "Partial",
+            grandTotal: 15000,
+            paidAmount: 6500,
+            balanceDue: 8500
+          }
+        }
+      ],
+      settings: {
+        company: {
+          name: "Demo Aqua Needs & Feeds",
+          tagline: "Commercial Software Preview",
+          address: "Aqua Commercial Center, Main Road, Nellore, AP - 524001",
+          phones: "+91 98765 43210",
+          email: "demo@aaryan-aqua.com",
+          gstin: "37DEMOGST1234Z5",
+          state: "Andhra Pradesh",
+          stateCode: "37",
+          website: "www.aaryan-aqua.com"
+        },
+        bank: {
+          name: "State Bank of India (Demo)",
+          accountName: "Demo Aqua Commercial Account",
+          accountNo: "000000000000",
+          ifsc: "SBIN0000000",
+          branch: "Demo Branch"
+        },
+        upiId: "kandukurijagan88@ybl"
+      }
+    });
 if (typeof window !== 'undefined') {
   if (!window.INITIAL_BOOTSTRAP_SNAPSHOT) window.INITIAL_BOOTSTRAP_SNAPSHOT = INITIAL_BOOTSTRAP_SNAPSHOT;
   if (!window.FIXED_DEMO_SNAPSHOT) window.FIXED_DEMO_SNAPSHOT = FIXED_DEMO_SNAPSHOT;
@@ -62,6 +328,64 @@ window.isDemoMode = function() {
 
   return false;
 };
+
+// ============================================================================
+// STRICT COMMERCIAL ISOLATION STORAGE PROXY (< 0.01ms Zero-Leakage Data Partition)
+// ============================================================================
+(function() {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  const originalSetItem = Storage.prototype.setItem;
+  const originalGetItem = Storage.prototype.getItem;
+  let inProxy = false;
+
+  window.localStorage.setItem = function(key, val) {
+    if (inProxy) return originalSetItem.call(this, key, val);
+    inProxy = true;
+    try {
+      const isDemo = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                     (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+                     (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) ||
+                     (originalGetItem.call(this, "is_demo_mode") === "true");
+
+      if (isDemo && ['products', 'parties', 'invoices', 'settings', 'recent_product_mutations', 'deleted_invoice_ids', 'deleted_party_ids'].includes(key)) {
+        try { sessionStorage.setItem('demo_' + key, val); } catch(e) {}
+        return; // NEVER touch live production localStorage keys in demo mode!
+      }
+    } catch(e) {} finally {
+      inProxy = false;
+    }
+    return originalSetItem.call(this, key, val);
+  };
+
+  window.localStorage.getItem = function(key) {
+    if (inProxy) return originalGetItem.call(this, key);
+    inProxy = true;
+    try {
+      const isDemo = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                     (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+                     (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) ||
+                     (originalGetItem.call(this, "is_demo_mode") === "true");
+
+      if (isDemo && ['products', 'parties', 'invoices', 'settings'].includes(key)) {
+        const snap = (typeof FIXED_DEMO_SNAPSHOT !== 'undefined' && FIXED_DEMO_SNAPSHOT) ? FIXED_DEMO_SNAPSHOT : (window.FIXED_DEMO_SNAPSHOT || null);
+        if (snap) {
+          if (key === 'products') return JSON.stringify(snap.products || []);
+          if (key === 'parties') return JSON.stringify(snap.parties || []);
+          if (key === 'invoices') {
+            const demoInvs = (typeof sessionStorage !== 'undefined') ? sessionStorage.getItem('demo_invoices') : null;
+            return demoInvs || JSON.stringify(snap.invoices || []);
+          }
+          if (key === 'settings') return JSON.stringify(snap.settings || {});
+        }
+      }
+    } catch(e) {} finally {
+      inProxy = false;
+    }
+    return originalGetItem.call(this, key);
+  };
+})();
+
+
 
 // ============================================================================
 // TURBO DATA STORE & INSTANT SYNCHRONOUS HYDRATION ENGINE (< 0.1ms Retrieval)
@@ -1636,6 +1960,10 @@ const processedRealtimeMsgIds = new Set();
 
 function processRealtimeSyncMessage(msg, source = 'mesh') {
   if (!msg || !msg.type) return;
+  if ((typeof window.isDemoMode === 'function' && window.isDemoMode()) || (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser())) {
+    return; // NEVER process realtime sync updates into demo mode!
+  }
+  if (msg.isDemo) return; // NEVER process demo messages into real database!
   if (msg.senderId && msg.senderId === MY_SYNC_CLIENT_ID) return; // Prevent self-echo
 
   // Sub-second deduplication across tri-channel bus
@@ -2230,6 +2558,9 @@ try {
 // 2. HTML5 Storage Event Listener for Cross-Tab instant sync (0.01ms)
 window.addEventListener('storage', (e) => {
   if (!e || !e.key) return;
+  if ((typeof window.isDemoMode === 'function' && window.isDemoMode()) || (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser())) {
+    return; // NEVER process storage sync events in demo mode!
+  }
   try {
     if (e.key === 'products' && e.newValue) {
       const parsed = JSON.parse(e.newValue);
@@ -2478,6 +2809,12 @@ try {
 
 // Unified Tri-Channel Broadcast Dispatcher (< 0.05ms tab / < 2ms LAN / < 30ms mesh)
 function broadcastInterTabEvent(type, payload = {}) {
+  // STRICT DEMO ISOLATION: Demo tabs must NEVER broadcast anything to real tabs or mesh!
+  if ((typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+      (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+      (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer"))) {
+    return;
+  }
   const fullMsg = {
     msgId: payload.msgId || ('msg_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8)),
     type,
@@ -2806,6 +3143,10 @@ async function pushDirectToGoogleDatabase(action, payload, maxRetries = 2) {
 window.pushDirectToGoogleDatabase = pushDirectToGoogleDatabase;
 
 function syncDatabaseToServer(type, data) {
+  if ((typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+      (typeof window.isDemoMode === 'function' && window.isDemoMode())) {
+    return; // STRICT DEMO ISOLATION: syncDatabaseToServer blocked in demo mode!
+  }
   window.lastSyncETag = null;
   let action = "";
   let payload = {};
@@ -2991,10 +3332,26 @@ window.updateRealtimePresenceHUD = function(status = "live") {
 };
 
 window.triggerDatabaseSync = async function(forceReload = false) {
-  if (typeof window.isDemoMode === 'function' && window.isDemoMode()) {
-    console.log("[DEMO MODE] Cloud sync bypassed.");
+  // STRICT DATA ISOLATION: Never sync live database for demo users or view-only mode!
+  if ((typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+      (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+      (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) ||
+      (typeof localStorage !== 'undefined' && localStorage.getItem("is_demo_mode") === "true")) {
     return null;
   }
+
+  // Never sync live business database for unauthenticated / unauthorized sessions
+  const currentEmail = ((typeof sessionStorage !== 'undefined' ? sessionStorage.getItem("current_user_email") : "") || "").toLowerCase().trim();
+  const isMainAdmin = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_main_admin") === "true") ||
+                      currentEmail === "kandukurijagan99@gmail.com" || currentEmail === "kandukurijagan88@gmail.com" ||
+                      currentEmail.startsWith("kandukurijagan") || currentEmail.startsWith("jagan");
+  const isAuthStaff = typeof window.isUserAuthorizedByAdmin === 'function' && currentEmail && window.isUserAuthorizedByAdmin(currentEmail);
+  const isPinUnlocked = (typeof localStorage !== 'undefined' && localStorage.getItem("app_authenticated") === "true" && localStorage.getItem("app_locked") !== "true" && (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_demo_mode") !== "true"));
+
+  if (!isMainAdmin && !isAuthStaff && !isPinUnlocked) {
+    return null;
+  }
+
   if (activeSyncPromise) {
     return activeSyncPromise;
   }
@@ -4051,7 +4408,22 @@ window.loginAsFreeViewer = function(customData = {}) {
   }
 
   // Load FIXED DEMO DATABASE and refresh all UI components immediately
-  loadAllDatabases();
+  const snapDemo = (typeof FIXED_DEMO_SNAPSHOT !== 'undefined' && FIXED_DEMO_SNAPSHOT) ? FIXED_DEMO_SNAPSHOT : (typeof window !== 'undefined' ? window.FIXED_DEMO_SNAPSHOT : null);
+  if (snapDemo) {
+    productsDb = JSON.parse(JSON.stringify(snapDemo.products || []));
+    partiesDb = JSON.parse(JSON.stringify(snapDemo.parties || []));
+    invoicesDb = JSON.parse(JSON.stringify(snapDemo.invoices || []));
+    globalSettings = JSON.parse(JSON.stringify(snapDemo.settings || snapDemo));
+    window.productsDb = productsDb;
+    window.partiesDb = partiesDb;
+    window.invoicesDb = invoicesDb;
+    window.globalSettings = globalSettings;
+    if (window.TurboDataStore && typeof window.TurboDataStore.rebuildIndexes === 'function') {
+      window.TurboDataStore.rebuildIndexes();
+    }
+  } else {
+    loadAllDatabases();
+  }
   if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
   if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
   if (typeof loadProductsDatabaseTable === 'function') loadProductsDatabaseTable();
@@ -4059,6 +4431,7 @@ window.loginAsFreeViewer = function(customData = {}) {
   if (typeof renderRecentInvoicesTable === 'function') renderRecentInvoicesTable();
   if (typeof renderCustomerLedgerSummary === 'function') renderCustomerLedgerSummary();
   if (typeof renderCustomersDirectoryView === 'function') renderCustomersDirectoryView();
+  if (typeof renderFrequentProductsBar === 'function') renderFrequentProductsBar();
   if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
 
   // Switch directly to GST Billing view
@@ -4543,9 +4916,17 @@ function initializeApp() {
   loadInitialSnapshot();
 
   // Instant parallel fetch from Supabase (<500ms) for real-time live data
-  if (typeof window.isDemoMode === 'function' && window.isDemoMode()) {
+  const isDemoEarly = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                      (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) ||
+                      (typeof localStorage !== 'undefined' && localStorage.getItem("is_demo_mode") === "true");
+  const curEmailEarly = ((typeof sessionStorage !== 'undefined' ? sessionStorage.getItem("current_user_email") : "") || "").toLowerCase().trim();
+  const isMainAdminEarly = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_main_admin") === "true") || curEmailEarly.startsWith("kandukurijagan") || curEmailEarly.startsWith("jagan");
+  const isStaffEarly = typeof window.isUserAuthorizedByAdmin === 'function' && curEmailEarly && window.isUserAuthorizedByAdmin(curEmailEarly);
+  const isUnlockedEarly = (typeof localStorage !== 'undefined' && localStorage.getItem("app_authenticated") === "true" && localStorage.getItem("app_locked") !== "true" && !isDemoEarly);
+
+  if (isDemoEarly) {
     console.log("[DEMO MODE] Supabase live invoices fetch bypassed for demo mode.");
-  } else if (window.SupabaseDB && typeof window.SupabaseDB.fetchInvoices === 'function') {
+  } else if ((isMainAdminEarly || isStaffEarly || isUnlockedEarly) && window.SupabaseDB && typeof window.SupabaseDB.fetchInvoices === 'function') {
     window.SupabaseDB.fetchInvoices().then(res => {
       if (res && res.ok && Array.isArray(res.invoices)) {
         let validInvs = res.invoices;
@@ -5393,6 +5774,10 @@ function findProductInDb(item) {
 
 // Real-World Differential Invoice Stock Reconciliation Engine
 function reconcileProductInventoryStock(oldInvoice, newInvoice) {
+  if ((typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+      (typeof window.isDemoMode === 'function' && window.isDemoMode())) {
+    return false; // STRICT DEMO ISOLATION: Never touch or reconcile inventory stock in demo mode!
+  }
   let modified = false;
   const productDeltas = new Map();
   const changedStockDeltas = [];
@@ -7873,6 +8258,13 @@ function bindBillingFormInputs() {
       return;
     }
 
+    if ((typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+        (typeof window.isDemoMode === 'function' && window.isDemoMode())) {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("⛔ Demo / View-Only Mode: Inward inventory restocking is strictly disabled.", "error", 4000);
+      }
+      return;
+    }
     const currentStock = Math.max(0, parseInt(prod.stock, 10) || 0);
     const unit = prod.unit || "Buckets";
     
@@ -8157,11 +8549,14 @@ function populateBillingSelectors() {
   const seenReceiverNames = new Set();
   const seenConsigneeNames = new Set();
 
+  const isDemo = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                 (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser());
+
   (partiesDb || []).forEach(p => {
     if (!p) return;
     const pName = String(p.name || '').trim();
     if (!pName) return; // Skip empty or blank records
-    if (pName.toLowerCase().includes('(sample)') || String(p.id || '').startsWith('demo_party_')) return;
+    if (!isDemo && (pName.toLowerCase().includes('(sample)') || String(p.id || '').startsWith('demo_party_') || p.isDemo === true)) return;
     
     custSet.add(pName);
     if (p.type === 'consignee') {

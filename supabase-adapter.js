@@ -17,6 +17,22 @@
 
   let client = null;
 
+  function isDemoActive() {
+    if (typeof window === 'undefined') return false;
+    if (typeof window.isDemoMode === 'function' && window.isDemoMode()) return true;
+    if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) return true;
+    if (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) return true;
+    if (typeof localStorage !== 'undefined' && localStorage.getItem("is_demo_mode") === "true") return true;
+    return false;
+  }
+
+  function getDemoSnapshot() {
+    if (typeof window !== 'undefined' && window.FIXED_DEMO_SNAPSHOT) return window.FIXED_DEMO_SNAPSHOT;
+    if (typeof FIXED_DEMO_SNAPSHOT !== 'undefined') return FIXED_DEMO_SNAPSHOT;
+    return null;
+  }
+
+
   function initClient() {
     if (client) return client;
     if (typeof window !== "undefined") {
@@ -57,6 +73,7 @@
 
     // --- INVOICES ---
     async upsertInvoice(inv) {
+      if (isDemoActive()) return { ok: true, isDemo: true, blocked: true };
       const sb = initClient();
       if (!sb || !inv || !inv.id) return { ok: false, error: "not_configured" };
 
@@ -96,6 +113,10 @@
     },
 
     async fetchInvoices() {
+      if (isDemoActive()) {
+        const snap = getDemoSnapshot();
+        return { ok: true, invoices: (snap && snap.invoices) ? JSON.parse(JSON.stringify(snap.invoices)) : [] };
+      }
       const sb = initClient();
       if (!sb) return { ok: false, error: "not_configured" };
 
@@ -151,6 +172,7 @@
     },
 
     async deleteInvoice(idOrInvoiceNo) {
+      if (isDemoActive()) return { ok: true, isDemo: true, blocked: true };
       const sb = initClient();
       if (!sb || !idOrInvoiceNo) return { ok: false, error: "not_configured" };
 
@@ -172,6 +194,7 @@
     },
 
     async clearAllInvoices() {
+      if (isDemoActive()) return { ok: true, isDemo: true, blocked: true };
       const sb = initClient();
       if (!sb) return { ok: false, error: "not_configured" };
 
@@ -187,6 +210,7 @@
 
     // --- PRODUCTS ---
     async upsertProduct(p) {
+      if (isDemoActive()) return { ok: true, isDemo: true, blocked: true };
       const sb = initClient();
       if (!sb || !p || !p.id) return { ok: false, error: "not_configured" };
 
@@ -212,6 +236,7 @@
     },
 
     async saveAllProducts(products) {
+      if (isDemoActive()) return { ok: true, isDemo: true, blocked: true };
       const sb = initClient();
       if (!sb || !Array.isArray(products) || products.length === 0) return { ok: false };
       const rows = products.map(p => ({
@@ -238,6 +263,10 @@
     },
 
     async fetchProducts() {
+      if (isDemoActive()) {
+        const snap = getDemoSnapshot();
+        return { ok: true, products: (snap && snap.products) ? JSON.parse(JSON.stringify(snap.products)) : [] };
+      }
       const sb = initClient();
       if (!sb) return { ok: false, error: "not_configured" };
 
@@ -281,6 +310,7 @@
 
     // --- CUSTOMERS & PARTIES ---
     async upsertCustomer(c) {
+      if (isDemoActive()) return { ok: true, isDemo: true, blocked: true };
       const sb = initClient();
       if (!sb || !c || !c.id) return { ok: false, error: "not_configured" };
 
@@ -355,6 +385,10 @@
     },
 
     async fetchCustomers() {
+      if (isDemoActive()) {
+        const snap = getDemoSnapshot();
+        return { ok: true, customers: (snap && snap.parties) ? JSON.parse(JSON.stringify(snap.parties)) : [] };
+      }
       const sb = initClient();
       if (!sb) return { ok: false, error: "not_configured" };
 
@@ -402,6 +436,7 @@
     },
 
     async deleteCustomer(id) {
+      if (isDemoActive()) return { ok: true, isDemo: true, blocked: true };
       const sb = initClient();
       if (!sb || !id) return { ok: false };
       const targetId = String(id).trim();
@@ -428,6 +463,7 @@
 
     // --- SETTINGS ---
     async saveSettings(settings) {
+      if (isDemoActive()) return { ok: true, isDemo: true, blocked: true };
       const sb = initClient();
       if (!sb || !settings) return { ok: false };
       const { error } = await sb.from("settings").upsert({
@@ -443,6 +479,10 @@
     },
 
     async fetchSettings() {
+      if (isDemoActive()) {
+        const snap = getDemoSnapshot();
+        return { ok: true, settings: (snap && snap.settings) ? JSON.parse(JSON.stringify(snap.settings)) : {} };
+      }
       const sb = initClient();
       if (!sb) return { ok: false };
       const { data, error } = await sb.from("settings").select("*").eq("key", "global_settings").maybeSingle();
