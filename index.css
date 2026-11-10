@@ -696,7 +696,7 @@ body {
   overflow-y: auto;
 }
 
-.nav-item {
+.nav-item, .sidebar-action-btn {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -714,7 +714,7 @@ body {
   position: relative;
 }
 
-.nav-item i {
+.nav-item i, .sidebar-action-btn i {
   font-size: 15px;
   width: 20px;
   text-align: center;
@@ -722,13 +722,13 @@ body {
   transition: color 0.2s ease, transform 0.2s ease;
 }
 
-.nav-item:hover {
+.nav-item:hover, .sidebar-action-btn:hover {
   background: #f1f5f9 !important;
   color: #0284c7 !important;
   transform: translateX(2px);
 }
 
-.nav-item:hover i {
+.nav-item:hover i, .sidebar-action-btn:hover i {
   color: #0284c7 !important;
   transform: scale(1.1);
 }
@@ -4261,7 +4261,7 @@ body.app-is-locked #live-session-timer-pill {
   .nav-item span {
     display: none;
   }
-  .nav-item {
+  .nav-item, .sidebar-action-btn {
     justify-content: center;
     padding: 12px;
   }
@@ -4720,7 +4720,7 @@ body.app-is-locked #live-session-timer-pill {
     overflow-x: auto;
   }
 
-  .nav-item {
+  .nav-item, .sidebar-action-btn {
     padding: 8px 12px;
     font-size: 12px;
     white-space: nowrap;
@@ -4848,7 +4848,7 @@ body.app-is-locked #live-session-timer-pill {
     gap: 4px;
   }
 
-  .nav-item {
+  .nav-item, .sidebar-action-btn {
     flex-direction: row;
     justify-content: flex-start;
     gap: 10px;
@@ -4860,7 +4860,7 @@ body.app-is-locked #live-session-timer-pill {
     width: 100%;
   }
 
-  .nav-item i {
+  .nav-item i, .sidebar-action-btn i {
     font-size: 15px;
   }
 
@@ -7075,7 +7075,7 @@ body.app-is-locked #live-session-timer-pill {
     box-sizing: border-box !important;
   }
 
-  .sidebar-nav .nav-item {
+  .sidebar-nav .nav-item, .sidebar-action-btn {
     padding: 12px 16px !important;
     font-size: 13.5px !important;
     font-weight: 600 !important;

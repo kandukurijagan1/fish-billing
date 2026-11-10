@@ -5960,6 +5960,7 @@ function setupRouting() {
   elements.navItems.forEach(btn => {
     btn.addEventListener("click", () => {
       const tabName = btn.getAttribute("data-tab");
+      if (!tabName) return;
       switchTab(tabName);
       closeMobileSidebar();
     });
@@ -5982,6 +5983,7 @@ window.closeMobileSidebar = function() {
 };
 
 window.switchTab = function(tabName) {
+  if (!tabName || typeof tabName !== 'string') return;
   if (isLocked) return;
 
   const currentRole = (sessionStorage.getItem("current_user_role") || "").toLowerCase().trim();
@@ -8941,13 +8943,6 @@ function getUniversalZxingReader() {
 }
 
 window.openBarcodeScannerModal = async function(initialTab = 'camera') {
-  if ((typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
-      (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser())) {
-    if (typeof showFloatingToast === 'function') {
-      showFloatingToast("🔒 Barcode scanning is not available in Demo account.", "info", 4000);
-    }
-    return;
-  }
   const modal = document.getElementById("barcode-scanner-modal");
   if (!modal) return;
   modal.classList.remove("hidden");
@@ -8974,6 +8969,8 @@ window.closeBarcodeScannerModal = function() {
     modal.style.display = "none";
   }
   stopBarcodeCamera();
+  lastScannedBarcodeValue = "";
+  lastScannedBarcodeTimestamp = 0;
   continuousSessionItems = [];
 };
 
@@ -9109,6 +9106,11 @@ function stopBarcodeCamera() {
     barcodeCameraStream = null;
   }
 
+  if (zxingReaderInstance && typeof zxingReaderInstance.reset === 'function') {
+    try { zxingReaderInstance.reset(); } catch(e) {}
+  }
+  zxingReaderInstance = null;
+
   const laserLine = document.getElementById("barcode-laser-line");
   if (laserLine) laserLine.classList.remove("qr-laser-active");
 
@@ -9161,31 +9163,22 @@ function startBarcodeDetectionLoop() {
 
       offscreenBarcodeCtx.drawImage(video, 0, 0, targetW, targetH);
 
-      // 2A. Try ZXing Universal MultiFormat Decoder on video or canvas
+      // 2A. Try ZXing Universal MultiFormat Decoder on offscreen canvas
       const zxReader = getUniversalZxingReader();
-      if (zxReader) {
+      if (zxReader && typeof ZXing !== 'undefined') {
         try {
-          const zxRes = zxReader.decode(video);
-          if (zxRes && zxRes.getText()) {
-            handleBarcodeCameraHit(zxRes.getText());
-            isBarcodeProcessingFrame = false;
-            return;
-          }
-        } catch (zxErr) {
-          try {
-            if (typeof ZXing !== 'undefined' && typeof ZXing.HTMLCanvasElementLuminanceSource === 'function') {
-              const lum = new ZXing.HTMLCanvasElementLuminanceSource(offscreenBarcodeCanvas);
-              const bin = new ZXing.HybridBinarizer(lum);
-              const bitmap = new ZXing.BinaryBitmap(bin);
-              const zxResCanvas = zxReader.decodeBitmap(bitmap);
-              if (zxResCanvas && zxResCanvas.getText()) {
-                handleBarcodeCameraHit(zxResCanvas.getText());
-                isBarcodeProcessingFrame = false;
-                return;
-              }
+          if (typeof ZXing.HTMLCanvasElementLuminanceSource === 'function') {
+            const lum = new ZXing.HTMLCanvasElementLuminanceSource(offscreenBarcodeCanvas);
+            const bin = new ZXing.HybridBinarizer(lum);
+            const bitmap = new ZXing.BinaryBitmap(bin);
+            const zxResCanvas = zxReader.decodeBitmap(bitmap);
+            if (zxResCanvas && zxResCanvas.getText()) {
+              handleBarcodeCameraHit(zxResCanvas.getText());
+              isBarcodeProcessingFrame = false;
+              return;
             }
-          } catch (canvasErr) {}
-        }
+          }
+        } catch (zxErr) {}
       }
 
       // 2B. Try jsQR for QR codes
