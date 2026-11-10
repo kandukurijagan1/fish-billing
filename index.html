@@ -6379,6 +6379,34 @@
 
           </div>
 
+          <!-- Unrecognized Barcode Quick Link & Add Card -->
+          <div id="barcode-unrecognized-card" style="display: none; margin-top: 12px; background: #1e293b; border: 1.5px solid #f59e0b; border-radius: 12px; padding: 12px 14px; text-align: left; box-shadow: 0 4px 15px rgba(0,0,0,0.4);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 12px; font-weight: 800; color: #fbbf24; display: flex; align-items: center; gap: 5px;">
+                <i class="fa-solid fa-triangle-exclamation"></i> Unrecognized Barcode: <strong id="unrecognized-barcode-val" style="color: #ffffff; font-family: monospace; font-size: 13px;"></strong>
+              </span>
+              <button type="button" onclick="document.getElementById('barcode-unrecognized-card').style.display='none'; if(typeof lastScannedBarcodeValue !== 'undefined') lastScannedBarcodeValue='';" style="background: none; border: none; color: #94a3b8; font-size: 16px; cursor: pointer;">&times;</button>
+            </div>
+            <p style="margin: 0 0 8px 0; font-size: 11px; color: #cbd5e1;">Link this scanned code to an existing product or quick-create a new catalog item:</p>
+            
+            <div style="background: #0f172a; padding: 8px 10px; border-radius: 8px; margin-bottom: 8px;">
+              <label style="font-size: 10px; color: #38bdf8; font-weight: 800; display: block; margin-bottom: 4px; text-transform: uppercase;">Option 1: Link to Existing Product</label>
+              <div style="display: flex; gap: 6px;">
+                <select id="quick-link-product-select" style="flex: 1; background: #1e293b; color: white; border: 1px solid #475569; border-radius: 6px; padding: 5px 8px; font-size: 11.5px; outline: none;"></select>
+                <button type="button" class="btn btn-sm btn-cyan" onclick="window.linkBarcodeToSelectedProduct()" style="padding: 5px 10px; font-size: 11px; font-weight: 800; cursor: pointer;">Link &amp; Add</button>
+              </div>
+            </div>
+
+            <div style="background: #0f172a; padding: 8px 10px; border-radius: 8px;">
+              <label style="font-size: 10px; color: #34d399; font-weight: 800; display: block; margin-bottom: 4px; text-transform: uppercase;">Option 2: Quick-Create New Product</label>
+              <div style="display: flex; gap: 6px;">
+                <input type="text" id="quick-create-prod-name" placeholder="Product name..." style="flex: 2; background: #1e293b; color: white; border: 1px solid #475569; border-radius: 6px; padding: 5px 8px; font-size: 11.5px; outline: none;" />
+                <input type="number" id="quick-create-prod-rate" placeholder="₹ Rate" style="flex: 1; background: #1e293b; color: white; border: 1px solid #475569; border-radius: 6px; padding: 5px 8px; font-size: 11.5px; outline: none;" />
+                <button type="button" class="btn btn-sm btn-success" onclick="window.quickCreateProductWithBarcode()" style="padding: 5px 10px; font-size: 11px; font-weight: 800; cursor: pointer;">+ Add</button>
+              </div>
+            </div>
+          </div>
+
           <!-- Continuous Session Scanned Items Basket Tray -->
           <div id="scanner-session-tray" class="scanner-session-tray" style="display: none; margin-top: 12px; background: #1e293b; border: 1.5px solid rgba(56, 189, 248, 0.35); border-radius: 10px; padding: 10px 12px; text-align: left;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">

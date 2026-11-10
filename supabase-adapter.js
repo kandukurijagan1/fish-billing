@@ -110,20 +110,42 @@
         return { ok: false, error };
       }
 
-      const invoices = (data || []).map((row) => ({
-        ...(row.raw_data || {}),
-        id: row.id,
-        invoiceNo: row.invoice_no,
-        date: row.date,
-        customerName: row.customer_name,
-        customerPhone: row.phone,
-        items: row.items,
-        grandTotal: Number(row.grand_total),
-        paidAmount: Number(row.paid_amount),
-        balanceDue: Number(row.balance_due),
-        paymentStatus: row.payment_status,
-        paymentMode: row.payment_mode
-      }));
+      const invoices = (data || []).map((row) => {
+        const raw = row.raw_data || {};
+        const grandTot = Number(row.grand_total !== undefined && row.grand_total !== null ? row.grand_total : (raw.grandTotal || raw.total || 0));
+        const paidAmt = Number(row.paid_amount !== undefined && row.paid_amount !== null ? row.paid_amount : (raw.paidAmount || 0));
+        const balDue = Number(row.balance_due !== undefined && row.balance_due !== null ? row.balance_due : (raw.balanceDue !== undefined ? raw.balanceDue : Math.max(0, grandTot - paidAmt)));
+        const hist = Array.isArray(raw.paymentHistory) ? raw.paymentHistory : [];
+        return {
+          ...raw,
+          id: row.id,
+          invoiceNo: row.invoice_no,
+          date: row.date,
+          customerName: row.customer_name,
+          customerPhone: row.phone,
+          items: row.items,
+          total: grandTot,
+          grandTotal: grandTot,
+          paidAmount: paidAmt,
+          balanceDue: balDue,
+          paymentStatus: row.payment_status || (balDue <= 0.01 ? "Paid" : (paidAmt > 0 ? "Partial" : "Unpaid")),
+          paymentMode: row.payment_mode || "Cash",
+          paymentHistory: hist,
+          details: {
+            ...raw,
+            id: row.id,
+            invoiceNo: row.invoice_no,
+            date: row.date,
+            total: grandTot,
+            grandTotal: grandTot,
+            paidAmount: paidAmt,
+            balanceDue: balDue,
+            paymentStatus: row.payment_status || (balDue <= 0.01 ? "Paid" : (paidAmt > 0 ? "Partial" : "Unpaid")),
+            paymentMode: row.payment_mode || "Cash",
+            paymentHistory: hist
+          }
+        };
+      });
 
       return { ok: true, invoices };
     },

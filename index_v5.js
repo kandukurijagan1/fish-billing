@@ -105,6 +105,29 @@ try {
     const localProds = JSON.parse(localStorage.getItem("products") || "null");
     productsDb = (Array.isArray(localProds) && localProds.length > 0) ? localProds : (snapLive.products || []);
     
+    // Client-side self-healing: Backfill barcodes and stock from master snapshot
+    if (Array.isArray(productsDb) && snapLive && Array.isArray(snapLive.products)) {
+      let needsSaveEarly = false;
+      productsDb.forEach(p => {
+        if (!p) return;
+        const master = snapLive.products.find(m => m && (m.id === p.id || (m.description && p.description && m.description.trim().toLowerCase() === p.description.trim().toLowerCase())));
+        if (master) {
+          if (!p.barcode && master.barcode) {
+            p.barcode = master.barcode;
+            needsSaveEarly = true;
+          }
+          if (p.stock === undefined || p.stock === null || p.stock <= 0) {
+            p.stock = master.stock || 100;
+            p.status = master.status || "In Stock";
+            needsSaveEarly = true;
+          }
+        }
+      });
+      if (needsSaveEarly) {
+        try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e) {}
+      }
+    }
+    
     const localParties = JSON.parse(localStorage.getItem("parties") || "null");
     partiesDb = (Array.isArray(localParties) && localParties.length > 0) ? localParties : (snapLive.parties || []);
     
@@ -5118,18 +5141,37 @@ window.loadAllDatabases = function loadAllDatabases() {
       productsDb = INITIAL_BOOTSTRAP_SNAPSHOT.products;
     }
     
-    // Client-side self-healing: Fix massive negative epoch numbers
+    // Client-side self-healing: Fix massive negative epoch numbers & backfill barcodes
+    const snapProds = (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.products)) ? INITIAL_BOOTSTRAP_SNAPSHOT.products : [];
     if (Array.isArray(productsDb)) {
+      let needsSaveLate = false;
       productsDb.forEach(p => {
         if (p) {
           let s = Number(p.stock);
           if (isNaN(s) || s < -100000 || s > 10000000) p.stock = 0;
           if ((!p.stock || p.stock === 0) && p.totalValue > 0 && p.price > 0) {
             p.stock = Math.round(p.totalValue / p.price);
+            needsSaveLate = true;
+          }
+          if (snapProds.length > 0) {
+            const master = snapProds.find(m => m && (m.id === p.id || (m.description && p.description && m.description.trim().toLowerCase() === p.description.trim().toLowerCase())));
+            if (master) {
+              if (!p.barcode && master.barcode) {
+                p.barcode = master.barcode;
+                needsSaveLate = true;
+              }
+              if (p.stock === undefined || p.stock === null || p.stock <= 0) {
+                p.stock = master.stock || 100;
+                p.status = master.status || "In Stock";
+                needsSaveLate = true;
+              }
+            }
           }
         }
       });
-      try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
+      if (needsSaveLate) {
+        try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
+      }
     }
 
   } catch(e) {}
@@ -8512,10 +8554,17 @@ async function startBarcodeCamera() {
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch (conErr) {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: barcodeCurrentFacing },
-        audio: false
-      });
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: barcodeCurrentFacing },
+          audio: false
+        });
+      } catch (faceErr) {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false
+        });
+      }
     }
 
     barcodeCameraStream = stream;
@@ -8631,17 +8680,31 @@ function startBarcodeDetectionLoop() {
 
       offscreenBarcodeCtx.drawImage(video, 0, 0, targetW, targetH);
 
-      // 2A. Try ZXing BrowserMultiFormatReader on canvas
+      // 2A. Try ZXing Universal MultiFormat Decoder on video or canvas
       const zxReader = getUniversalZxingReader();
-      if (zxReader && typeof zxReader.decodeFromCanvas === 'function') {
+      if (zxReader) {
         try {
-          const zxRes = zxReader.decodeFromCanvas(offscreenBarcodeCanvas);
+          const zxRes = zxReader.decode(video);
           if (zxRes && zxRes.getText()) {
             handleBarcodeCameraHit(zxRes.getText());
             isBarcodeProcessingFrame = false;
             return;
           }
-        } catch (zxErr) {}
+        } catch (zxErr) {
+          try {
+            if (typeof ZXing !== 'undefined' && typeof ZXing.HTMLCanvasElementLuminanceSource === 'function') {
+              const lum = new ZXing.HTMLCanvasElementLuminanceSource(offscreenBarcodeCanvas);
+              const bin = new ZXing.HybridBinarizer(lum);
+              const bitmap = new ZXing.BinaryBitmap(bin);
+              const zxResCanvas = zxReader.decodeBitmap(bitmap);
+              if (zxResCanvas && zxResCanvas.getText()) {
+                handleBarcodeCameraHit(zxResCanvas.getText());
+                isBarcodeProcessingFrame = false;
+                return;
+              }
+            }
+          } catch (canvasErr) {}
+        }
       }
 
       // 2B. Try jsQR for QR codes
@@ -8669,8 +8732,8 @@ function handleBarcodeCameraHit(rawCode) {
   if (!code) return;
 
   const now = Date.now();
-  // Anti-spam debounce: same barcode within 1400ms is ignored
-  if (code === lastScannedBarcodeValue && (now - lastScannedBarcodeTimestamp) < 1400) {
+  // Anti-spam debounce: same barcode within 1200ms is ignored; different barcode scans immediately
+  if (code === lastScannedBarcodeValue && (now - lastScannedBarcodeTimestamp) < 1200) {
     return;
   }
   lastScannedBarcodeValue = code;
@@ -8904,9 +8967,15 @@ async function scanCanvasMultiPass(canvas, startTime) {
 
   // PASS 1.5: ZXing Universal MultiFormat Decoder (Pure JS 1D Barcodes: EAN-13, EAN-8, UPC, Code 128, etc.)
   const zxDecoder = getUniversalZxingReader();
-  if (zxDecoder && typeof zxDecoder.decodeFromCanvas === 'function') {
+  if (zxDecoder && typeof ZXing !== 'undefined') {
     try {
-      const zxRes = zxDecoder.decodeFromCanvas(canvas);
+      let zxRes = null;
+      if (typeof ZXing.HTMLCanvasElementLuminanceSource === 'function') {
+        const lum = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+        const bin = new ZXing.HybridBinarizer(lum);
+        const bitmap = new ZXing.BinaryBitmap(bin);
+        zxRes = zxDecoder.decodeBitmap(bitmap);
+      }
       if (zxRes && zxRes.getText()) {
         const ms = Math.round(performance.now() - startTime);
         return {
@@ -9615,6 +9684,9 @@ window.handleScannedBarcode = function(code) {
   }
 
   if (matched) {
+    const unrecCard = document.getElementById("barcode-unrecognized-card");
+    if (unrecCard) unrecCard.style.display = "none";
+
     const addRes = window.addScannedProductToInvoice(matched);
 
     if (window.isContinuousScanMode) {
@@ -9626,8 +9698,11 @@ window.handleScannedBarcode = function(code) {
       }
     }
   } else {
+    if (typeof window.showUnrecognizedBarcodePrompt === 'function') {
+      window.showUnrecognizedBarcodePrompt(clean);
+    }
     if (typeof showFloatingToast === 'function') {
-      showFloatingToast('⚠️ Barcode: "' + clean + '" (No matching item in catalog). Add it in Products tab.', "warning", 4500);
+      showFloatingToast('⚠️ Barcode: "' + clean + '" not in catalog. Link to existing item or quick-create below.', "warning", 5000);
     }
   }
 };
@@ -18377,10 +18452,11 @@ window.applyRolePermissions = function(role) {
       topMeta.style.setProperty("display", "none", "important");
       topMeta.style.setProperty("visibility", "hidden", "important");
     }
-    if (typeof closeCustomerDetailsModal === 'function') closeCustomerDetailsModal();
-    if (typeof closeBalanceQrModal === 'function') closeBalanceQrModal();
-    const custMod = document.getElementById("customer-details-modal");
-    if (custMod) { custMod.classList.add("hidden"); custMod.style.cssText = "display: none !important; visibility: hidden !important; pointer-events: none !important;"; }
+    document.querySelectorAll('button[onclick*="openBarcodeScannerModal"], .btn-scan-barcode-picker, #btn-scan-barcode, .btn-hero[onclick*="openBarcodeScannerModal"]').forEach(b => {
+      b.style.setProperty("display", "none", "important");
+      b.style.setProperty("visibility", "hidden", "important");
+      b.style.setProperty("pointer-events", "none", "important");
+    });
     const balMod = document.getElementById("balance-qr-modal");
     if (balMod) { balMod.classList.add("hidden"); balMod.style.cssText = "display: none !important; visibility: hidden !important; pointer-events: none !important;"; }
   } else {
@@ -18392,12 +18468,11 @@ window.applyRolePermissions = function(role) {
       topMeta.style.removeProperty("display");
       topMeta.style.removeProperty("visibility");
     }
-    const custMod = document.getElementById("customer-details-modal");
-    if (custMod) {
-      custMod.style.removeProperty("visibility");
-      custMod.style.removeProperty("pointer-events");
-      custMod.style.removeProperty("z-index");
-    }
+    document.querySelectorAll('button[onclick*="openBarcodeScannerModal"], .btn-scan-barcode-picker, #btn-scan-barcode, .btn-hero[onclick*="openBarcodeScannerModal"]').forEach(b => {
+      b.style.removeProperty("display");
+      b.style.removeProperty("visibility");
+      b.style.removeProperty("pointer-events");
+    });
     const balMod = document.getElementById("balance-qr-modal");
     if (balMod) {
       balMod.style.removeProperty("visibility");
@@ -23780,3 +23855,152 @@ document.addEventListener("click", function(e) {
     }
   }
 });
+
+// ============================================================================
+// UNRECOGNIZED BARCODE QUICK-LINK & ADD ACTIONS
+// ============================================================================
+window.showUnrecognizedBarcodePrompt = function(barcode) {
+  const clean = String(barcode || "").trim();
+  if (!clean) return;
+
+  const card = document.getElementById("barcode-unrecognized-card");
+  const valEl = document.getElementById("unrecognized-barcode-val");
+  const selectEl = document.getElementById("quick-link-product-select");
+  if (!card) return;
+
+  if (valEl) valEl.textContent = clean;
+
+  if (selectEl) {
+    selectEl.innerHTML = '<option value="">-- Choose existing product to link --</option>';
+    const prods = Array.isArray(window.productsDb) ? window.productsDb : [];
+    prods.forEach(p => {
+      const desc = p.description || p.name || ('Product #' + p.id);
+      const bc = p.barcode ? (' [Barcode: ' + p.barcode + ']') : ' [No barcode]';
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = desc + ' (₹' + parseFloat(p.rate || 0).toFixed(2) + ')' + bc;
+      selectEl.appendChild(opt);
+    });
+  }
+
+  card.style.display = "block";
+};
+
+window.linkBarcodeToSelectedProduct = function() {
+  const card = document.getElementById("barcode-unrecognized-card");
+  const valEl = document.getElementById("unrecognized-barcode-val");
+  const selectEl = document.getElementById("quick-link-product-select");
+  const barcode = valEl ? valEl.textContent.trim() : "";
+  const prodId = selectEl ? selectEl.value : "";
+
+  if (!barcode) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("No barcode to link.", "warning");
+    return;
+  }
+  if (!prodId) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("Please select a product from the list.", "warning");
+    return;
+  }
+
+  const prods = Array.isArray(window.productsDb) ? window.productsDb : [];
+  const prod = prods.find(p => String(p.id) === String(prodId));
+  if (!prod) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("Selected product not found.", "error");
+    return;
+  }
+
+  prod.barcode = barcode;
+  if (prod.stock === undefined || prod.stock === null || prod.stock <= 0) {
+    prod.stock = 100;
+  }
+
+  try {
+    localStorage.setItem("products", JSON.stringify(prods));
+  } catch (e) {}
+  if (window.TurboDataStore && typeof window.TurboDataStore.rebuildIndexes === 'function') {
+    window.TurboDataStore.rebuildIndexes();
+  }
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured() && typeof window.SupabaseDB.upsertProduct === 'function') {
+    window.SupabaseDB.upsertProduct(prod).catch(() => {});
+  }
+
+  if (card) card.style.display = "none";
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast('🔗 Linked barcode ' + barcode + ' to "' + prod.description + '"! Adding to bill...', "success", 3500);
+  }
+
+  const addRes = window.addScannedProductToInvoice(prod);
+  if (window.isContinuousScanMode) {
+    window.showLiveScanFeedback(prod, addRes);
+  } else {
+    window.closeBarcodeScannerModal();
+  }
+};
+
+window.quickCreateProductWithBarcode = function() {
+  const card = document.getElementById("barcode-unrecognized-card");
+  const valEl = document.getElementById("unrecognized-barcode-val");
+  const nameInput = document.getElementById("quick-create-prod-name");
+  const rateInput = document.getElementById("quick-create-prod-rate");
+  const barcode = valEl ? valEl.textContent.trim() : "";
+  const name = nameInput ? nameInput.value.trim() : "";
+  const rate = rateInput ? parseFloat(rateInput.value) || 0 : 0;
+
+  if (!barcode) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("No barcode to create product for.", "warning");
+    return;
+  }
+  if (!name) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("Please enter a product name.", "warning");
+    if (nameInput) nameInput.focus();
+    return;
+  }
+  if (rate <= 0) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("Please enter a valid rate (₹).", "warning");
+    if (rateInput) rateInput.focus();
+    return;
+  }
+
+  const prods = Array.isArray(window.productsDb) ? window.productsDb : [];
+  const newProd = {
+    id: "prod_" + Date.now(),
+    description: name,
+    rate: rate,
+    salesRate: rate,
+    barcode: barcode,
+    stock: 100,
+    status: "In Stock",
+    category: "General",
+    gstRate: 0,
+    hsn: "3808"
+  };
+
+  prods.push(newProd);
+  window.productsDb = prods;
+
+  try {
+    localStorage.setItem("products", JSON.stringify(prods));
+  } catch (e) {}
+  if (window.TurboDataStore && typeof window.TurboDataStore.rebuildIndexes === 'function') {
+    window.TurboDataStore.rebuildIndexes();
+  }
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured() && typeof window.SupabaseDB.upsertProduct === 'function') {
+    window.SupabaseDB.upsertProduct(newProd).catch(() => {});
+  }
+  if (typeof renderProductsTable === 'function') renderProductsTable();
+
+  if (card) card.style.display = "none";
+  if (nameInput) nameInput.value = "";
+  if (rateInput) rateInput.value = "";
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast('✨ Created product "' + name + '" with barcode ' + barcode + '! Adding to bill...', "success", 3500);
+  }
+
+  const addRes = window.addScannedProductToInvoice(newProd);
+  if (window.isContinuousScanMode) {
+    window.showLiveScanFeedback(newProd, addRes);
+  } else {
+    window.closeBarcodeScannerModal();
+  }
+};

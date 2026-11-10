@@ -47,8 +47,21 @@
     }
     
     const d = inv.details || {};
-    const total = Number(inv.total !== undefined ? inv.total : (d.total !== undefined ? d.total : (d.grandTotal || 0)));
+    const total = Number(
+      inv.total !== undefined && inv.total !== null ? inv.total : 
+      (inv.grandTotal !== undefined && inv.grandTotal !== null ? inv.grandTotal : 
+      (inv.grand_total !== undefined && inv.grand_total !== null ? inv.grand_total : 
+      (d.total !== undefined && d.total !== null ? d.total : 
+      (d.grandTotal !== undefined && d.grandTotal !== null ? d.grandTotal : 
+      (d.grand_total !== undefined && d.grand_total !== null ? d.grand_total : 0)))))
+    );
     const paid = Number(inv.paidAmount !== undefined ? inv.paidAmount : (d.paidAmount || 0));
+    inv.total = total;
+    inv.grandTotal = total;
+    if (inv.details) {
+      inv.details.total = total;
+      inv.details.grandTotal = total;
+    }
 
     // Sort existing installments chronologically
     inv.paymentHistory.sort((a, b) => {
@@ -57,7 +70,7 @@
       return tA - tB;
     });
 
-    const recordedSum = inv.paymentHistory.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    const recordedSum = inv.paymentHistory.reduce((sum, p) => sum + (parseFloat(String(p.amount || 0).replace(/,/g, '')) || 0), 0);
 
     // Self-heal: If customer paid money upfront that wasn't logged into paymentHistory, prepend Installment #1
     if (paid - recordedSum > 0.01) {
@@ -81,19 +94,18 @@
     inv.paymentHistory.forEach((p, idx) => {
       p.installmentNo = idx + 1;
       if (!p.id) p.id = "pay_" + (idx + 1) + "_" + (inv.id || inv.invoiceNo || 'inv');
-      const amt = Number(p.amount || 0);
+      const amt = parseFloat(String(p.amount || 0).replace(/,/g, '')) || 0;
+      p.amount = amt;
       runningPaid = Math.round((runningPaid + amt) * 100) / 100;
       p.balanceAfter = Math.max(0, Math.round((total - runningPaid) * 100) / 100);
       p.status = (p.balanceAfter <= 0.01) ? "Paid" : "Partial";
     });
 
     // Synchronize root and details fields
-    if (inv.paymentHistory.length > 0) {
-      const finalBal = inv.paymentHistory[inv.paymentHistory.length - 1].balanceAfter;
-      inv.paidAmount = runningPaid;
-      inv.balanceDue = finalBal;
-      inv.paymentStatus = finalBal <= 0.01 ? "Paid" : (runningPaid > 0 ? "Partial" : "Unpaid");
-    }
+    const finalBal = inv.paymentHistory.length > 0 ? inv.paymentHistory[inv.paymentHistory.length - 1].balanceAfter : Math.max(0, Math.round((total - runningPaid) * 100) / 100);
+    inv.paidAmount = runningPaid;
+    inv.balanceDue = finalBal;
+    inv.paymentStatus = finalBal <= 0.01 ? "Paid" : (runningPaid > 0 ? "Partial" : "Unpaid");
 
     if (inv.details) {
       inv.details.paymentHistory = inv.paymentHistory;
@@ -152,6 +164,9 @@
       status: newStatus
     };
     inv.paymentHistory.push(newEntry);
+
+    // Re-run self-healing and sequential mathematical balance recalculation
+    window.ensureInvoicePaymentHistory(inv);
 
     // Update root and details fields
     inv.paidAmount = newPaid;
@@ -406,7 +421,7 @@
               mode: p.mode || "Cash",
               reference: p.reference || p.utr || "—",
               note: p.note || (idx === 0 ? "Upfront on-spot billing settlement" : `Installment #${p.installmentNo || (idx + 1)}`),
-              balanceAfter: p.balanceAfter !== undefined ? p.balanceAfter : Math.max(0, Math.round((invTotal - history.slice(0, idx + 1).reduce((s, x) => s + Number(x.amount || 0), 0)) * 100) / 100)
+              balanceAfter: Math.max(0, Math.round((invTotal - history.slice(0, idx + 1).reduce((s, x) => s + (parseFloat(String(x.amount || 0).replace(/,/g, '')) || 0), 0)) * 100) / 100)
             });
           });
         });
@@ -562,7 +577,7 @@
               return `
                 <tr class="cust-inv-main-row">
                   <td>
-                    <div style="font-weight: 800; color: #0284c7; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;" onclick="openInvoicePrintPreview('${safeInvId}', 'a4')" title="Open A4 Tax Invoice #${invNo}">
+                    <div style="font-weight: 800; color: #0284c7; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;" ${isViewUser ? (invBal > 0.01 ? `onclick="window.openInvoiceVerificationModal('${safeInvId}')" title="Click to Settle Bill #${invNo}"` : `onclick="if(typeof showFloatingToast==='function') showFloatingToast('🔒 Detailed invoice preview is restricted in Demo mode.', 'info', 4000);" title="Bill #${invNo} (Paid)"`) : `onclick="openInvoicePrintPreview('${safeInvId}', 'a4')" title="Open A4 Tax Invoice #${invNo}"`}>
                       <i class="fa-solid fa-file-invoice"></i> #${invNo}
                     </div>
                   </td>
@@ -588,12 +603,17 @@
                   <td style="text-align: center;">${statusBadge}</td>
                   <td style="text-align: center;">
                     <div style="display: flex; align-items: center; justify-content: center; gap: 5px;">
-                      ${invBal > 0.01 && !isViewUser
-                        ? `<button class="btn btn-xs" onclick="window.openRecordInstallmentModal('${safeInvId}', decodeURIComponent('${encCustName}'))" title="Record Next Installment for #${invNo}" style="padding: 4px 8px; font-size: 11px; font-weight: 800; border-radius: 6px; background: #0284c7; color: white; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-plus"></i> Installment</button>`
-                        : ''
+                      ${isViewUser
+                        ? (invBal > 0.01
+                            ? `<button class="btn btn-xs" onclick="window.openInvoiceVerificationModal('${safeInvId}')" title="Settle Bill #${invNo}" style="background: linear-gradient(135deg, #0284c7, #0369a1); color: #ffffff; border: none; padding: 4px 10px; font-size: 11.5px; font-weight: 700; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 1px 3px rgba(2, 132, 199, 0.35);"><i class="fa-solid fa-bolt" style="color: #38bdf8;"></i> Settle</button>`
+                            : `<span class="badge-status badge-paid" style="font-size: 11px; padding: 3px 8px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-circle-check"></i> Paid</span>`
+                          )
+                        : `
+                          ${invBal > 0.01 ? `<button class="btn btn-xs" onclick="window.openRecordInstallmentModal('${safeInvId}', decodeURIComponent('${encCustName}'))" title="Record Next Installment for #${invNo}" style="padding: 4px 8px; font-size: 11px; font-weight: 800; border-radius: 6px; background: #0284c7; color: white; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-plus"></i> Installment</button>` : ''}
+                          <button class="action-btn" onclick="openInvoicePrintPreview('${safeInvId}', 'a4')" title="Preview & Print A4 Invoice" style="padding: 5px 8px; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff; color: #0284c7; cursor: pointer;"><i class="fa-solid fa-print"></i></button>
+                          <button class="action-btn" onclick="if(window.shareInvoiceToWhatsApp) window.shareInvoiceToWhatsApp('${safeInvId}', this)" title="Share Bill on WhatsApp" style="padding: 5px 8px; border-radius: 6px; border: 1px solid rgba(22, 163, 74, 0.3); background: #f0fdf4; color: #16a34a; cursor: pointer;"><i class="fa-brands fa-whatsapp"></i></button>
+                        `
                       }
-                      <button class="action-btn" onclick="openInvoicePrintPreview('${safeInvId}', 'a4')" title="Preview & Print A4 Invoice" style="padding: 5px 8px; border-radius: 6px; border: 1px solid #cbd5e1; background: #ffffff; color: #0284c7; cursor: pointer;"><i class="fa-solid fa-print"></i></button>
-                      <button class="action-btn" onclick="if(window.shareInvoiceToWhatsApp) window.shareInvoiceToWhatsApp('${safeInvId}', this)" title="Share Bill on WhatsApp" style="padding: 5px 8px; border-radius: 6px; border: 1px solid rgba(22, 163, 74, 0.3); background: #f0fdf4; color: #16a34a; cursor: pointer;"><i class="fa-brands fa-whatsapp"></i></button>
                     </div>
                   </td>
                 </tr>
@@ -641,8 +661,12 @@
                                   ${inst.reference && inst.reference !== '—' ? `<strong>Ref:</strong> <span style="font-family: monospace;">${inst.reference}</span> ` : ''}
                                   ${inst.note && inst.note !== '—' ? `<span style="color: #64748b;">(${inst.note})</span>` : ''}
                                 </td>
-                                <td style="padding: 6px 10px; text-align: right; font-weight: 700; color: ${(inst.balanceAfter || 0) > 0.01 ? '#dc2626' : '#16a34a'};">
-                                  ₹ ${formatMoney(inst.balanceAfter !== undefined ? inst.balanceAfter : Math.max(0, Math.round((invTotal - history.slice(0, idx + 1).reduce((s, x) => s + Number(x.amount || 0), 0)) * 100) / 100))}
+                                <td style="padding: 6px 10px; text-align: right; font-weight: 700; color: ${(function(){
+                                  const exact = Math.max(0, Math.round((invTotal - history.slice(0, idx + 1).reduce((s, x) => s + (parseFloat(String(x.amount || 0).replace(/,/g, '')) || 0), 0)) * 100) / 100);
+                                  inst.balanceAfter = exact;
+                                  return exact > 0.01 ? '#dc2626' : '#16a34a';
+                                })()};">
+                                  ₹ ${formatMoney(inst.balanceAfter)}
                                 </td>
                                 <td style="padding: 6px 10px; text-align: center;">
                                   <button type="button" class="btn btn-xs" onclick="window.shareInstallmentReceiptWhatsApp('${safeInvId}', '${inst.id || idx}')" title="Send Installment Receipt to Customer via WhatsApp" style="background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-size: 11px;">
@@ -1118,6 +1142,17 @@
 
     // Close installment modal
     window.closeRecordInstallmentModal();
+
+    // Refresh Customer Statement & Overview tables immediately so subsequent actions work without reloading
+    const activeCustName = activeInstallmentModalTarget?.customerName || currentActiveCustomerStatement?.name;
+    if (activeCustName && typeof window.openCustomerDetailsModal === 'function') {
+      try { window.openCustomerDetailsModal(activeCustName); } catch(e){}
+    }
+    if (typeof renderCustomerLedgerSummary === 'function') renderCustomerLedgerSummary();
+    if (typeof window.renderCustomersDirectoryView === 'function') window.renderCustomersDirectoryView();
+    if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+    if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
+    if (typeof renderRecentInvoicesTable === 'function') renderRecentInvoicesTable();
 
     // Trigger WhatsApp receipt if requested
     if (shareWhatsApp && targetInvIdForReceipt) {

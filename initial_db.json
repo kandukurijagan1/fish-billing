@@ -12,10 +12,11 @@
       "rate": 1200,
       "discount": 0,
       "price": 1200,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 120000,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000018"
     },
     {
       "id": "prod-item-2",
@@ -26,10 +27,11 @@
       "rate": 3200,
       "discount": 0,
       "price": 3200,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 320000,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000025"
     },
     {
       "id": "prod-item-3",
@@ -40,10 +42,11 @@
       "rate": 750,
       "discount": 0,
       "price": 750,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 75000,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000032"
     },
     {
       "id": "prod-item-4",
@@ -54,10 +57,11 @@
       "rate": 2100,
       "discount": 0,
       "price": 2100,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 210000,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000049"
     },
     {
       "id": "prod-item-5",
@@ -68,10 +72,11 @@
       "rate": 600,
       "discount": 0,
       "price": 600,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 60000,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000056"
     },
     {
       "id": "prod-item-6",
@@ -82,10 +87,11 @@
       "rate": 850,
       "discount": 0,
       "price": 850,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 85000,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000063"
     },
     {
       "id": "prod-item-7",
@@ -96,10 +102,11 @@
       "rate": 1850,
       "discount": 0,
       "price": 1850,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 185000,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000070"
     },
     {
       "id": "prod-item-8",
@@ -110,10 +117,11 @@
       "rate": 1650,
       "discount": 0,
       "price": 1650,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 165000,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000087"
     },
     {
       "id": "prod-1789924485015-616",
@@ -124,10 +132,11 @@
       "rate": 3599,
       "discount": 44.75,
       "price": 1988.45,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 198845,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000094"
     },
     {
       "id": "prod-1789824170501-324",
@@ -138,10 +147,11 @@
       "rate": 6578,
       "discount": 10,
       "price": 5920.2,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 592020,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000100"
     },
     {
       "id": "prod-1790994121467-392",
@@ -152,10 +162,11 @@
       "rate": 1998,
       "discount": 44.75,
       "price": 1103.9,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 110390.00000000001,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000117"
     },
     {
       "id": "prod-1790994474131-36",
@@ -166,10 +177,11 @@
       "rate": 3999,
       "discount": 44.75,
       "price": 2209.45,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 220944.99999999997,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000124"
     },
     {
       "id": "prod-1790994596949-689",
@@ -180,10 +192,11 @@
       "rate": 777,
       "discount": 44.75,
       "price": 429.29,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 42929,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000131"
     },
     {
       "id": "prod-1790994734131-146",
@@ -194,10 +207,11 @@
       "rate": 3499,
       "discount": 44.75,
       "price": 1933.2,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 193320,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000148"
     },
     {
       "id": "prod-1790994844928-388",
@@ -208,10 +222,11 @@
       "rate": 3600,
       "discount": 44.75,
       "price": 1989,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 198900,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000155"
     },
     {
       "id": "prod-1790995091223-813",
@@ -222,10 +237,11 @@
       "rate": 1399,
       "discount": 44.75,
       "price": 772.95,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 77295,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000162"
     },
     {
       "id": "prod-1790995225735-859",
@@ -236,10 +252,11 @@
       "rate": 3600,
       "discount": 44.75,
       "price": 1989,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 198900,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000179"
     },
     {
       "id": "prod-1790995383065-172",
@@ -250,10 +267,11 @@
       "rate": 2499,
       "discount": 44.75,
       "price": 1380.7,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.490Z"
+      "stock": 100,
+      "totalValue": 138070,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.490Z",
+      "barcode": "8901001000186"
     },
     {
       "id": "prod-1790995525797-611",
@@ -264,10 +282,11 @@
       "rate": 2291,
       "discount": 44.75,
       "price": 1265.78,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.491Z"
+      "stock": 100,
+      "totalValue": 126578,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.491Z",
+      "barcode": "8901001000193"
     },
     {
       "id": "prod-1790995651833-117",
@@ -278,10 +297,11 @@
       "rate": 5499,
       "discount": 44.75,
       "price": 3038.2,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.491Z"
+      "stock": 100,
+      "totalValue": 303820,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.491Z",
+      "barcode": "8901001000209"
     },
     {
       "id": "prod-1790995729117-183",
@@ -292,10 +312,11 @@
       "rate": 5610,
       "discount": 44.75,
       "price": 3099.53,
-      "stock": 0,
-      "totalValue": 0,
-      "status": "Out of Stock",
-      "updatedAt": "2026-11-07T17:41:10.491Z"
+      "stock": 100,
+      "totalValue": 309953,
+      "status": "In Stock",
+      "updatedAt": "2026-11-07T17:41:10.491Z",
+      "barcode": "8901001000216"
     },
     {
       "id": "prod-1790995927081-48",
@@ -309,7 +330,8 @@
       "stock": 100,
       "totalValue": 28177,
       "status": "In Stock",
-      "updatedAt": "2026-11-07T17:41:10.491Z"
+      "updatedAt": "2026-11-07T17:41:10.491Z",
+      "barcode": "8901001000223"
     },
     {
       "id": "prod-1790996075194-124",
@@ -323,7 +345,8 @@
       "stock": 80,
       "totalValue": 207696,
       "status": "In Stock",
-      "updatedAt": "2026-11-07T17:41:10.491Z"
+      "updatedAt": "2026-11-07T17:41:10.491Z",
+      "barcode": "8901001000230"
     },
     {
       "id": "prod-1790996214743-461",
@@ -337,7 +360,8 @@
       "stock": 100,
       "totalValue": 138070,
       "status": "In Stock",
-      "updatedAt": "2026-11-07T17:41:10.491Z"
+      "updatedAt": "2026-11-07T17:41:10.491Z",
+      "barcode": "8901001000247"
     },
     {
       "id": "prod-1790996338625-655",
@@ -351,7 +375,8 @@
       "stock": 90,
       "totalValue": 54648,
       "status": "In Stock",
-      "updatedAt": "2026-11-07T17:41:10.491Z"
+      "updatedAt": "2026-11-07T17:41:10.491Z",
+      "barcode": "8901001000254"
     },
     {
       "id": "prod_demo_1",
@@ -365,7 +390,8 @@
       "stock": 45,
       "totalValue": 74250,
       "status": "In Stock",
-      "updatedAt": "2026-11-07T17:41:10.491Z"
+      "updatedAt": "2026-11-07T17:41:10.491Z",
+      "barcode": "8901001000261"
     },
     {
       "id": "prod_demo_2",
@@ -379,7 +405,8 @@
       "stock": 60,
       "totalValue": 51000,
       "status": "In Stock",
-      "updatedAt": "2026-11-07T17:41:10.491Z"
+      "updatedAt": "2026-11-07T17:41:10.491Z",
+      "barcode": "8901001000278"
     },
     {
       "id": "prod_demo_3",
@@ -393,7 +420,8 @@
       "stock": 35,
       "totalValue": 42000,
       "status": "In Stock",
-      "updatedAt": "2026-11-07T17:41:10.491Z"
+      "updatedAt": "2026-11-07T17:41:10.491Z",
+      "barcode": "8901001000285"
     },
     {
       "id": "prod_demo_4",
@@ -407,7 +435,8 @@
       "stock": 60,
       "totalValue": 36000,
       "status": "In Stock",
-      "updatedAt": "2026-11-07T17:41:10.491Z"
+      "updatedAt": "2026-11-07T17:41:10.491Z",
+      "barcode": "8901001000292"
     },
     {
       "id": "prod_demo_5",
@@ -421,7 +450,8 @@
       "stock": 25,
       "totalValue": 52500,
       "status": "In Stock",
-      "updatedAt": "2026-11-07T17:41:10.491Z"
+      "updatedAt": "2026-11-07T17:41:10.491Z",
+      "barcode": "8901001000308"
     },
     {
       "id": "prod_demo_6",
@@ -435,7 +465,8 @@
       "stock": 50,
       "totalValue": 37500,
       "status": "In Stock",
-      "updatedAt": "2026-11-07T17:41:10.491Z"
+      "updatedAt": "2026-11-07T17:41:10.491Z",
+      "barcode": "8901001000315"
     }
   ],
   "parties": [
