@@ -2138,6 +2138,9 @@
           lastDate: ""
         };
         custMap.set(norm, c);
+      } else {
+        if (!c.phone && p.phone) c.phone = String(p.phone).trim();
+        if (!c.address && p.address) c.address = String(p.address).trim();
       }
     });
 

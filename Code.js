@@ -2031,9 +2031,12 @@ function handleEmailBackupRequest(data) {
 
     var attachments = [];
 
-    // 1. Attach Master Excel Workbook (.xlsx) if Base64 is provided
+    // 1. Attach Master Excel Workbook (.xlsx)
     var hasExcel = false;
-    if (data.excelBase64) {
+    if (data.excelBlob) {
+      attachments.push(data.excelBlob);
+      hasExcel = true;
+    } else if (data.excelBase64) {
       try {
         var cleanBase64 = String(data.excelBase64).replace(/^data:.*base64,/, '').trim();
         var excelBytes = Utilities.base64Decode(cleanBase64);
@@ -2228,9 +2231,28 @@ function runScheduledCloudBackup(scheduleType) {
       settings: rawSettings
     };
 
+    var compName = (rawSettings && rawSettings.company && rawSettings.company.name) || "AARYAN_AQUA";
+    var fileDate = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd");
+    var excelBlob = null;
+    try {
+      var url = "https://docs.google.com/feeds/download/spreadsheets/Export?key=" + ss.getId() + "&exportFormat=xlsx";
+      var params = {
+        method: "get",
+        headers: { "Authorization": "Bearer " + ScriptApp.getOAuthToken() },
+        muteHttpExceptions: true
+      };
+      var res = UrlFetchApp.fetch(url, params);
+      if (res && res.getResponseCode() === 200) {
+        excelBlob = res.getBlob().setName(compName.replace(/[^a-zA-Z0-9]/g, "_") + "_Master_Database_" + fileDate + ".xlsx");
+      }
+    } catch (eXls) {
+      Logger.log("Automated spreadsheet export to xlsx error: " + eXls.message);
+    }
+
     handleEmailBackupRequest({
       email: targetEmail,
       backup: backupObj,
+      excelBlob: excelBlob,
       scheduleType: scheduleType
     });
   } catch (err) {

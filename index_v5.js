@@ -22231,11 +22231,122 @@ window.importDataFromMasterExcel = async function(event) {
       const workbook = XLSX.read(data, { type: 'array', cellDates: true });
       const sheetNames = workbook.SheetNames || [];
 
+      // 1. Smart Sheet Resolver: checks sheet name keyword first; if not found, inspects header row!
+      function findSheetByHeaderOrName(nameKeywords, headerKeywords) {
+        for (let i = 0; i < sheetNames.length; i++) {
+          const sName = sheetNames[i].toLowerCase();
+          if (nameKeywords.some(kw => sName.includes(kw))) {
+            return sheetNames[i];
+          }
+        }
+        for (let i = 0; i < sheetNames.length; i++) {
+          try {
+            const sheet = workbook.Sheets[sheetNames[i]];
+            if (!sheet) continue;
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, range: 0, defval: "" });
+            if (rows && rows.length > 0) {
+              const headerRow = (rows[0] || []).map(c => String(c).toLowerCase().trim());
+              const matchCount = headerKeywords.filter(kw => headerRow.some(h => h.includes(kw))).length;
+              if (matchCount >= 2 || (headerKeywords.length === 1 && matchCount === 1)) {
+                return sheetNames[i];
+              }
+            }
+          } catch(e) {}
+        }
+        return null;
+      }
+
+      const prodSheetName = findSheetByHeaderOrName(
+        ["stock", "product", "inventory"],
+        ["selling price", "cost rate", "hsn code", "stock quantity", "description"]
+      );
+
+      const custSheetName = findSheetByHeaderOrName(
+        ["customer", "part", "client", "buyer"],
+        ["customer / business name", "customer id", "billing address", "customer type", "state code"]
+      );
+
+      const itemsSheetName = findSheetByHeaderOrName(
+        ["line", "item"],
+        ["item description", "total item amount", "taxable value", "pack size"]
+      );
+
+      const paySheetName = findSheetByHeaderOrName(
+        ["payment", "ledger", "installment"],
+        ["installment no", "payment date", "remaining balance", "payment mode"]
+      );
+
+      const invSheetName = findSheetByHeaderOrName(
+        ["invoices_summary", "invoice_master", "bills", "sales"],
+        ["invoice number", "taxable subtotal", "document type", "grand total", "round off"]
+      ) || (sheetNames.find(s => s.toLowerCase().includes("invoice") && !s.toLowerCase().includes("item")));
+
+      // Single-sheet multi-table support (e.g. CSV or stacked Excel sheet)
+      let singleSheetProds = [];
+      let singleSheetCusts = [];
+      let singleSheetInvs = [];
+      let singleSheetItems = [];
+      let singleSheetPays = [];
+
+      if (sheetNames.length === 1 && (!prodSheetName && !custSheetName && !invSheetName)) {
+        try {
+          const sheet = workbook.Sheets[sheetNames[0]];
+          const rawGrid = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+          let curSection = null;
+          let curHeaders = [];
+
+          for (let r = 0; r < rawGrid.length; r++) {
+            const row = rawGrid[r];
+            if (!row || row.length === 0 || row.every(c => String(c).trim() === "")) continue;
+            const rowStr = row.map(c => String(c).toLowerCase().trim()).join(" , ");
+
+            if (rowStr.includes("description") && (rowStr.includes("selling price") || rowStr.includes("stock") || rowStr.includes("product id"))) {
+              curSection = "products";
+              curHeaders = row.map(c => String(c).trim());
+              continue;
+            }
+            if ((rowStr.includes("customer / business name") || rowStr.includes("customer name")) && (rowStr.includes("customer id") || rowStr.includes("billing address") || rowStr.includes("phone"))) {
+              curSection = "customers";
+              curHeaders = row.map(c => String(c).trim());
+              continue;
+            }
+            if (rowStr.includes("invoice number") && (rowStr.includes("document type") || rowStr.includes("taxable subtotal") || rowStr.includes("grand total"))) {
+              curSection = "invoices";
+              curHeaders = row.map(c => String(c).trim());
+              continue;
+            }
+            if (rowStr.includes("invoice number") && (rowStr.includes("item description") || rowStr.includes("pack size") || rowStr.includes("total item amount"))) {
+              curSection = "items";
+              curHeaders = row.map(c => String(c).trim());
+              continue;
+            }
+            if (rowStr.includes("installment no") || (rowStr.includes("invoice number") && rowStr.includes("amount paid") && rowStr.includes("payment mode"))) {
+              curSection = "payments";
+              curHeaders = row.map(c => String(c).trim());
+              continue;
+            }
+
+            if (curSection && curHeaders.length > 0) {
+              const rowObj = {};
+              curHeaders.forEach((h, colIdx) => {
+                if (h) rowObj[h] = row[colIdx];
+              });
+              if (curSection === "products") singleSheetProds.push(rowObj);
+              else if (curSection === "customers") singleSheetCusts.push(rowObj);
+              else if (curSection === "invoices") singleSheetInvs.push(rowObj);
+              else if (curSection === "items") singleSheetItems.push(rowObj);
+              else if (curSection === "payments") singleSheetPays.push(rowObj);
+            }
+          }
+        } catch (singleErr) {
+          console.warn("Single-sheet multi-table parse note:", singleErr);
+        }
+      }
+
       // A. Parse Products & Stock Master
-      const prodSheetName = sheetNames.find(s => s.toLowerCase().includes("stock") || s.toLowerCase().includes("product"));
       let importedProducts = [];
-      if (prodSheetName) {
-        const rawProds = XLSX.utils.sheet_to_json(workbook.Sheets[prodSheetName]);
+      const rawProds = prodSheetName ? XLSX.utils.sheet_to_json(workbook.Sheets[prodSheetName]) : singleSheetProds;
+      if (rawProds && rawProds.length > 0) {
         importedProducts = rawProds.map((row, idx) => {
           const desc = String(row["Description / Product Name"] || row["Description"] || row["Product Name"] || row["Item Name"] || row["description"] || "").trim();
           if (!desc) return null;
@@ -22269,10 +22380,9 @@ window.importDataFromMasterExcel = async function(event) {
       }
 
       // B. Parse Customer Directory
-      const custSheetName = sheetNames.find(s => s.toLowerCase().includes("customer") || s.toLowerCase().includes("part"));
       let importedParties = [];
-      if (custSheetName) {
-        const rawCusts = XLSX.utils.sheet_to_json(workbook.Sheets[custSheetName]);
+      const rawCusts = custSheetName ? XLSX.utils.sheet_to_json(workbook.Sheets[custSheetName]) : singleSheetCusts;
+      if (rawCusts && rawCusts.length > 0) {
         importedParties = rawCusts.map((row, idx) => {
           const name = String(row["Customer / Business Name"] || row["Customer Name"] || row["Name"] || row["name"] || "").trim();
           if (!name) return null;
@@ -22297,10 +22407,9 @@ window.importDataFromMasterExcel = async function(event) {
       }
 
       // C. Parse Invoice Line Items
-      const itemsSheetName = sheetNames.find(s => s.toLowerCase().includes("line") || s.toLowerCase().includes("item"));
       const itemsByInvoiceNo = new Map();
-      if (itemsSheetName) {
-        const rawItems = XLSX.utils.sheet_to_json(workbook.Sheets[itemsSheetName]);
+      const rawItems = itemsSheetName ? XLSX.utils.sheet_to_json(workbook.Sheets[itemsSheetName]) : singleSheetItems;
+      if (rawItems && rawItems.length > 0) {
         rawItems.forEach(row => {
           const rawInvNo = String(row["Invoice Number"] || row["Invoice No"] || row["Invoice #"] || row["invoiceNo"] || "").trim();
           if (!rawInvNo) return;
@@ -22328,10 +22437,9 @@ window.importDataFromMasterExcel = async function(event) {
       }
 
       // D. Parse Payment Ledger History
-      const paySheetName = sheetNames.find(s => s.toLowerCase().includes("payment") || s.toLowerCase().includes("ledger"));
       const paymentsByInvoiceNo = new Map();
-      if (paySheetName) {
-        const rawPay = XLSX.utils.sheet_to_json(workbook.Sheets[paySheetName]);
+      const rawPay = paySheetName ? XLSX.utils.sheet_to_json(workbook.Sheets[paySheetName]) : singleSheetPays;
+      if (rawPay && rawPay.length > 0) {
         rawPay.forEach(row => {
           const rawInvNo = String(row["Invoice Number"] || row["Invoice No"] || row["Invoice #"] || row["invoiceNo"] || "").trim();
           if (!rawInvNo) return;
@@ -22357,10 +22465,9 @@ window.importDataFromMasterExcel = async function(event) {
       }
 
       // E. Parse Invoices Summary
-      const invSheetName = sheetNames.find(s => s.toLowerCase().includes("invoices_summary") || (s.toLowerCase().includes("invoice") && !s.toLowerCase().includes("item")));
       let importedInvoices = [];
-      if (invSheetName) {
-        const rawInvs = XLSX.utils.sheet_to_json(workbook.Sheets[invSheetName]);
+      const rawInvs = invSheetName ? XLSX.utils.sheet_to_json(workbook.Sheets[invSheetName]) : singleSheetInvs;
+      if (rawInvs && rawInvs.length > 0) {
         importedInvoices = rawInvs.map((row, idx) => {
           const rawInvNo = String(row["Invoice Number"] || row["Invoice No"] || row["Invoice #"] || row["invoiceNo"] || `INV-${Date.now()}-${idx}`).trim();
           const cleanInvNo = rawInvNo.replace(/^#/, '');
@@ -22559,16 +22666,16 @@ window.importDataFromMasterExcel = async function(event) {
       }
 
       // CRITICAL: Clear ALL deletion tombstones, cancelled lists, and history clearance flags
-      localStorage.removeItem("deleted_party_ids");
-      localStorage.removeItem("deleted_invoice_ids");
-      localStorage.removeItem("cancelled_invoices");
-      localStorage.removeItem("database_history_cleared");
-      localStorage.removeItem("database_history_cleared_at");
-      window.databaseHistoryClearedAt = 0;
-      localStorage.removeItem("products_cleared");
-      localStorage.removeItem("deleted_product_ids");
-      localStorage.removeItem("deleted_customer_ids");
-      localStorage.removeItem("turbo_outbox_queue");
+      try {
+        ["deleted_party_ids", "deleted_invoice_ids", "cancelled_invoices",
+         "database_history_cleared", "database_history_cleared_at",
+         "products_cleared", "deleted_product_ids", "deleted_customer_ids",
+         "turbo_outbox_queue"].forEach(k => {
+          localStorage.removeItem(k);
+          try { sessionStorage.removeItem(k); } catch(e){}
+        });
+        window.databaseHistoryClearedAt = 0;
+      } catch(e) {}
 
       // Explicitly unblock each restored invoice
       importedInvoices.forEach(inv => {
@@ -22585,6 +22692,9 @@ window.importDataFromMasterExcel = async function(event) {
         if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllProducts === 'function') {
           window.TurboIndexedDB.saveAllProducts(productsDb);
         }
+        if (window.AaryanDB && typeof window.AaryanDB.saveAllProducts === 'function') {
+          window.AaryanDB.saveAllProducts(productsDb);
+        }
       }
 
       // 2. Commit Customers / Parties
@@ -22596,6 +22706,9 @@ window.importDataFromMasterExcel = async function(event) {
         if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllParties === 'function') {
           window.TurboIndexedDB.saveAllParties(partiesDb);
         }
+        if (window.AaryanDB && typeof window.AaryanDB.saveAllParties === 'function') {
+          window.AaryanDB.saveAllParties(partiesDb);
+        }
       }
 
       // 3. Commit Invoices
@@ -22603,10 +22716,15 @@ window.importDataFromMasterExcel = async function(event) {
         invoicesDb = importedInvoices;
         window.invoicesDb = invoicesDb;
         localStorage.setItem("invoices", JSON.stringify(invoicesDb));
-        if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveInvoice === 'function') {
+        if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllInvoices === 'function') {
+          window.TurboIndexedDB.saveAllInvoices(invoicesDb);
+        } else if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveInvoice === 'function') {
           for (let i = 0; i < invoicesDb.length; i++) {
             window.TurboIndexedDB.saveInvoice(invoicesDb[i]);
           }
+        }
+        if (window.AaryanDB && typeof window.AaryanDB.saveAllInvoices === 'function') {
+          window.AaryanDB.saveAllInvoices(invoicesDb);
         }
       }
 
@@ -22616,6 +22734,15 @@ window.importDataFromMasterExcel = async function(event) {
 
       // Refresh memory stores
       loadAllDatabases();
+
+      // Clear any search filter inputs on the tables
+      if (elements && elements.searchHistoryInput) elements.searchHistoryInput.value = "";
+      if (elements && elements.historyTypeFilter) elements.historyTypeFilter.value = "";
+      if (elements && elements.historyPaymentStatusFilter) elements.historyPaymentStatusFilter.value = "";
+      if (elements && elements.searchProductsInput) elements.searchProductsInput.value = "";
+      const custSearchInput = document.getElementById("search-customers-directory-input");
+      if (custSearchInput) custSearchInput.value = "";
+      window.isInitialSyncDone = true;
 
       // Refresh all UI views completely
       if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
@@ -22627,6 +22754,7 @@ window.importDataFromMasterExcel = async function(event) {
       if (typeof renderPartiesTable === 'function') renderPartiesTable();
       if (typeof window.renderCustomersDirectoryView === 'function') window.renderCustomersDirectoryView();
       if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+      if (typeof autoSuggestInvoiceNo === 'function') autoSuggestInvoiceNo(true);
       if (elements && elements.historyCount) elements.historyCount.textContent = String(invoicesDb.length);
 
       // Push restored data to Supabase Cloud Database in background
