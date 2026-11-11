@@ -11,7 +11,15 @@ const { createClient } = require('@supabase/supabase-js');
 
 const SUPABASE_URL = 'https://tfncblvaaemkbtvqnpdn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_D7LL7bdXwN1kEUeV3JEygQ_AdM_366s';
-const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  global: {
+    headers: {
+      'x-application-name': 'aaryan-aqua-billing',
+      'x-client-speed': 'turbo-v5',
+      'x-app-signature': 'aaryan_vault_sig_9f8e7d6c5b4a3210'
+    }
+  }
+});
 
 async function runAllTests() {
   console.log('====================================================');

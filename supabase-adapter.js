@@ -79,7 +79,8 @@
       global: {
         headers: {
           'x-application-name': 'aaryan-aqua-billing',
-          'x-client-speed': 'turbo-v5'
+          'x-client-speed': 'turbo-v5',
+          'x-app-signature': 'aaryan_vault_sig_9f8e7d6c5b4a3210'
         }
       }
     };
