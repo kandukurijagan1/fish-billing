@@ -459,7 +459,7 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=live_v80_quick_status_changer">
+  <link rel="stylesheet" href="index.css?v=live_v81_locked_status_private_qr">
 
   <script src="invoice_utils_v5.js?v=live_v62_google_script_endpoint_updated"></script>
 
@@ -6160,23 +6160,21 @@
         
 
         <!-- Verify & Pay QR Code card -->
-
         <div class="bottom-card qr-card" style="text-align: center;">
-
-          <div class="bottom-card-header" style="justify-content: center; background: #004b73; color: #ffffff;">
-
-            <i class="fa-solid fa-qrcode"></i> VERIFY & PAY
-
+          <div class="bottom-card-header" id="p-print-qr-header" style="justify-content: center; background: #004b73; color: #ffffff;">
+            <i class="fa-solid fa-qrcode"></i> <span id="p-print-qr-header-title">PAY VIA UPI</span>
           </div>
-
-          <div class="bottom-card-body" style="padding: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-
-            <img id="p-print-verify-qr-img" src="" alt="Scan to Verify & Pay" style="width: 72px; height: 72px; object-fit: contain; display: block; margin: 0 auto;">
-
-            <span style="font-size: 6pt; font-weight: 700; color: #004b73; display: block; margin-top: 2px;">Scan with Camera / UPI</span>
-
+          <div class="bottom-card-body" style="padding: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 82px;">
+            <div id="p-print-qr-paid-container" style="display: none; flex-direction: column; align-items: center; justify-content: center; padding: 6px 0;">
+              <i class="fa-solid fa-circle-check" style="font-size: 26px; color: #059669; margin-bottom: 3px;"></i>
+              <span style="font-size: 9.5pt; font-weight: 800; color: #059669; letter-spacing: 0.5px;">PAID</span>
+              <span style="font-size: 6pt; font-weight: 700; color: #64748b; margin-top: 1px;">Balance: ₹ 0.00</span>
+            </div>
+            <div id="p-print-qr-unpaid-container" style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+              <img id="p-print-verify-qr-img" src="" alt="Scan &amp; Pay via UPI" style="width: 72px; height: 72px; object-fit: contain; display: block; margin: 0 auto;">
+              <span id="p-print-qr-caption" style="font-size: 6pt; font-weight: 700; color: #004b73; display: block; margin-top: 2px;">Scan with UPI (GPay / PhonePe)</span>
+            </div>
           </div>
-
         </div>
 
         
@@ -11267,7 +11265,7 @@
 
 <script src="customer-timeline.js?v=live_v78_proper_status"></script>
 
-<script src="index_v5.js?v=live_v80_quick_status_changer"></script>
+<script src="index_v5.js?v=live_v81_locked_status_private_qr"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->

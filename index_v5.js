@@ -7345,27 +7345,10 @@ function updateDashboardOverview() {
               <span style="font-size: 9.5px; font-weight: 700; letter-spacing: 0.3px; padding: 1px 6px; border-radius: 4px; ${isEstimate ? 'background: #fffbeb; color: #b45309; border: 1px solid #fde68a;' : 'background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0;'} text-transform: uppercase;">
                 ${isEstimate ? 'Quotation' : 'GST Invoice'}
               </span>
-              ${isCustomerRole || isViewOnlyUser
-                ? `<span class="badge-status ${badgeClass}">${status}</span>${(!isPaid && balance > 0 ? `<div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>` : '')}`
-                : `<div class="quick-status-dropdown-wrap">
-                    <button type="button" class="badge-status ${badgeClass} quick-status-trigger-btn" onclick="window.toggleQuickStatusMenu('dash-${inv.id}', event)" title="Click to change payment status">
-                      <span>${status}</span>
-                      <i class="fa-solid fa-chevron-down" style="font-size: 8px; margin-left: 2px; opacity: 0.7;"></i>
-                    </button>
-                    <div id="quick-status-menu-dash-${inv.id}" class="quick-status-menu hidden" onclick="event.stopPropagation();">
-                      <div class="quick-status-menu-header">Change Payment Status</div>
-                      <button type="button" class="quick-status-option opt-paid" onclick="window.quickUpdateInvoicePaymentStatus('${inv.id}', 'Paid')">
-                        <i class="fa-solid fa-circle-check"></i> <span>Mark Paid</span>
-                      </button>
-                      <button type="button" class="quick-status-option opt-partial" onclick="window.quickUpdateInvoicePaymentStatus('${inv.id}', 'Partial')">
-                        <i class="fa-solid fa-circle-half-stroke"></i> <span>Mark Partial...</span>
-                      </button>
-                      <button type="button" class="quick-status-option opt-unpaid" onclick="window.quickUpdateInvoicePaymentStatus('${inv.id}', 'Unpaid')">
-                        <i class="fa-solid fa-circle-xmark"></i> <span>Mark Unpaid</span>
-                      </button>
-                    </div>
-                  </div>
-                  ${(!isPaid && balance > 0 ? `<div style="font-size: 10px; color: #b45309; font-weight: 700; cursor: pointer; margin-top: 2px;" onclick="openBalanceQrModal('${inv.id}')" title="Click to settle with UPI QR">Bal: ₹${formatCurrency(balance)}</div>` : '')}`
+              ${isPaid
+                ? `<span class="badge-status badge-paid" style="font-weight: 700; padding: 2px 8px; display: inline-flex; align-items: center; gap: 3px;"><i class="fa-solid fa-check" style="font-size: 9px;"></i> Paid</span>`
+                : `<span class="badge-status ${badgeClass}" ${!isCustomerRole && !isViewOnlyUser ? `onclick="openBalanceQrModal('${inv.id}')" style="cursor: pointer; display: inline-flex; align-items: center; gap: 3px;" title="Click to Settle Payment (Balance: ₹ ${formatCurrency(balance)})"` : 'style="display: inline-flex; align-items: center; gap: 3px;"'}><i class="${status === 'Partial' ? 'fa-solid fa-clock' : 'fa-solid fa-circle-exclamation'}" style="font-size: 9px;"></i> ${status}</span>
+                   <div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 1px; ${!isCustomerRole && !isViewOnlyUser ? 'cursor: pointer;' : ''}" ${!isCustomerRole && !isViewOnlyUser ? `onclick="openBalanceQrModal('${inv.id}')" title="Click to Settle Payment"` : ''}>Bal: ₹${formatCurrency(balance)}</div>`
               }
             </div>
           </td>
@@ -7384,13 +7367,6 @@ function updateDashboardOverview() {
                 <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); downloadSavedInvoicePdf('${inv.id}', this)"><i class="fa-solid fa-file-pdf text-rose"></i> Download PDF</a>
                 ${!isCustomerRole ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatInvoice('${inv.id}')"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i> Clone / Repeat Bill</a>` : ''}
                 ${balanceQrDropdownItem}
-                ${!isCustomerRole && !isViewOnlyUser ? `
-                  <div class="quick-status-menu-divider" style="margin: 4px 0;"></div>
-                  <div style="font-size: 10px; font-weight: 700; color: #94a3b8; padding: 2px 8px 4px; text-transform: uppercase;">Quick Change Status</div>
-                  ${status !== 'Paid' ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); quickUpdateInvoicePaymentStatus('${inv.id}', 'Paid')"><i class="fa-solid fa-circle-check" style="color: #10b981;"></i> Mark as Paid</a>` : ''}
-                  ${status !== 'Partial' ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); quickUpdateInvoicePaymentStatus('${inv.id}', 'Partial')"><i class="fa-solid fa-circle-half-stroke" style="color: #f59e0b;"></i> Mark as Partial...</a>` : ''}
-                  ${status !== 'Unpaid' ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); quickUpdateInvoicePaymentStatus('${inv.id}', 'Unpaid')"><i class="fa-solid fa-circle-xmark" style="color: #ef4444;"></i> Mark as Unpaid</a>` : ''}
-                ` : ''}
                 <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openUniversalInvoiceShareModal('${inv.id}')"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i> Universal Share Link</a>
                 <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openInvoiceVerificationModal('${inv.id || inv.invoiceNo}')"><i class="fa-solid fa-shield-check" style="color: #10b981;"></i> Verify &amp; Digital Receipt</a>
               </div>
@@ -12507,21 +12483,42 @@ function populateA4PrintOverlay(invoice) {
   const bankBranchEl = document.getElementById("p-print-bank-branch");
   if (bankBranchEl) bankBranchEl.textContent = bank.branch || "Repalle";
 
-  // Verification & Payment QR Code (High-Definition Client-Side Vector/PNG)
+  // Payment QR Code (Strict Privacy: NO website links, NO customer details, NO plain text data)
+  const isPaidInvoice = Boolean(invoice.balanceDue <= 0 || (invoice.paymentStatus && invoice.paymentStatus.toLowerCase() === 'paid'));
+  const qrPaidContainer = document.getElementById("p-print-qr-paid-container");
+  const qrUnpaidContainer = document.getElementById("p-print-qr-unpaid-container");
+  const qrHeaderTitle = document.getElementById("p-print-qr-header-title");
   const verifyQrImg = document.getElementById("p-print-verify-qr-img");
-  if (verifyQrImg) {
-    const verifyUrl = typeof window.getInvoiceVerificationUrl === "function"
-      ? window.getInvoiceVerificationUrl(invoice.invoiceNo, invoice)
-      : `https://kandukurijagan1.github.io/fish-billing/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
-    try {
-      if (typeof QRious !== 'undefined') {
-        const qr = new QRious({ value: verifyUrl, size: 400, level: 'M' });
-        verifyQrImg.src = qr.toDataURL('image/png');
-      } else {
-        verifyQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(verifyUrl)}`;
+
+  if (isPaidInvoice) {
+    // If invoice is PAID: NO QR CODE! Show clean official PAID seal. Nothing to scan, zero data exposed!
+    if (qrPaidContainer) qrPaidContainer.style.display = "flex";
+    if (qrUnpaidContainer) qrUnpaidContainer.style.display = "none";
+    if (qrHeaderTitle) qrHeaderTitle.textContent = "PAYMENT STATUS";
+    if (verifyQrImg) verifyQrImg.src = "";
+  } else {
+    // If UNPAID or PARTIAL: Show pure standard UPI Payment QR (NO website URL, NO customer name, NO customer phone)
+    if (qrPaidContainer) qrPaidContainer.style.display = "none";
+    if (qrUnpaidContainer) qrUnpaidContainer.style.display = "flex";
+    if (qrHeaderTitle) qrHeaderTitle.textContent = "SCAN & PAY UPI";
+
+    if (verifyQrImg) {
+      const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
+      const cName = (globalSettings.company?.name || "Aaryan Aqua Needs").replace(/[^a-zA-Z0-9 ]/g, '').trim();
+      const balAmt = parseFloat(invoice.balanceDue !== undefined ? invoice.balanceDue : (invoice.total || 0)) || 0;
+      // Standard Direct Banking UPI String ONLY - zero web URLs, zero customer info
+      const pureUpiUrl = `upi://pay?pa=${encodeURIComponent(realUpiId)}&pn=${encodeURIComponent(cName)}&am=${balAmt.toFixed(2)}&cu=INR`;
+
+      try {
+        if (typeof QRious !== 'undefined') {
+          const qr = new QRious({ value: pureUpiUrl, size: 400, level: 'M' });
+          verifyQrImg.src = qr.toDataURL('image/png');
+        } else {
+          verifyQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(pureUpiUrl)}`;
+        }
+      } catch (e) {
+        verifyQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(pureUpiUrl)}`;
       }
-    } catch (e) {
-      verifyQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(verifyUrl)}`;
     }
   }
 }
@@ -12594,20 +12591,36 @@ function populateThermalPrintOverlay(invoice) {
     if (dueContainer) dueContainer.style.display = "none";
   }
 
-  // Dynamic UPI Payment QR code for physical thermal slip
-  const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
-  const cName = globalSettings.company?.name || "Aaryan Aqua Needs";
-  const amountToPay = (invoice.balanceDue > 0 ? invoice.balanceDue : (invoice.total || taxableVal)) || 0;
-  const cleanInvNo = String(invoice.invoiceNo || '1').replace(/[^a-zA-Z0-9]/g, '');
-  const qrSuffix = (invoice.qrToken || invoice.id || "").toString().replace(/[^a-zA-Z0-9]/g, '').slice(-4).toUpperCase() || Math.random().toString(36).substring(2, 6).toUpperCase();
-  const upiTr = `${cleanInvNo}${qrSuffix}`.slice(-20);
-  const upiUrl = `upi://pay?pa=${realUpiId}&pn=${encodeURIComponent(cName.replace(/[^a-zA-Z0-9 ]/g, '').trim())}&am=${amountToPay.toFixed(2)}&cu=INR&tn=Bill${cleanInvNo}-${qrSuffix}&tr=${upiTr}`;
+  // Dynamic UPI Payment QR code for physical thermal slip (Strict Privacy)
+  const thUpiContainer = document.getElementById("th-upi-qr-container");
+  const isPaidThermal = Boolean(invoice.balanceDue <= 0 || (invoice.paymentStatus && invoice.paymentStatus.toLowerCase() === 'paid'));
   const qrImg = document.getElementById("th-upi-qr-img");
-  if (qrImg) {
-    const verifyUrl = typeof window.getInvoiceVerificationUrl === "function"
-      ? window.getInvoiceVerificationUrl(invoice.invoiceNo, invoice)
-      : `https://kandukurijagan1.github.io/fish-billing/?verify_invoice=${encodeURIComponent(invoice.invoiceNo)}`;
-    qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(verifyUrl)}`;
+
+  if (isPaidThermal) {
+    // If paid, hide the thermal QR container completely! No QR code on paid receipts!
+    if (thUpiContainer) thUpiContainer.style.display = "none";
+    if (qrImg) qrImg.src = "";
+  } else {
+    // Only if balance is due: show pure standard UPI payment QR (NO website URL, NO customer data)
+    if (thUpiContainer) thUpiContainer.style.display = "block";
+    const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
+    const cName = (globalSettings.company?.name || "Aaryan Aqua Needs").replace(/[^a-zA-Z0-9 ]/g, '').trim();
+    const amountToPay = (invoice.balanceDue > 0 ? invoice.balanceDue : (invoice.total || taxableVal)) || 0;
+    const cleanInvNo = String(invoice.invoiceNo || '1').replace(/[^a-zA-Z0-9]/g, '');
+    const upiUrl = `upi://pay?pa=${encodeURIComponent(realUpiId)}&pn=${encodeURIComponent(cName)}&am=${amountToPay.toFixed(2)}&cu=INR&tn=Bill${cleanInvNo}`;
+
+    if (qrImg) {
+      try {
+        if (typeof QRious !== 'undefined') {
+          const qr = new QRious({ value: upiUrl, size: 160, level: 'M' });
+          qrImg.src = qr.toDataURL('image/png');
+        } else {
+          qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(upiUrl)}`;
+        }
+      } catch (e) {
+        qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(upiUrl)}`;
+      }
+    }
   }
 }
 
@@ -16086,33 +16099,10 @@ function renderHistoryTableRows(records) {
             <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.3px; padding: 1.5px 7px; border-radius: 4px; ${isEstimate ? 'background: #fffbeb; color: #b45309; border: 1px solid #fde68a;' : 'background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0;'} text-transform: uppercase;">
               <i class="${isEstimate ? 'fa-solid fa-file-signature' : 'fa-solid fa-file-invoice'}" style="font-size: 9.5px; margin-right: 3px;"></i>${isEstimate ? 'Quotation' : 'GST Invoice'}
             </span>
-            ${isCustomerRole || isViewOnlyUser
-              ? `<span class="badge-status ${badgeClass}">${status}</span>${(!isPaid && balance > 0 ? `<div style="font-size: 10.5px; color: #b45309; font-weight: 700;">Bal: ₹${formatCurrency(balance)}</div>` : '')}`
-              : `<div class="quick-status-dropdown-wrap">
-                  <button type="button" class="badge-status ${badgeClass} quick-status-trigger-btn" onclick="window.toggleQuickStatusMenu('${inv.id}', event)" title="Click to change payment status">
-                    <span>${status}</span>
-                    <i class="fa-solid fa-chevron-down" style="font-size: 8px; margin-left: 2px; opacity: 0.7;"></i>
-                  </button>
-                  <div id="quick-status-menu-${inv.id}" class="quick-status-menu hidden" onclick="event.stopPropagation();">
-                    <div class="quick-status-menu-header">Change Payment Status</div>
-                    <button type="button" class="quick-status-option opt-paid" onclick="window.quickUpdateInvoicePaymentStatus('${inv.id}', 'Paid')">
-                      <i class="fa-solid fa-circle-check"></i> <span>Mark Paid</span>
-                    </button>
-                    <button type="button" class="quick-status-option opt-partial" onclick="window.quickUpdateInvoicePaymentStatus('${inv.id}', 'Partial')">
-                      <i class="fa-solid fa-circle-half-stroke"></i> <span>Mark Partial...</span>
-                    </button>
-                    <button type="button" class="quick-status-option opt-unpaid" onclick="window.quickUpdateInvoicePaymentStatus('${inv.id}', 'Unpaid')">
-                      <i class="fa-solid fa-circle-xmark"></i> <span>Mark Unpaid</span>
-                    </button>
-                    ${!isPaid && balance > 0 ? `
-                      <div class="quick-status-menu-divider"></div>
-                      <button type="button" class="quick-status-option opt-qr" onclick="closeAllActionDropdowns(); openBalanceQrModal('${inv.id}')">
-                        <i class="fa-solid fa-qrcode"></i> <span>Scan UPI QR (₹ ${formatCurrency(balance)})</span>
-                      </button>
-                    ` : ''}
-                  </div>
-                </div>
-                ${(!isPaid && balance > 0 ? `<div style="font-size: 10.5px; color: #b45309; font-weight: 700; cursor: pointer;" onclick="openBalanceQrModal('${inv.id}')" title="Click to settle balance with UPI QR">Bal: ₹${formatCurrency(balance)}</div>` : '')}`
+            ${isPaid
+              ? `<span class="badge-status badge-paid" style="font-weight: 700; padding: 3px 10px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-check" style="font-size: 10px;"></i> Paid</span>`
+              : `<span class="badge-status ${badgeClass}" ${!isCustomerRole && !isViewOnlyUser ? `onclick="openBalanceQrModal('${inv.id}')" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to Settle Payment / Scan UPI QR (Balance: ₹ ${formatCurrency(balance)})"` : 'style="display: inline-flex; align-items: center; gap: 4px;"'}><i class="${status === 'Partial' ? 'fa-solid fa-clock' : 'fa-solid fa-circle-exclamation'}" style="font-size: 10px;"></i> ${status}</span>
+                 <div style="font-size: 10.5px; color: #b45309; font-weight: 700; ${!isCustomerRole && !isViewOnlyUser ? 'cursor: pointer;' : ''}" ${!isCustomerRole && !isViewOnlyUser ? `onclick="openBalanceQrModal('${inv.id}')" title="Click to Settle Payment"` : ''}>Bal: ₹${formatCurrency(balance)}</div>`
             }
           </div>
         </td>
@@ -16133,13 +16123,6 @@ function renderHistoryTableRows(records) {
                   <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatSavedInvoice('${inv.id}')"><i class="fa-solid fa-repeat text-indigo"></i> Repeat as New Bill</a>
                   ${convertEstimateDropdownItem}
                   ${balanceQrDropdownItem}
-                  ${!isCustomerRole && !isViewOnlyUser ? `
-                    <div class="quick-status-menu-divider" style="margin: 4px 0;"></div>
-                    <div style="font-size: 10px; font-weight: 700; color: #94a3b8; padding: 2px 8px 4px; text-transform: uppercase;">Quick Change Status</div>
-                    ${status !== 'Paid' ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); quickUpdateInvoicePaymentStatus('${inv.id}', 'Paid')"><i class="fa-solid fa-circle-check" style="color: #10b981;"></i> Mark as Paid</a>` : ''}
-                    ${status !== 'Partial' ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); quickUpdateInvoicePaymentStatus('${inv.id}', 'Partial')"><i class="fa-solid fa-circle-half-stroke" style="color: #f59e0b;"></i> Mark as Partial...</a>` : ''}
-                    ${status !== 'Unpaid' ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); quickUpdateInvoicePaymentStatus('${inv.id}', 'Unpaid')"><i class="fa-solid fa-circle-xmark" style="color: #ef4444;"></i> Mark as Unpaid</a>` : ''}
-                  ` : ''}
                   <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); shareInvoiceToTelegram('${inv.id}', this)"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i> Share via Telegram</a>
                   <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openUniversalInvoiceShareModal('${inv.id}')"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i> Universal Share Link</a>
                 </div>
@@ -16646,6 +16629,15 @@ window.quickUpdateInvoicePaymentStatus = async function(invoiceId, newStatus) {
   if (!inv) {
     if (typeof showFloatingToast === 'function') {
       showFloatingToast("Invoice record not found.", "error", 3000);
+    }
+    return;
+  }
+
+  // Strict Accounting Lock: Paid bills cannot be downgraded to Unpaid
+  const currentPayInfo = typeof getInvoicePaidAndBalance === 'function' ? getInvoicePaidAndBalance(inv) : { isPaid: inv.paymentStatus === 'Paid' };
+  if (currentPayInfo.isPaid && newStatus === "Unpaid") {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("🔒 Access Denied: Completed Paid invoices are locked and cannot be changed to Unpaid.", "warning", 4000);
     }
     return;
   }
@@ -25382,24 +25374,13 @@ window.getInvoiceVerificationUrl = function(invoiceNo, invoiceObj = null) {
   const cleanNo = String(invoiceNo || '').trim();
   let url = `${baseUrl}/?verify_invoice=${encodeURIComponent(cleanNo)}`;
 
+  // Strict Privacy: Never expose customer names, phone numbers, or amounts in public query strings
   if (invoiceObj) {
     const details = invoiceObj.details || invoiceObj;
     const invId = invoiceObj.id || details.id || "";
     const qrToken = invoiceObj.qrToken || details.qrToken || "";
-    const cust = invoiceObj.buyerName || details.buyer?.name || invoiceObj.customerName || '';
-    const phone = details.buyer?.phone || invoiceObj.phone || invoiceObj.customerPhone || '';
-    const total = invoiceObj.total || details.total || 0;
-    const paid = invoiceObj.paidAmount !== undefined ? invoiceObj.paidAmount : (invoiceObj.status === 'Paid' ? total : 0);
-    const bal = invoiceObj.balanceDue !== undefined ? invoiceObj.balanceDue : Math.max(0, total - paid);
-    const dt = invoiceObj.invoiceDate || details.invoiceDate || invoiceObj.date || '';
-
     if (invId) url += `&id=${encodeURIComponent(invId)}`;
     if (qrToken) url += `&token=${encodeURIComponent(qrToken)}`;
-    url += `&cust=${encodeURIComponent(cust)}&ph=${encodeURIComponent(phone)}&tot=${total}&paid=${paid}&bal=${bal}&dt=${encodeURIComponent(dt)}`;
-    if (typeof AppSecurity !== "undefined" && AppSecurity.generateInvoiceSig) {
-      const sig = AppSecurity.generateInvoiceSig(cleanNo, total, cust, qrToken);
-      url += `&sig=${encodeURIComponent(sig)}`;
-    }
   }
   return url;
 };
