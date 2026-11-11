@@ -25,22 +25,22 @@
     },
     "upiId": "7386262139@upi",
     "telegram": {
-      "token": "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g",
-      "chatId": "6877857251, 7906132548",
+      "token": "",
+      "chatId": "",
       "botUsername": "fishbilling_bot_bot",
-      "autoSend": true
+      "autoSend": false
     },
     "security": {
       "autolock": "60",
       "username": "kandukurijagan99@gmail.com",
       "email": "kandukurijagan99@gmail.com",
-      "password": "Aaryan@2024",
+      "password": "",
       "whatsappLockEnabled": false,
-      "whatsappPin": "2024",
+      "whatsappPin": "",
       "whatsappAutoLockMinutes": "15",
       "whatsappMaskPhones": true,
       "whatsappProtectChats": true,
-      "securityPin": "2024",
+      "securityPin": "",
       "strictBootLock": true,
       "counterPrivacyMode": false
     },

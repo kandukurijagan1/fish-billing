@@ -101,18 +101,46 @@ const server = http.createServer((req, res) => {
   }
 
   if (reqPath === '/' || reqPath === '') reqPath = '/index.html';
-  const filePath = path.join(__dirname, reqPath);
 
-  fs.readFile(filePath, (err, content) => {
+  // Security: Prevent path traversal and unauthorized local file access (CWE-22)
+  if (reqPath.includes('..') || reqPath.includes('\0')) {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('400 Bad Request: Invalid path characters');
+    return;
+  }
+
+  const safeBaseDir = path.resolve(__dirname);
+  const normalizedPath = path.normalize(reqPath).replace(/^(\.\.[\/\\])+/, '');
+  const resolvedPath = path.resolve(safeBaseDir, '.' + path.sep + normalizedPath);
+
+  // Enforce root containment boundary
+  if (!resolvedPath.startsWith(safeBaseDir)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('403 Forbidden: Access denied');
+    return;
+  }
+
+  // Block access to sensitive dotfiles, environment files, and internal session folders
+  const relPath = path.relative(safeBaseDir, resolvedPath);
+  const baseName = path.basename(resolvedPath);
+  if (baseName.startsWith('.') || relPath.startsWith('.env') || relPath.startsWith('.git') || relPath.startsWith('data' + path.sep) || relPath.startsWith('node_modules' + path.sep)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('403 Forbidden: Protected file');
+    return;
+  }
+
+  fs.readFile(resolvedPath, (err, content) => {
     if (err) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('404 Not Found');
       return;
     }
-    const ext = path.extname(filePath);
+    const ext = path.extname(resolvedPath);
     res.writeHead(200, {
       'Content-Type': mimeTypes[ext] || 'text/plain',
-      'Cache-Control': 'no-cache'
+      'Cache-Control': 'no-cache',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'SAMEORIGIN'
     });
     res.end(content);
   });

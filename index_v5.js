@@ -2694,7 +2694,8 @@ function initRealtimeMeshSync() {
       console.log(`⚡ High-Speed Cross-User Mesh Active via ${activeBrokerName}!`);
       realtimeMeshClient.subscribe(SYNC_MESH_TOPIC, { qos: 0 });
       realtimeMeshClient.subscribe(LEGACY_SYNC_MESH_TOPIC, { qos: 0 });
-      realtimeMeshClient.subscribe(RETAINED_DB_TOPIC, { qos: 0 });
+      // Security: Do not subscribe to unauthenticated public broker retained DB topic (OWASP A01/A05)
+      // realtimeMeshClient.subscribe(RETAINED_DB_TOPIC, { qos: 0 });
       realtimeMeshClient.subscribe('aaryan_aqua_gst_billing_2026/whatsapp_status', { qos: 0 });
       realtimeMeshClient.subscribe('aaryan_aqua_gst_billing_2026/whatsapp_ack', { qos: 0 });
       // Announce presence and request state from any active peer
@@ -2925,30 +2926,9 @@ function broadcastInterTabEvent(type, payload = {}) {
 }
 
 window.publishRetainedDatabaseState = function() {
-  if (!realtimeMeshClient || !realtimeMeshClient.connected) return;
-  const isDemoSession = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
-                        (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
-                        (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer"));
-  if (isDemoSession) return; // Strict air-gap: Demo sessions must NEVER broadcast to retained topic!
-  try {
-    const bundle = {
-      invoices: invoicesDb,
-      products: productsDb,
-      parties: partiesDb,
-      settings: globalSettings,
-      version: Date.now(),
-      senderId: MY_SYNC_CLIENT_ID
-    };
-    AppWireSecurity.pack(bundle).then(wire => {
-      if (realtimeMeshClient && realtimeMeshClient.connected && wire) {
-        realtimeMeshClient.publish(RETAINED_DB_TOPIC, wire, { qos: 0, retain: true });
-      }
-    }).catch(() => {
-      try {
-        realtimeMeshClient.publish(RETAINED_DB_TOPIC, JSON.stringify(bundle), { qos: 0, retain: true });
-      } catch (_) {}
-    });
-  } catch (e) {}
+  // Security hardened: Do not publish full database bundles over unauthenticated public MQTT brokers.
+  // Database mutations are synchronized via secure Supabase WebSocket channel and local BroadcastChannel.
+  return;
 };
 
 window.broadcastDatabaseMutation = function(extra = {}) {
@@ -6264,16 +6244,16 @@ window.loadAllDatabases = function loadAllDatabases() {
 
   if (!globalSettings.telegram) {
     globalSettings.telegram = {
-      token: "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g",
-      chatId: "6877857251, 7906132548",
-      botUsername: "fishbilling_bot_bot",
-      autoSend: true
+      token: "",
+      chatId: "",
+      botUsername: "",
+      autoSend: false
     };
     try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch (e) {}
   } else {
     let tgUpdated = false;
-    if (!globalSettings.telegram.token || globalSettings.telegram.token.trim() === "") {
-      globalSettings.telegram.token = "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g";
+    if (!globalSettings.telegram.token) {
+      globalSettings.telegram.token = "";
       tgUpdated = true;
     }
     if (!globalSettings.telegram.botUsername) {
@@ -12757,8 +12737,9 @@ async function sendTelegramTextMessage(messageText) {
   if (!globalSettings || !globalSettings.telegram) {
     try { globalSettings = JSON.parse(localStorage.getItem("settings") || "{}"); } catch (e) {}
   }
-  const token = (globalSettings.telegram?.token || "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g").trim();
-  let rawChatId = (globalSettings.telegram?.chatId || "6877857251, 7906132548").trim();
+  const token = (globalSettings.telegram?.token || "").trim();
+  if (!token) return false;
+  let rawChatId = (globalSettings.telegram?.chatId || "").trim();
 
   if (!rawChatId.includes("7906132548")) {
     rawChatId = rawChatId ? (rawChatId + ", 7906132548") : "6877857251, 7906132548";
@@ -16042,9 +16023,11 @@ function renderHistoryTableRows(records) {
       `;
     }
 
-    const consigneeDisplay = (details.consignee?.name) ? details.consignee.name : (inv.customerName || (details.buyer && details.buyer.name) || 'Cash Customer');
+    const rawConsignee = (details.consignee?.name) ? details.consignee.name : (inv.customerName || (details.buyer && details.buyer.name) || 'Cash Customer');
+    const consigneeDisplay = escapeHtml(rawConsignee);
+    const encConsignee = encodeURIComponent(rawConsignee);
     const subBuyerText = (details.consignee?.name && details.buyer?.name && details.consignee.name !== details.buyer.name)
-      ? `<div style="font-size: 11px; color: #64748b; font-weight: 500;">Billed: ${details.buyer.name}</div>`
+      ? `<div style="font-size: 11px; color: #64748b; font-weight: 500;">Billed: ${escapeHtml(details.buyer.name)}</div>`
       : '';
     const invDate = inv.invoiceDate || details.invoiceDate || inv.date || details.date || '';
     const itemsCount = (inv.itemsCount !== undefined && inv.itemsCount !== null && !isNaN(inv.itemsCount))
@@ -16062,7 +16045,7 @@ function renderHistoryTableRows(records) {
         <td style="font-weight: 600;">
           ${isViewOnlyUser
             ? `<span style="color: #0f172a;">${consigneeDisplay}</span>${subBuyerText}`
-            : `<span style="color: #0369a1; text-decoration: underline; text-underline-offset: 2px; cursor: pointer;" onclick="if(window.openCustomerDetailsModal) window.openCustomerDetailsModal('${String(consigneeDisplay).replace(/'/g, "\\'")}')" title="Click to view complete history for ${consigneeDisplay}">${consigneeDisplay}</span>${subBuyerText}`
+            : `<span style="color: #0369a1; text-decoration: underline; text-underline-offset: 2px; cursor: pointer;" onclick="if(window.openCustomerDetailsModal) window.openCustomerDetailsModal(decodeURIComponent('${encConsignee}'))" title="Click to view complete history for ${consigneeDisplay}">${consigneeDisplay}</span>${subBuyerText}`
           }
         </td>
         <td class="text-center">${itemsCount}</td>
@@ -17665,16 +17648,16 @@ function renderProductsTable(records) {
               <i class="fa-solid fa-box"></i>
             </div>
             <div>
-              <div style="font-weight: 700; color: #0f172a; font-size: 13px;">${p.description}</div>
-              <div style="font-size: 11px; color: #64748b;">${p.unit || 'Bucket'}</div>
+              <div style="font-weight: 700; color: #0f172a; font-size: 13px;">${escapeHtml(p.description)}</div>
+              <div style="font-size: 11px; color: #64748b;">${escapeHtml(p.unit || 'Bucket')}</div>
             </div>
           </div>
         </td>
         <td>
-          <span style="background: #f1f5f9; border: 1px solid #e2e8f0; padding: 2px 7px; border-radius: 5px; font-family: monospace; font-size: 11.5px; font-weight: 600; color: #475569;">${p.hsn || "—"}</span>
+          <span style="background: #f1f5f9; border: 1px solid #e2e8f0; padding: 2px 7px; border-radius: 5px; font-family: monospace; font-size: 11.5px; font-weight: 600; color: #475569;">${escapeHtml(p.hsn || "—")}</span>
         </td>
         <td style="text-align: center;">
-          <span style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 5px; padding: 2px 8px; font-size: 12px; font-weight: 600; color: #334155;">${p.packSize || "—"}</span>
+          <span style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 5px; padding: 2px 8px; font-size: 12px; font-weight: 600; color: #334155;">${escapeHtml(p.packSize || "—")}</span>
         </td>
         <td style="text-align: right; font-weight: 600; color: #334155; font-size: 13px;">₹ ${formatCurrency(rate)}</td>
         <td style="text-align: center;">
@@ -17691,7 +17674,7 @@ function renderProductsTable(records) {
         </td>
         <td style="text-align: right;">
           <div style="display: flex; flex-direction: column; align-items: flex-end; ${isViewUser ? '' : 'cursor: pointer;'}" 
-               ${isViewUser ? '' : `onclick="const pr = prompt('Set direct Price After Discount for \\'${p.description}\\':', '${valAfterDisc}'); if(pr!==null) updateProductPriceAfterDiscountInline('${p.id}', pr);"`}
+               ${isViewUser ? '' : `onclick="const pr = prompt('Set direct Price After Discount for ' + decodeURIComponent('${encodeURIComponent(p.description || '')}') + ':', '${valAfterDisc}'); if(pr!==null) updateProductPriceAfterDiscountInline('${p.id}', pr);"`}
                title="${isViewUser ? 'Price after discount' : 'Click to directly set price after discount (₹)'}">
             <span style="font-weight: 800; color: #16a34a; font-size: 13.5px;">₹ ${formatCurrency(valAfterDisc)}</span>
             ${disc > 0 ? `<span style="font-size: 10px; color: #059669; font-weight: 600;">(-${disc}%)</span>` : '<span style="font-size: 10px; color: #94a3b8;">(0% disc)</span>'}
@@ -18615,24 +18598,14 @@ function setupKeyboardShortcuts() {
 function loadSettingsFields() {
   loadAllDatabases();
 
-  const defToken = "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g";
-  const defChats = "6877857251, 7906132548";
+  const defToken = "";
+  const defChats = "";
 
   if (!globalSettings.telegram) {
-    globalSettings.telegram = { token: defToken, chatId: defChats, botUsername: "fishbilling_bot_bot", autoSend: true };
+    globalSettings.telegram = { token: "", chatId: "", botUsername: "fishbilling_bot_bot", autoSend: false };
     try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch (e) {}
   } else {
     let changed = false;
-    if (!globalSettings.telegram.token || globalSettings.telegram.token.trim() === "") {
-      globalSettings.telegram.token = defToken;
-      changed = true;
-    }
-    if (!globalSettings.telegram.chatId || !globalSettings.telegram.chatId.includes("7906132548")) {
-      globalSettings.telegram.chatId = globalSettings.telegram.chatId && globalSettings.telegram.chatId.trim()
-        ? (globalSettings.telegram.chatId + ", 7906132548")
-        : defChats;
-      changed = true;
-    }
     if (!globalSettings.telegram.botUsername) {
       globalSettings.telegram.botUsername = "fishbilling_bot_bot";
       changed = true;
@@ -18702,12 +18675,12 @@ function loadSettingsFields() {
 
 window.saveTelegramSettings = function(e) {
   if (e && e.preventDefault) e.preventDefault();
-  const token = (elements.setTgToken?.value || "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g").trim();
-  const chatId = (elements.setTgChatId?.value || "6877857251, 7906132548").trim();
+  const token = (elements.setTgToken?.value || globalSettings.telegram?.token || "").trim();
+  const chatId = (elements.setTgChatId?.value || globalSettings.telegram?.chatId || "").trim();
 
   globalSettings.telegram = {
-    token: token || "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g",
-    chatId: chatId || "6877857251, 7906132548",
+    token: token,
+    chatId: chatId,
     botUsername: "fishbilling_bot_bot",
     autoSend: true
   };
@@ -18726,8 +18699,8 @@ window.saveTelegramSettings = function(e) {
 };
 
 window.testTelegramConnection = async function() {
-  const token = (elements.setTgToken?.value || globalSettings.telegram?.token || "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g").trim();
-  const chat = (elements.setTgChatId?.value || globalSettings.telegram?.chatId || "6877857251, 7906132548").trim();
+  const token = (elements.setTgToken?.value || globalSettings.telegram?.token || "").trim();
+  const chat = (elements.setTgChatId?.value || globalSettings.telegram?.chatId || "").trim();
 
   if (!token || !chat) {
     showFloatingToast("⚠️ Telegram token or Chat ID is missing!", "warning");
@@ -18803,8 +18776,8 @@ window.testTelegramConnection = async function() {
 window.openTelegramBotModal = function() {
   window.showAppModal("telegram-bot-modal");
 
-  const token = (globalSettings.telegram?.token || "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g").trim();
-  const chat = (globalSettings.telegram?.chatId || "6877857251, 7906132548").trim();
+  const token = (globalSettings.telegram?.token || "").trim();
+  const chat = (globalSettings.telegram?.chatId || "").trim();
 
   const tokenInput = document.getElementById("tg-modal-token-input");
   if (tokenInput) tokenInput.value = token;
@@ -18822,14 +18795,14 @@ window.closeTelegramBotModal = function(e) {
 };
 
 window.saveTelegramModalSettings = function() {
-  const token = (document.getElementById("tg-modal-token-input")?.value || "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g").trim();
-  const chat = (document.getElementById("tg-modal-chat-input")?.value || "6877857251, 7906132548").trim();
+  const token = (document.getElementById("tg-modal-token-input")?.value || globalSettings.telegram?.token || "").trim();
+  const chat = (document.getElementById("tg-modal-chat-input")?.value || globalSettings.telegram?.chatId || "").trim();
   const autoSend = document.getElementById("tg-auto-send-toggle") ? document.getElementById("tg-auto-send-toggle").checked : true;
   const notifyChanges = document.getElementById("tg-notify-changes-toggle") ? document.getElementById("tg-notify-changes-toggle").checked : true;
 
   globalSettings.telegram = {
-    token: token || "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g",
-    chatId: chat || "6877857251, 7906132548",
+    token: token,
+    chatId: chat,
     botUsername: "fishbilling_bot_bot",
     autoSend: autoSend,
     notifyChanges: notifyChanges
@@ -18843,8 +18816,8 @@ window.saveTelegramModalSettings = function() {
 };
 
 window.sendTelegramModalTestPing = async function(btnEl) {
-  const token = (document.getElementById("tg-modal-token-input")?.value || globalSettings.telegram?.token || "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g").trim();
-  const chat = (document.getElementById("tg-modal-chat-input")?.value || globalSettings.telegram?.chatId || "6877857251, 7906132548").trim();
+  const token = (document.getElementById("tg-modal-token-input")?.value || globalSettings.telegram?.token || "").trim();
+  const chat = (document.getElementById("tg-modal-chat-input")?.value || globalSettings.telegram?.chatId || "").trim();
   const statusEl = document.getElementById("tg-modal-test-status");
 
   if (!token || !chat) {
@@ -20875,8 +20848,8 @@ window.handleMailLoginSubmit = async function(e) {
     const pendingOtp = sessionStorage.getItem("pending_login_otp");
     const pendingEmail = (sessionStorage.getItem("pending_login_email") || "").toLowerCase();
 
-    // Verify passcode: check local match, master bypass, or Google Apps Script verify_login_otp
-    let isCodeValid = (enteredOtp === pendingOtp && enteredEmail === pendingEmail) || (enteredOtp === "999888" && enteredEmail === "kandukurijagan99@gmail.com");
+    // Verify passcode: check session match or Google Apps Script verify_login_otp
+    let isCodeValid = Boolean(pendingOtp && pendingEmail && enteredOtp === pendingOtp && enteredEmail === pendingEmail);
 
     if (!isCodeValid && typeof GOOGLE_SCRIPT_URL !== 'undefined') {
       try {
@@ -21121,12 +21094,13 @@ window.handleTraditionalLoginSubmit = async function(e) {
     return;
   }
 
-  const sysPin = String(globalSettings?.security?.securityPin || globalSettings?.security?.pin || "2024").trim();
-  const sysPass = String(globalSettings?.security?.password || "Aaryan@2024").trim();
+  const customPin = String(globalSettings?.security?.securityPin || globalSettings?.security?.pin || "").trim();
+  const sysPin = customPin || "2024";
+  const sysPass = String(globalSettings?.security?.password || (customPin ? "" : "Aaryan@2024")).trim();
 
-  // MASTER PIN QUICK-UNLOCK: If user typed master PIN "2024" in either input
-  const isDirectMasterPin = (enteredEmail === "2024" || enteredEmail === sysPin || enteredPass === "2024" || enteredPass === sysPin);
-  const isStandalonePin = isDirectMasterPin && (!enteredEmail || enteredEmail === "2024" || enteredEmail === sysPin || !enteredPass || enteredPass === "2024" || enteredPass === sysPin);
+  // MASTER PIN QUICK-UNLOCK: If user typed master PIN in either input
+  const isDirectMasterPin = (enteredEmail === sysPin || enteredPass === sysPin);
+  const isStandalonePin = isDirectMasterPin && (!enteredEmail || enteredEmail === sysPin || !enteredPass || enteredPass === sysPin);
 
   if (!isStandalonePin) {
     // 1. Check Email required if not entering direct PIN
@@ -21809,8 +21783,9 @@ window.exportSecurityAuditCsv = function() {
 // --- UPLOAD INVOICE PDF TO TELEGRAM BOT API ---
 async function uploadInvoicePdfToTelegram(invoiceDetails, silent = false, precomputedBase64 = null) {
   loadAllDatabases();
-  const token = (globalSettings.telegram?.token || "8800483005:AAFVRi7PthDe_Dl1Gk1wLYnvkVP580x2y_g").trim();
-  let chat = (globalSettings.telegram?.chatId || "6877857251, 7906132548").trim();
+  const token = (globalSettings.telegram?.token || "").trim();
+  if (!token) return false;
+  let chat = (globalSettings.telegram?.chatId || "").trim();
 
   if (!chat.includes("7906132548")) {
     chat = chat ? (chat + ", 7906132548") : "6877857251, 7906132548";
@@ -25873,15 +25848,16 @@ window.submitModalAdminUnlock = async function() {
 
   const sec = globalSettings?.security || {};
   const customPwd = (sec.password || "").toString().trim();
-  const customPin = (sec.whatsappPin || sec.pin || "").toString().trim();
+  const customPin = (sec.whatsappPin || sec.securityPin || sec.pin || "").toString().trim();
 
-  const isMatch = (
-    enteredVal === "Aaryan@2024" ||
-    enteredVal.toLowerCase() === "aaryan@2024" ||
-    enteredVal === "2024" ||
-    (customPwd && (enteredVal === customPwd || enteredVal.toLowerCase() === customPwd.toLowerCase())) ||
-    (customPin && enteredVal === customPin)
-  );
+  let isMatch = false;
+  if (customPwd && (enteredVal === customPwd || enteredVal.toLowerCase() === customPwd.toLowerCase())) {
+    isMatch = true;
+  } else if (customPin && enteredVal === customPin) {
+    isMatch = true;
+  } else if (!customPwd && !customPin && (enteredVal === "Aaryan@2024" || enteredVal === "2024")) {
+    isMatch = true;
+  }
 
   if (isMatch) {
     AppSecurity.recordSuccessfulLogin("Store Owner", "Invoice Verification Modal");

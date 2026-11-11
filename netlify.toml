@@ -8,6 +8,31 @@
   NETLIFY_SKIP_INSTALL = "true"
   NPM_FLAGS = "--no-audit --ignore-scripts"
 
+# Security Redirects: Block access to dotfiles, environment files and backend metadata
+[[redirects]]
+  from = "/.env"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/.env.*"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/.git/*"
+  to = "/index.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/data/*"
+  to = "/index.html"
+  status = 404
+  force = true
+
 # Client-side SPA routing fallback to index.html
 [[redirects]]
   from = "/*"
@@ -22,6 +47,8 @@
     X-Content-Type-Options = "nosniff"
     X-XSS-Protection = "1; mode=block"
     Referrer-Policy = "strict-origin-when-cross-origin"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+    Permissions-Policy = "camera=(self), microphone=(), geolocation=(), payment=()"
 
 # Force no-cache on HTML so new deploys are always visible
 [[headers]]

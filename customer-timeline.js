@@ -11,6 +11,14 @@
  */
 
 (function () {
+  function safeEscape(str) {
+    if (typeof window !== 'undefined' && typeof window.escapeHtml === 'function') {
+      return window.escapeHtml(str);
+    }
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
   // Helper to format timestamps cleanly (e.g. "12 Oct 2026, 03:45 PM")
   function formatDateTime(isoOrDateStr) {
     if (!isoOrDateStr) return "—";
@@ -2213,8 +2221,8 @@
                 ${c.name.charAt(0).toUpperCase()}
               </div>
               <div>
-                <span style="color: #0284c7; text-decoration: underline; text-underline-offset: 2px;">${c.name}</span>
-                ${c.address ? `<div style="font-size: 11px; color: #94a3b8; font-weight: 400;">${c.address}</div>` : ''}
+                <span style="color: #0284c7; text-decoration: underline; text-underline-offset: 2px;">${safeEscape(c.name)}</span>
+                ${c.address ? `<div style="font-size: 11px; color: #94a3b8; font-weight: 400;">${safeEscape(c.address)}</div>` : ''}
               </div>
             </div>
           </td>
