@@ -7341,9 +7341,33 @@ function updateDashboardOverview() {
           <td class="text-center" style="white-space: nowrap;">${itemsCount}</td>
           <td style="text-align: right; font-weight: 700; white-space: nowrap;">₹ ${formatCurrency(invTotal)}</td>
           <td class="text-center" style="white-space: nowrap;">
-            ${(!isPaid && balance > 0 && !isCustomerRole && !isViewOnlyUser)
-              ? `<span class="badge-status ${badgeClass}" onclick="openBalanceQrModal('${inv.id}')" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode" style="font-size: 11px;"></i>${status}</span><div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>`
-              : `<span class="badge-status ${badgeClass}">${status}</span>${(!isPaid && balance > 0 ? `<div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>` : '')}`}
+            <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px;">
+              <span style="font-size: 9.5px; font-weight: 700; letter-spacing: 0.3px; padding: 1px 6px; border-radius: 4px; ${isEstimate ? 'background: #fffbeb; color: #b45309; border: 1px solid #fde68a;' : 'background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0;'} text-transform: uppercase;">
+                ${isEstimate ? 'Quotation' : 'GST Invoice'}
+              </span>
+              ${isCustomerRole || isViewOnlyUser
+                ? `<span class="badge-status ${badgeClass}">${status}</span>${(!isPaid && balance > 0 ? `<div style="font-size: 10px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>` : '')}`
+                : `<div class="quick-status-dropdown-wrap">
+                    <button type="button" class="badge-status ${badgeClass} quick-status-trigger-btn" onclick="window.toggleQuickStatusMenu('dash-${inv.id}', event)" title="Click to change payment status">
+                      <span>${status}</span>
+                      <i class="fa-solid fa-chevron-down" style="font-size: 8px; margin-left: 2px; opacity: 0.7;"></i>
+                    </button>
+                    <div id="quick-status-menu-dash-${inv.id}" class="quick-status-menu hidden" onclick="event.stopPropagation();">
+                      <div class="quick-status-menu-header">Change Payment Status</div>
+                      <button type="button" class="quick-status-option opt-paid" onclick="window.quickUpdateInvoicePaymentStatus('${inv.id}', 'Paid')">
+                        <i class="fa-solid fa-circle-check"></i> <span>Mark Paid</span>
+                      </button>
+                      <button type="button" class="quick-status-option opt-partial" onclick="window.quickUpdateInvoicePaymentStatus('${inv.id}', 'Partial')">
+                        <i class="fa-solid fa-circle-half-stroke"></i> <span>Mark Partial...</span>
+                      </button>
+                      <button type="button" class="quick-status-option opt-unpaid" onclick="window.quickUpdateInvoicePaymentStatus('${inv.id}', 'Unpaid')">
+                        <i class="fa-solid fa-circle-xmark"></i> <span>Mark Unpaid</span>
+                      </button>
+                    </div>
+                  </div>
+                  ${(!isPaid && balance > 0 ? `<div style="font-size: 10px; color: #b45309; font-weight: 700; cursor: pointer; margin-top: 2px;" onclick="openBalanceQrModal('${inv.id}')" title="Click to settle with UPI QR">Bal: ₹${formatCurrency(balance)}</div>` : '')}`
+              }
+            </div>
           </td>
           <td class="actions-cell">
             ${isViewOnlyUser
@@ -7355,11 +7379,18 @@ function updateDashboardOverview() {
             ${!isCustomerRole ? `<button class="action-btn edit" onclick="editSavedInvoice('${inv.id}')" title="Edit Invoice"><i class="fa-solid fa-pen-to-square"></i></button>` : ''}
             ${!isCustomerRole ? `<button class="action-btn delete action-btn-delete" onclick="deleteSavedInvoice('${inv.id || inv.invoiceNo}')" title="Delete Invoice"><i class="fa-solid fa-trash"></i></button>` : ''}
             <div class="action-dropdown-wrapper">
-              <button class="action-btn more-btn" onclick="toggleActionDropdown('${inv.id}', event)" title="More Options"><i class="fa-solid fa-ellipsis-vertical"></i></button>
-              <div id="action-dropdown-${inv.id}" class="action-dropdown-menu hidden" onclick="event.stopPropagation();">
+              <button class="action-btn more-btn" onclick="toggleActionDropdown('dash-${inv.id}', event)" title="More Options"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+              <div id="action-dropdown-dash-${inv.id}" class="action-dropdown-menu hidden" onclick="event.stopPropagation();">
                 <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); downloadSavedInvoicePdf('${inv.id}', this)"><i class="fa-solid fa-file-pdf text-rose"></i> Download PDF</a>
                 ${!isCustomerRole ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatInvoice('${inv.id}')"><i class="fa-solid fa-arrows-rotate" style="color: #6366f1;"></i> Clone / Repeat Bill</a>` : ''}
                 ${balanceQrDropdownItem}
+                ${!isCustomerRole && !isViewOnlyUser ? `
+                  <div class="quick-status-menu-divider" style="margin: 4px 0;"></div>
+                  <div style="font-size: 10px; font-weight: 700; color: #94a3b8; padding: 2px 8px 4px; text-transform: uppercase;">Quick Change Status</div>
+                  ${status !== 'Paid' ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); quickUpdateInvoicePaymentStatus('${inv.id}', 'Paid')"><i class="fa-solid fa-circle-check" style="color: #10b981;"></i> Mark as Paid</a>` : ''}
+                  ${status !== 'Partial' ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); quickUpdateInvoicePaymentStatus('${inv.id}', 'Partial')"><i class="fa-solid fa-circle-half-stroke" style="color: #f59e0b;"></i> Mark as Partial...</a>` : ''}
+                  ${status !== 'Unpaid' ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); quickUpdateInvoicePaymentStatus('${inv.id}', 'Unpaid')"><i class="fa-solid fa-circle-xmark" style="color: #ef4444;"></i> Mark as Unpaid</a>` : ''}
+                ` : ''}
                 <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openUniversalInvoiceShareModal('${inv.id}')"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i> Universal Share Link</a>
                 <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openInvoiceVerificationModal('${inv.id || inv.invoiceNo}')"><i class="fa-solid fa-shield-check" style="color: #10b981;"></i> Verify &amp; Digital Receipt</a>
               </div>
@@ -16055,9 +16086,33 @@ function renderHistoryTableRows(records) {
             <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.3px; padding: 1.5px 7px; border-radius: 4px; ${isEstimate ? 'background: #fffbeb; color: #b45309; border: 1px solid #fde68a;' : 'background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0;'} text-transform: uppercase;">
               <i class="${isEstimate ? 'fa-solid fa-file-signature' : 'fa-solid fa-file-invoice'}" style="font-size: 9.5px; margin-right: 3px;"></i>${isEstimate ? 'Quotation' : 'GST Invoice'}
             </span>
-            ${!isPaid && balance > 0 && !isCustomerRole && !isViewOnlyUser
-              ? `<span class="badge-status ${badgeClass}" onclick="openBalanceQrModal('${inv.id}')" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode" style="font-size: 10px;"></i>${status}</span><div style="font-size: 10.5px; color: #b45309; font-weight: 700;">Bal: ₹${formatCurrency(balance)}</div>`
-              : `<span class="badge-status ${badgeClass}">${status}</span>${(!isPaid && balance > 0 ? `<div style="font-size: 10.5px; color: #b45309; font-weight: 700;">Bal: ₹${formatCurrency(balance)}</div>` : '')}`
+            ${isCustomerRole || isViewOnlyUser
+              ? `<span class="badge-status ${badgeClass}">${status}</span>${(!isPaid && balance > 0 ? `<div style="font-size: 10.5px; color: #b45309; font-weight: 700;">Bal: ₹${formatCurrency(balance)}</div>` : '')}`
+              : `<div class="quick-status-dropdown-wrap">
+                  <button type="button" class="badge-status ${badgeClass} quick-status-trigger-btn" onclick="window.toggleQuickStatusMenu('${inv.id}', event)" title="Click to change payment status">
+                    <span>${status}</span>
+                    <i class="fa-solid fa-chevron-down" style="font-size: 8px; margin-left: 2px; opacity: 0.7;"></i>
+                  </button>
+                  <div id="quick-status-menu-${inv.id}" class="quick-status-menu hidden" onclick="event.stopPropagation();">
+                    <div class="quick-status-menu-header">Change Payment Status</div>
+                    <button type="button" class="quick-status-option opt-paid" onclick="window.quickUpdateInvoicePaymentStatus('${inv.id}', 'Paid')">
+                      <i class="fa-solid fa-circle-check"></i> <span>Mark Paid</span>
+                    </button>
+                    <button type="button" class="quick-status-option opt-partial" onclick="window.quickUpdateInvoicePaymentStatus('${inv.id}', 'Partial')">
+                      <i class="fa-solid fa-circle-half-stroke"></i> <span>Mark Partial...</span>
+                    </button>
+                    <button type="button" class="quick-status-option opt-unpaid" onclick="window.quickUpdateInvoicePaymentStatus('${inv.id}', 'Unpaid')">
+                      <i class="fa-solid fa-circle-xmark"></i> <span>Mark Unpaid</span>
+                    </button>
+                    ${!isPaid && balance > 0 ? `
+                      <div class="quick-status-menu-divider"></div>
+                      <button type="button" class="quick-status-option opt-qr" onclick="closeAllActionDropdowns(); openBalanceQrModal('${inv.id}')">
+                        <i class="fa-solid fa-qrcode"></i> <span>Scan UPI QR (₹ ${formatCurrency(balance)})</span>
+                      </button>
+                    ` : ''}
+                  </div>
+                </div>
+                ${(!isPaid && balance > 0 ? `<div style="font-size: 10.5px; color: #b45309; font-weight: 700; cursor: pointer;" onclick="openBalanceQrModal('${inv.id}')" title="Click to settle balance with UPI QR">Bal: ₹${formatCurrency(balance)}</div>` : '')}`
             }
           </div>
         </td>
@@ -16078,6 +16133,13 @@ function renderHistoryTableRows(records) {
                   <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); repeatSavedInvoice('${inv.id}')"><i class="fa-solid fa-repeat text-indigo"></i> Repeat as New Bill</a>
                   ${convertEstimateDropdownItem}
                   ${balanceQrDropdownItem}
+                  ${!isCustomerRole && !isViewOnlyUser ? `
+                    <div class="quick-status-menu-divider" style="margin: 4px 0;"></div>
+                    <div style="font-size: 10px; font-weight: 700; color: #94a3b8; padding: 2px 8px 4px; text-transform: uppercase;">Quick Change Status</div>
+                    ${status !== 'Paid' ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); quickUpdateInvoicePaymentStatus('${inv.id}', 'Paid')"><i class="fa-solid fa-circle-check" style="color: #10b981;"></i> Mark as Paid</a>` : ''}
+                    ${status !== 'Partial' ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); quickUpdateInvoicePaymentStatus('${inv.id}', 'Partial')"><i class="fa-solid fa-circle-half-stroke" style="color: #f59e0b;"></i> Mark as Partial...</a>` : ''}
+                    ${status !== 'Unpaid' ? `<a href="javascript:void(0)" onclick="closeAllActionDropdowns(); quickUpdateInvoicePaymentStatus('${inv.id}', 'Unpaid')"><i class="fa-solid fa-circle-xmark" style="color: #ef4444;"></i> Mark as Unpaid</a>` : ''}
+                  ` : ''}
                   <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); shareInvoiceToTelegram('${inv.id}', this)"><i class="fa-brands fa-telegram" style="color: #0284c7;"></i> Share via Telegram</a>
                   <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openUniversalInvoiceShareModal('${inv.id}')"><i class="fa-solid fa-share-nodes" style="color: #0891b2;"></i> Universal Share Link</a>
                 </div>
@@ -16532,7 +16594,7 @@ window.quickPrintLatestInvoice = function() {
 };
 
 window.closeAllActionDropdowns = function() {
-  const menus = document.querySelectorAll(".action-dropdown-menu");
+  const menus = document.querySelectorAll(".action-dropdown-menu, .quick-status-menu");
   menus.forEach(m => m.classList.add("hidden"));
 };
 
@@ -16548,8 +16610,154 @@ window.toggleActionDropdown = function(id, event) {
   }
 };
 
+window.toggleQuickStatusMenu = function(id, event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  const targetMenu = document.getElementById(`quick-status-menu-${id}`);
+  const isCurrentlyOpen = targetMenu && !targetMenu.classList.contains("hidden");
+
+  window.closeAllActionDropdowns();
+
+  if (targetMenu && !isCurrentlyOpen) {
+    targetMenu.classList.remove("hidden");
+  }
+};
+
+window.quickUpdateInvoicePaymentStatus = async function(invoiceId, newStatus) {
+  if (window.closeAllActionDropdowns) window.closeAllActionDropdowns();
+
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("🔒 Demo Mode: Cannot modify live invoice status.", "warning", 3500);
+    }
+    return;
+  }
+  if (typeof window.isCustomerAccount === 'function' && window.isCustomerAccount()) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⛔ Access Denied: Customer accounts cannot modify invoice status.", "error", 4000);
+    }
+    return;
+  }
+
+  const rawList = invoicesDb || [];
+  const inv = rawList.find(i => String(i.id) === String(invoiceId) || String(i.invoiceNo) === String(invoiceId));
+  if (!inv) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("Invoice record not found.", "error", 3000);
+    }
+    return;
+  }
+
+  const total = parseFloat(inv.total !== undefined ? inv.total : (inv.details?.total || 0)) || 0;
+  let paid = parseFloat(inv.paidAmount !== undefined ? inv.paidAmount : (inv.details?.paidAmount || 0)) || 0;
+  let balance = parseFloat(inv.balanceDue !== undefined ? inv.balanceDue : (inv.details?.balanceDue || 0)) || 0;
+
+  if (newStatus === "Paid") {
+    paid = total;
+    balance = 0;
+  } else if (newStatus === "Unpaid") {
+    paid = 0;
+    balance = total;
+  } else if (newStatus === "Partial") {
+    const defaultSuggestion = (paid > 0 && paid < total) ? paid : Math.round(total / 2);
+    const userPrompt = prompt(
+      `Enter received / paid amount for #${inv.invoiceNo} (Total: ₹ ${formatCurrency(total)}):`,
+      defaultSuggestion
+    );
+    if (userPrompt === null) {
+      return; // Cancelled by user
+    }
+    const entered = parseFloat(String(userPrompt).replace(/,/g, '').trim()) || 0;
+    if (entered <= 0) {
+      newStatus = "Unpaid";
+      paid = 0;
+      balance = total;
+    } else if (entered >= total) {
+      newStatus = "Paid";
+      paid = total;
+      balance = 0;
+    } else {
+      newStatus = "Partial";
+      paid = Math.round(entered * 100) / 100;
+      balance = Math.max(0, Math.round((total - paid) * 100) / 100);
+    }
+  }
+
+  // Update invoice object properties
+  inv.paymentStatus = newStatus;
+  inv.paidAmount = paid;
+  inv.balanceDue = balance;
+
+  // Update nested details schema
+  if (inv.details) {
+    inv.details.paymentStatus = newStatus;
+    inv.details.paidAmount = paid;
+    inv.details.balanceDue = balance;
+  }
+
+  // Record audit history entry
+  if (!inv.paymentHistory || !Array.isArray(inv.paymentHistory)) {
+    inv.paymentHistory = [];
+  }
+  const loggedInEmail = (typeof window.getEffectiveLoggedInEmail === 'function' ? window.getEffectiveLoggedInEmail() : (sessionStorage.getItem("current_user_email") || "Admin"));
+  inv.paymentHistory.push({
+    date: new Date().toISOString(),
+    amount: paid,
+    balance: balance,
+    mode: inv.paymentMode || (inv.details && inv.details.paymentMode) || "Cash",
+    reference: `Status updated to ${newStatus}`,
+    status: newStatus,
+    updatedBy: loggedInEmail,
+    source: "Row Quick Status Changer"
+  });
+
+  // Persist locally
+  try {
+    localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+    window.invoicesDb = invoicesDb;
+  } catch (e) {
+    console.warn("[QuickStatus] Local storage persist error:", e);
+  }
+
+  // Persist to IndexedDB
+  if (window.AaryanDB && typeof window.AaryanDB.saveInvoice === 'function') {
+    try { window.AaryanDB.saveInvoice(inv); } catch (e) {}
+  }
+
+  // Persist to Supabase Cloud
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+    try {
+      window.SupabaseDB.upsertInvoice(inv).catch(err => console.warn("[Supabase] Quick status sync:", err));
+    } catch (e) {}
+  }
+
+  // Background Google Sheets sync if configured
+  if (typeof syncDatabaseToServer === 'function') {
+    try { syncDatabaseToServer("invoices", inv); } catch (e) {}
+  }
+
+  // Real-time broadcasts
+  if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+  if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
+
+  // Refresh Views
+  if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
+  if (typeof updateDashboardOverview === "function") updateDashboardOverview();
+  if (typeof renderRecentInvoicesTable === "function") renderRecentInvoicesTable();
+  if (typeof renderCustomerLedgerSummary === "function") renderCustomerLedgerSummary();
+  if (typeof syncPreviewIfOpen === "function") syncPreviewIfOpen(inv);
+
+  // Success Notification
+  if (typeof showFloatingToast === 'function') {
+    const icon = newStatus === 'Paid' ? '✅' : (newStatus === 'Partial' ? '⏳' : 'ℹ️');
+    showFloatingToast(`${icon} Status updated to "${newStatus}" for #${inv.invoiceNo}! (Bal: ₹ ${formatCurrency(balance)})`, "success", 3800);
+  }
+};
+
 document.addEventListener("click", function(e) {
-  if (!e.target.closest(".action-dropdown-wrapper")) {
+  if (!e.target.closest(".action-dropdown-wrapper") && !e.target.closest(".quick-status-dropdown-wrap")) {
     window.closeAllActionDropdowns();
   }
 });

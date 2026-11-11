@@ -4482,6 +4482,134 @@ body.app-is-locked #live-session-timer-pill {
   box-shadow: 0 0 5px #f43f5e;
 }
 
+/* --- INTERACTIVE ROW QUICK STATUS CHANGER --- */
+.quick-status-dropdown-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.quick-status-trigger-btn {
+  cursor: pointer;
+  outline: none;
+  border: 1.5px solid;
+  transition: all 0.15s ease;
+  padding: 3px 9px !important;
+  font-family: inherit;
+  font-size: 11px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  user-select: none;
+}
+
+.quick-status-trigger-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  filter: brightness(0.96);
+}
+
+.quick-status-trigger-btn:active {
+  transform: translateY(0);
+}
+
+.quick-status-menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 180px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.22), 0 6px 14px -3px rgba(15, 23, 42, 0.12);
+  padding: 6px;
+  z-index: 1050;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  animation: scaleModalIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.quick-status-menu.hidden {
+  display: none !important;
+}
+
+.quick-status-menu-header {
+  font-size: 10px;
+  font-weight: 800;
+  color: #64748b;
+  padding: 4px 8px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 2px;
+}
+
+.quick-status-menu-divider {
+  height: 1px;
+  background: #f1f5f9;
+  margin: 3px 0;
+}
+
+.quick-status-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.12s ease;
+  color: #334155;
+  font-family: inherit;
+}
+
+.quick-status-option:hover {
+  background: #f8fafc;
+}
+
+.quick-status-option.opt-paid {
+  color: #059669;
+}
+
+.quick-status-option.opt-paid:hover {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.quick-status-option.opt-partial {
+  color: #d97706;
+}
+
+.quick-status-option.opt-partial:hover {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.quick-status-option.opt-unpaid {
+  color: #e11d48;
+}
+
+.quick-status-option.opt-unpaid:hover {
+  background: #fef2f2;
+  color: #be123c;
+}
+
+.quick-status-option.opt-qr {
+  color: #0284c7;
+}
+
+.quick-status-option.opt-qr:hover {
+  background: #f0f9ff;
+  color: #0369a1;
+}
+
 .summary-select {
   width: 100%;
   background: var(--editor-input-bg);
