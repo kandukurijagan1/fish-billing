@@ -1,5 +1,5 @@
 // Aaryan Aqua Needs - Cache-Busting Purge Service Worker
-const CACHE_NAME = 'aaryan-aqua-v5.28.0-advanced-features';
+const CACHE_NAME = 'aaryan-aqua-v5.29.0-backup-mail-and-access-sync';
 
 self.addEventListener('install', event => {
   self.skipWaiting();

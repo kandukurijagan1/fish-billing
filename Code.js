@@ -1477,6 +1477,11 @@ function handleApiPost(e) {
       return handleClientInquirySubmission(data);
     }
 
+    // 1.7 Store Database Backup to Email
+    if (action === "email_backup") {
+      return handleEmailBackupRequest(data);
+    }
+
     // 2. Authentication Enforcement
     var auth = authenticateRequest(e, data);
     if (!auth.ok) {
@@ -1981,6 +1986,96 @@ function handleClientInquirySubmission(data) {
     return ContentService.createTextOutput(JSON.stringify({
       ok: false,
       error: "Failed to process inquiry: " + err.message
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ============================================================================
+// Automated Store Backup Email Dispatcher
+// ============================================================================
+function handleEmailBackupRequest(data) {
+  try {
+    var rawEmail = String(data.email || "").trim().toLowerCase();
+    if (!rawEmail || rawEmail.indexOf("@") === -1) {
+      return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "A valid email address is required." })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var backupObj = data.backup || {};
+    var invoices = backupObj.invoices || [];
+    var products = backupObj.products || [];
+    var parties = backupObj.parties || [];
+    var settings = backupObj.settings || {};
+    var compName = (settings.company && settings.company.name) || "AARYAN AQUA NEEDS";
+    var todayStr = Utilities.formatDate(new Date(), "Asia/Kolkata", "dd-MMM-yyyy HH:mm");
+    var fileDate = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd");
+
+    var jsonStr = JSON.stringify(backupObj, null, 2);
+    var blob = Utilities.newBlob(jsonStr, "application/json", compName.replace(/[^a-zA-Z0-9]/g, "_") + "_Backup_" + fileDate + ".json");
+
+    var emailSubject = "📦 Official Store Backup (" + todayStr + ") - " + compName;
+    var htmlBody = 
+      "<div style='font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; padding: 32px 16px; color: #1e293b;'>" +
+        "<div style='max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.06);'>" +
+          "<div style='background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); padding: 24px 28px; text-align: center; color: #ffffff;'>" +
+            "<h2 style='margin: 0; font-size: 22px; font-weight: 800; color: #ffffff;'>" + compName + "</h2>" +
+            "<p style='margin: 4px 0 0 0; color: #e0f2fe; font-size: 13px;'>Automated Data Vault &amp; Store Snapshot</p>" +
+          "</div>" +
+          "<div style='padding: 28px;'>" +
+            "<h3 style='margin-top: 0; color: #0f172a; font-size: 17px;'>Namaste Store Owner,</h3>" +
+            "<p style='color: #475569; font-size: 14px; line-height: 1.6;'>" +
+              "Attached to this email is your complete <strong>Store Database Backup (.json)</strong> generated on <strong>" + todayStr + "</strong>." +
+            "</p>" +
+            "<div style='background: #f1f5f9; border-left: 4px solid #0284c7; border-radius: 8px; padding: 16px; margin: 20px 0; font-size: 13.5px; color: #334155; line-height: 1.8;'>" +
+              "<strong>Backup Content Summary:</strong><br>" +
+              "• 📄 <strong>Total Invoices:</strong> " + invoices.length + "<br>" +
+              "• 📦 <strong>Products in Catalog:</strong> " + products.length + "<br>" +
+              "• 👥 <strong>Parties &amp; Customers:</strong> " + parties.length + "<br>" +
+              "• ⚙️ <strong>Store Configuration:</strong> Included<br>" +
+              "• 🕒 <strong>Snapshot Timestamp:</strong> " + todayStr +
+            "</div>" +
+            "<p style='color: #475569; font-size: 13px; line-height: 1.6;'>" +
+              "<strong>How to restore:</strong> If you ever switch computers or want to recover data, open your billing software, go to <em>Settings &gt; Backup &amp; Data Recovery Center &gt; Import Backup</em>, and select the attached JSON file." +
+            "</p>" +
+            "<p style='color: #64748b; font-size: 12px; margin-top: 24px; border-top: 1px solid #f1f5f9; padding-top: 16px; text-align: center;'>" +
+              "Aaryan Aqua Needs • High-Speed GST Cloud Billing Hub<br>" +
+              "Secure Database Backup Service" +
+            "</p>" +
+          "</div>" +
+        "</div>" +
+      "</div>";
+
+    var plainTextBody = "Namaste Store Owner,\n\n" +
+      "Attached is your complete Store Database Backup (.json) generated on " + todayStr + ".\n\n" +
+      "Summary:\n" +
+      "• Total Invoices: " + invoices.length + "\n" +
+      "• Total Products: " + products.length + "\n" +
+      "• Total Parties: " + parties.length + "\n\n" +
+      "To restore on any computer, open Settings > Import Backup in your billing app.\n\n" + compName;
+
+    MailApp.sendEmail({
+      to: rawEmail,
+      subject: emailSubject,
+      body: plainTextBody,
+      htmlBody: htmlBody,
+      name: compName + " Vault",
+      attachments: [blob]
+    });
+
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: true,
+      success: true,
+      email: rawEmail,
+      invoicesCount: invoices.length,
+      productsCount: products.length,
+      partiesCount: parties.length,
+      timestamp: todayStr,
+      message: "Backup file attached and successfully sent to " + rawEmail
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    Logger.log("handleEmailBackupRequest error: " + err.message);
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: false,
+      error: "Failed to send backup email: " + err.message
     })).setMimeType(ContentService.MimeType.JSON);
   }
 }

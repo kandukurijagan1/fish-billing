@@ -4860,6 +4860,42 @@
 
                   </div>
 
+                  <!-- 1-Click Backup Data to Mail -->
+
+                  <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 9px; padding: 13px; display: flex; flex-direction: column; gap: 8px;">
+
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+
+                      <span style="font-size: 13px; font-weight: 700; color: #166534; display: flex; align-items: center; gap: 6px;">
+
+                        <i class="fa-solid fa-envelope" style="color: #16a34a;"></i> Backup Data to Email
+
+                      </span>
+
+                      <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px;">Direct Inbox Vault</span>
+
+                    </div>
+
+                    <p style="margin: 0; font-size: 11.5px; color: #166534; line-height: 1.4;">
+
+                      Sends your complete store database (.json attachment with all invoices, products, customers) directly to your Gmail inbox.
+
+                    </p>
+
+                    <div style="display: flex; gap: 8px;">
+
+                      <input type="email" id="backup-target-email" placeholder="Enter recipient email..." value="kandukurijagan99@gmail.com" style="flex: 1; padding: 8px 11px; font-size: 12.5px; border: 1.5px solid #86efac; border-radius: 7px; background: #ffffff;">
+
+                      <button type="button" class="btn btn-sm" id="btn-email-backup" onclick="window.sendDataBackupToEmail()" style="background: #16a34a; color: white; border: none; font-weight: 700; padding: 8px 16px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap;">
+
+                        <i class="fa-solid fa-paper-plane"></i> Send to Mail
+
+                      </button>
+
+                    </div>
+
+                  </div>
+
                   <button type="button" class="btn btn-primary" onclick="openDataSharingModal()" style="width: 100%; padding: 10px 14px; font-weight: 700; border-radius: 6px; cursor: pointer; background: linear-gradient(135deg, #0284c7, #0d9488); border: none; color: white; display: flex; align-items: center; justify-content: center; gap: 8px;">
 
                     <i class="fa-solid fa-share-nodes"></i> Open Advanced Data Sharing &amp; P2P Hub
@@ -11187,13 +11223,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v65_complete_sync_and_purge"></script>
+<script src="supabase-adapter.js?v=live_v70_backup_mail_and_access_sync"></script>
 
 <script src="initial_db.js?v=live_v65_complete_sync_and_purge"></script>
 
 <script src="customer-timeline.js?v=live_v68_advanced_features_and_fixes"></script>
 
-<script src="index_v5.js?v=live_v68_advanced_features_and_fixes"></script>
+<script src="index_v5.js?v=live_v70_backup_mail_and_access_sync"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->

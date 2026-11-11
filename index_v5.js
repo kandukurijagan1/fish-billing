@@ -3270,9 +3270,9 @@ function deleteProductFromServer(id) {
   if (typeof window.publishRetainedDatabaseState === 'function') window.publishRetainedDatabaseState();
   if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
     window.SupabaseDB.deleteProduct(id).catch(e => console.warn("[Supabase] Delete product error:", e));
-  } else {
-    pushDirectToGoogleDatabase("delete_record", { type: "product", id });
   }
+  pushDirectToGoogleDatabase("delete_record", { type: "product", id });
+  pushDirectToGoogleDatabase("save_products", { products: productsDb });
 }
 
 function deletePartyFromServer(id) {
@@ -3454,7 +3454,7 @@ window.triggerDatabaseSync = async function(forceReload = false) {
 
           let validServerProds = prodRes.products.filter(sp => sp && sp.id && !_dpri.includes(String(sp.id)));
 
-          if (productsCleared && validServerProds.length === 0) {
+          if (productsCleared) {
             productsDb = [];
             window.productsDb = productsDb;
             try { localStorage.setItem("products", "[]"); } catch(e){}
@@ -5234,8 +5234,35 @@ function initializeApp() {
           globalSettings = Object.assign({}, globalSettings, setRes.settings);
           try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(_) {}
         }
-        if (Array.isArray(setRes.settings.authorizedUsers)) {
-          window.saveAuthorizedUsersList(setRes.settings.authorizedUsers, true);
+        const authUsers = setRes.settings.authorizedUsers || setRes.settings.authorized_users;
+        if (Array.isArray(authUsers)) {
+          window.saveAuthorizedUsersList(authUsers, true);
+
+          // CRITICAL: Check if current logged-in user is an active authorized Admin/Staff
+          const curEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
+          if (curEmail && typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(curEmail)) {
+            const matched = authUsers.find(u => (u.email || "").toLowerCase().trim() === curEmail);
+            if (matched && String(matched.status || "active").toLowerCase().trim() === "active") {
+              const role = matched.role || "admin";
+              const name = matched.name || curEmail.split("@")[0];
+              console.log("[AUTH] Auto-upgrading active authorized user from cloud:", curEmail, role);
+              sessionStorage.removeItem("is_demo_mode");
+              localStorage.removeItem("is_demo_mode");
+              sessionStorage.setItem("is_demo_mode", "false");
+              localStorage.setItem("is_demo_mode", "false");
+              sessionStorage.setItem("current_user_role", role);
+              sessionStorage.setItem("current_user_name", name);
+              if (typeof window.savePersistentAuthSession === 'function') {
+                window.savePersistentAuthSession({ email: curEmail, name, role, isMainAdmin: false });
+              }
+              if (typeof window.applyRolePermissions === 'function') {
+                window.applyRolePermissions(role);
+              }
+              if (typeof window.fetchCloudDatabase === 'function') {
+                window.fetchCloudDatabase(true);
+              }
+            }
+          }
         }
       }
     }).catch(err => console.warn("[Supabase] Early settings boot note:", err));
@@ -17487,15 +17514,26 @@ window.clearAllProductsDb = async function() {
   if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
 
   // Delete from Supabase
-  if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured() && typeof window.SupabaseDB.clearAllProducts === 'function') {
+    await window.SupabaseDB.clearAllProducts().catch(err => console.warn("[Supabase] Batch clear products note:", err));
+  } else if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
     const sb = window.SupabaseDB.getClient();
     if (sb) {
       try {
+        await sb.from("products").update({ is_deleted: true, updated_at: new Date().toISOString() }).neq("id", "___NEVER_MATCH___");
         await sb.from("products").delete().neq("id", "___NEVER_MATCH___");
       } catch (err) {
         console.warn("[Supabase] Batch delete products note:", err);
       }
     }
+  }
+
+  // Push clear to Google Sheets and Cloud Server
+  if (typeof pushDirectToGoogleDatabase === 'function') {
+    pushDirectToGoogleDatabase("save_products", { products: [] });
+  }
+  if (typeof syncDatabaseToServer === 'function') {
+    syncDatabaseToServer("products", []);
   }
 
   loadProductsDatabaseTable();
@@ -18334,6 +18372,11 @@ function loadSettingsFields() {
   elements.setBUpi.value = globalSettings.upiId || "";
 
   elements.setBTerms.value = (globalSettings.terms || []).join("\n");
+
+  const backupTargetEmailInput = document.getElementById('backup-target-email');
+  if (backupTargetEmailInput && !backupTargetEmailInput.value) {
+    backupTargetEmailInput.value = globalSettings.company?.email || "kandukurijagan99@gmail.com";
+  }
 
   const gAdsIdInput = document.getElementById('set-google-ads-id');
   const gAdsLabelInput = document.getElementById('set-google-ads-label');
@@ -21738,6 +21781,108 @@ window.exportDataBackupJSON = function() {
   downloadAnchor.click();
   downloadAnchor.remove();
   showFloatingToast(`✅ Complete Store Backup exported successfully (${(backupObj.invoices||[]).length} Invoices, ${(backupObj.products||[]).length} Products, ${(backupObj.parties||[]).length} Parties)`, "success", 4000);
+};
+
+// ============================================================================
+// 1-Click Store Database Backup to Email (.json Vault Attachment)
+// ============================================================================
+window.sendDataBackupToEmail = async function() {
+  const emailInput = document.getElementById('backup-target-email');
+  const sendBtn = document.getElementById('btn-email-backup');
+  let targetEmail = (emailInput ? emailInput.value : "").trim().toLowerCase();
+  if (!targetEmail || !targetEmail.includes('@')) {
+    targetEmail = (globalSettings?.company?.email || window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+    if (emailInput) emailInput.value = targetEmail;
+  }
+
+  loadAllDatabases();
+  const authUsers = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
+  const sanitizedUsers = (authUsers || []).map(u => ({
+    email: u.email,
+    name: u.name,
+    role: u.role,
+    status: u.status,
+    lastLogin: u.lastLogin
+  }));
+
+  const backupObj = {
+    app: "Aaryan Aqua GST Billing & Store Management",
+    version: "5.28.0",
+    exportDate: new Date().toISOString(),
+    invoices: invoicesDb || [],
+    products: productsDb || [],
+    parties: partiesDb || [],
+    settings: globalSettings || {},
+    authorized_users: sanitizedUsers
+  };
+
+  // 1. Instant local file download as a guaranteed offline copy
+  try {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupObj, null, 2));
+    const dl = document.createElement('a');
+    dl.setAttribute("href", dataStr);
+    const today = new Date().toISOString().split('T')[0];
+    dl.setAttribute("download", `Aaryan_Aqua_Backup_${today}.json`);
+    document.body.appendChild(dl);
+    dl.click();
+    dl.remove();
+  } catch (_) {}
+
+  // 2. Dispatch email with JSON attachment via Google Apps Script MailApp
+  const origBtnHtml = sendBtn ? sendBtn.innerHTML : "";
+  if (sendBtn) {
+    sendBtn.disabled = true;
+    sendBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Sending...`;
+  }
+
+  showFloatingToast(`📤 Dispatching complete store backup (.json) to ${targetEmail}...`, "info", 4000);
+
+  try {
+    const scriptUrl = typeof GOOGLE_SCRIPT_URL !== 'undefined' ? GOOGLE_SCRIPT_URL : "https://script.google.com/macros/s/AKfycbxHi4L_xLrfRhx1KWxRxQD1QcqbVEZVMcYR37DJEGSPe2ykZyy-ATnYyZFxnSySS6OF/exec";
+    const res = await fetch(scriptUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: "email_backup",
+        email: targetEmail,
+        backup: backupObj,
+        token: typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : ""
+      })
+    });
+
+    const resJson = await res.json().catch(() => null);
+    if (resJson && resJson.ok) {
+      showFloatingToast(`✅ Success! Complete Store Backup (.json attachment) delivered to ${targetEmail}!`, "success", 7000);
+      if (sendBtn) {
+        sendBtn.innerHTML = `<i class="fa-solid fa-check"></i> Sent!`;
+        setTimeout(() => {
+          sendBtn.disabled = false;
+          sendBtn.innerHTML = origBtnHtml;
+        }, 3000);
+      }
+      return;
+    }
+    throw new Error(resJson?.error || "Script returned error");
+  } catch (err) {
+    console.warn("[Backup to Email] Primary cloud dispatch note:", err);
+    // Fallback: Mailto client prefilled draft
+    const compName = globalSettings.company?.name || "Aaryan Aqua Needs";
+    const subject = encodeURIComponent(`📦 Store Database Backup Snapshot - ${compName}`);
+    const body = encodeURIComponent(
+      `Store Database Backup generated on ${new Date().toLocaleString()}\n\n` +
+      `Summary:\n` +
+      `• Total Invoices: ${(backupObj.invoices || []).length}\n` +
+      `• Total Products: ${(backupObj.products || []).length}\n` +
+      `• Total Parties: ${(backupObj.parties || []).length}\n\n` +
+      `The full JSON backup file has been saved to your Downloads folder and can be restored anytime via Settings > Import Backup.`
+    );
+    window.open(`mailto:${targetEmail}?subject=${subject}&body=${body}`, '_blank');
+    showFloatingToast(`📁 Backup downloaded to your computer & email draft opened for ${targetEmail}.`, "info", 6000);
+    if (sendBtn) {
+      sendBtn.disabled = false;
+      sendBtn.innerHTML = origBtnHtml;
+    }
+  }
 };
 
 window.importDataBackupJSON = function(event) {

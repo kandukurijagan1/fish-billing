@@ -310,6 +310,20 @@
       }
     },
 
+    async clearAllProducts() {
+      if (isDemoActive()) return { ok: true, isDemo: true, blocked: true };
+      const sb = initClient();
+      if (!sb) return { ok: false };
+      try {
+        await sb.from("products").update({ is_deleted: true, updated_at: new Date().toISOString() }).neq("id", "___nonexistent___");
+        await sb.from("products").delete().neq("id", "___nonexistent___");
+        return { ok: true };
+      } catch (err) {
+        console.error("[Supabase] clearAllProducts error:", err);
+        return { ok: false, error: err };
+      }
+    },
+
     // --- CUSTOMERS & PARTIES ---
     async upsertCustomer(c) {
       if (isDemoActive()) return { ok: true, isDemo: true, blocked: true };
@@ -510,18 +524,29 @@
     },
 
     async fetchSettings() {
-      if (isDemoActive()) {
-        const snap = getDemoSnapshot();
-        return { ok: true, settings: (snap && snap.settings) ? JSON.parse(JSON.stringify(snap.settings)) : {} };
-      }
       const sb = initClient();
-      if (!sb) return { ok: false };
-      const { data, error } = await sb.from("settings").select("*").eq("key", "global_settings").maybeSingle();
-      if (error) {
-        console.error("[Supabase] fetchSettings error:", error);
-        return { ok: false, error };
+      if (!sb) {
+        if (isDemoActive()) {
+          const snap = getDemoSnapshot();
+          return { ok: true, settings: (snap && snap.settings) ? JSON.parse(JSON.stringify(snap.settings)) : {} };
+        }
+        return { ok: false };
       }
-      return { ok: true, settings: data?.value || null };
+      try {
+        const { data, error } = await sb.from("settings").select("*").eq("key", "global_settings").maybeSingle();
+        if (error) {
+          console.error("[Supabase] fetchSettings error:", error);
+          if (isDemoActive()) {
+            const snap = getDemoSnapshot();
+            return { ok: true, settings: (snap && snap.settings) ? JSON.parse(JSON.stringify(snap.settings)) : {} };
+          }
+          return { ok: false, error };
+        }
+        return { ok: true, settings: data?.value || null };
+      } catch (err) {
+        console.error("[Supabase] fetchSettings exception:", err);
+        return { ok: false, error: err };
+      }
     },
 
     // --- LOCKED INQUIRY EMAILS (Strict 1-Time Message Limit Per Email) ---
