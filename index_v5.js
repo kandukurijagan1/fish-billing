@@ -3365,7 +3365,7 @@ window.updateCloudSyncBadge = function(status) {
   const outboxCount = (window.TurboOutboxQueue && typeof window.TurboOutboxQueue.getItems === 'function') ? window.TurboOutboxQueue.getItems().length : 0;
 
   let targetBadgeClass = "cloud-sync-pill synced cursor-pointer";
-  let targetTextHtml = "🟢 Supabase DB Live • Connected";
+  let targetTextHtml = "Supabase DB Live • Connected";
   let targetDotClass = "realtime-radar-dot active";
   let showDot = true;
 
@@ -3380,7 +3380,7 @@ window.updateCloudSyncBadge = function(status) {
     showDot = true;
   } else {
     targetBadgeClass = "cloud-sync-pill synced cursor-pointer";
-    targetTextHtml = "🟢 Supabase DB Live • Connected";
+    targetTextHtml = "Supabase DB Live • Connected";
     targetDotClass = "realtime-radar-dot active";
     showDot = true;
   }
@@ -16002,14 +16002,14 @@ function renderHistoryTableRows(records) {
     if (status === 'Unpaid') badgeClass = 'badge-unpaid';
 
     let balanceQrBtn = "";
-    if (!isEstimate && !isPaid && balance > 0 && !isCustomerRole && !isViewOnlyUser) {
+    if (!isPaid && balance > 0 && !isCustomerRole && !isViewOnlyUser) {
       balanceQrBtn = `
         <button class="action-btn share action-btn-qr" onclick="openBalanceQrModal('${inv.id}')" title="Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode"></i></button>
       `;
     }
 
     let balanceQrDropdownItem = "";
-    if (!isEstimate && !isPaid && balance > 0 && !isCustomerRole && !isViewOnlyUser) {
+    if (!isPaid && balance > 0 && !isCustomerRole && !isViewOnlyUser) {
       balanceQrDropdownItem = `
         <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); openBalanceQrModal('${inv.id}')"><i class="fa-solid fa-qrcode" style="color: #06b6d4;"></i> Scan UPI QR &amp; Settle (₹ ${formatCurrency(balance)})</a>
         <a href="javascript:void(0)" onclick="closeAllActionDropdowns(); sendWhatsAppPaymentReminder('${inv.id}', this)"><i class="fa-solid fa-bell" style="color: #d97706;"></i> WhatsApp Payment Reminder</a>
@@ -16050,12 +16050,16 @@ function renderHistoryTableRows(records) {
         </td>
         <td class="text-center">${itemsCount}</td>
         <td style="text-align: right; font-weight: 700;">₹ ${formatCurrency(invTotal)}</td>
-        <td class="text-center">
-          ${isEstimate 
-            ? `<span class="badge-status" style="background: rgba(245, 158, 11, 0.15); color: #d97706; font-weight: 700; border: 1px solid rgba(245, 158, 11, 0.3);">Quotation</span>` 
-            : (!isPaid && balance > 0 && !isCustomerRole && !isViewOnlyUser
-                ? `<span class="badge-status ${badgeClass}" onclick="openBalanceQrModal('${inv.id}')" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode" style="font-size: 11px;"></i>${status}</span><div style="font-size: 10.5px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>`
-                : `<span class="badge-status ${badgeClass}">${status}</span>${(!isPaid && balance > 0 ? `<div style="font-size: 10.5px; color: #b45309; font-weight: 700; margin-top: 2px;">Bal: ₹${formatCurrency(balance)}</div>` : '')}`)}
+        <td class="text-center" style="white-space: nowrap;">
+          <div style="display: inline-flex; flex-direction: column; align-items: center; gap: 4px;">
+            <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.3px; padding: 1.5px 7px; border-radius: 4px; ${isEstimate ? 'background: #fffbeb; color: #b45309; border: 1px solid #fde68a;' : 'background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0;'} text-transform: uppercase;">
+              <i class="${isEstimate ? 'fa-solid fa-file-signature' : 'fa-solid fa-file-invoice'}" style="font-size: 9.5px; margin-right: 3px;"></i>${isEstimate ? 'Quotation' : 'GST Invoice'}
+            </span>
+            ${!isPaid && balance > 0 && !isCustomerRole && !isViewOnlyUser
+              ? `<span class="badge-status ${badgeClass}" onclick="openBalanceQrModal('${inv.id}')" style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Click to Scan UPI QR &amp; Settle Payment (Balance: ₹ ${formatCurrency(balance)})"><i class="fa-solid fa-qrcode" style="font-size: 10px;"></i>${status}</span><div style="font-size: 10.5px; color: #b45309; font-weight: 700;">Bal: ₹${formatCurrency(balance)}</div>`
+              : `<span class="badge-status ${badgeClass}">${status}</span>${(!isPaid && balance > 0 ? `<div style="font-size: 10.5px; color: #b45309; font-weight: 700;">Bal: ₹${formatCurrency(balance)}</div>` : '')}`
+            }
+          </div>
         </td>
         <td class="actions-cell">
           ${isViewOnlyUser
