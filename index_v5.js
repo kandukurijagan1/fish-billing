@@ -4509,7 +4509,7 @@ window.triggerInstantPeerTransfer = function(btnEl) {
 
 // Lock screen credentials state
 let activeUsername = "kandukurijagan99@gmail.com";
-let activePassword = "Aaryan@2024";
+let activePassword = "";
 let lockTimerSeconds = 1800; // 30 mins default enterprise duration (or 0 for disabled)
 let isLocked = true;
 let autolockInterval = null;
@@ -6304,14 +6304,14 @@ window.loadAllDatabases = function loadAllDatabases() {
   if (!globalSettings.security.username || globalSettings.security.username === "1234" || globalSettings.security.username === "Aaryanaqua" || globalSettings.security.username === "admin") {
     globalSettings.security.username = "kandukurijagan99@gmail.com";
   }
-  if (!globalSettings.security.password || globalSettings.security.password === "1234" || globalSettings.security.pin === "1234") {
-    globalSettings.security.password = "Aaryan@2024";
+  if (!globalSettings.security.password || globalSettings.security.password === "1234" || globalSettings.security.pin === "1234" || globalSettings.security.password === "Aaryan@2024") {
+    globalSettings.security.password = "";
   }
   if (globalSettings.security.whatsappLockEnabled === undefined) {
     globalSettings.security.whatsappLockEnabled = true;
   }
-  if (!globalSettings.security.whatsappPin) {
-    globalSettings.security.whatsappPin = "2024";
+  if (!globalSettings.security.whatsappPin || globalSettings.security.whatsappPin === "2024") {
+    globalSettings.security.whatsappPin = "";
   }
   if (!globalSettings.security.whatsappAutoLockMinutes) {
     globalSettings.security.whatsappAutoLockMinutes = "15";
@@ -6368,8 +6368,8 @@ window.loadAllDatabases = function loadAllDatabases() {
     console.warn("Unable to persist settings:", err);
   }
 
-  activeUsername = globalSettings.security?.username || "Aaryanaqua";
-  activePassword = globalSettings.security?.password || globalSettings.security?.pin || "Aaryan@2024";
+  activeUsername = globalSettings.security?.username || "kandukurijagan99@gmail.com";
+  activePassword = globalSettings.security?.password || globalSettings.security?.pin || "";
   lockTimerSeconds = parseInt(globalSettings.security?.autolock !== undefined ? globalSettings.security.autolock : "1800", 10);
   if (Number.isNaN(lockTimerSeconds)) {
     lockTimerSeconds = 1800;
@@ -11009,6 +11009,17 @@ window.generateRandomBarcodeForModal = function() {
 
 window.handlePaymentStatusChange = function() {
   const status = elements.billPaymentStatus.value;
+  // Strict Accounting Lock: Paid bills cannot be downgraded or switched to Unpaid
+  if (currentInvoice && currentInvoice.isEditing && currentInvoice._originalPaymentStatus === "Paid" && status !== "Paid") {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("🔒 Reconciled Record: This invoice is already settled and marked as Paid. Paid invoices cannot be changed to Unpaid.", "warning", 5000);
+    }
+    elements.billPaymentStatus.value = "Paid";
+  if (elements.billPaymentStatus && elements.billPaymentStatus.options) {
+    Array.from(elements.billPaymentStatus.options).forEach(opt => { opt.disabled = false; });
+  }
+    return;
+  }
   currentInvoice.paymentStatus = status;
   
   const paidWrapper = document.getElementById("paid-amount-wrapper");
@@ -11545,6 +11556,9 @@ function resetBillingForm() {
   elements.billConsigneeState.value = "Andhra Pradesh";
   elements.billConsigneeStateCode.value = "37";
   elements.billPaymentStatus.value = "Paid";
+  if (elements.billPaymentStatus && elements.billPaymentStatus.options) {
+    Array.from(elements.billPaymentStatus.options).forEach(opt => { opt.disabled = false; });
+  }
   elements.billPaymentMode.value = "UPI / QR";
   elements.billPaidAmount.value = "0";
   elements.billBalancePaid.value = "0";
@@ -12484,6 +12498,7 @@ function populateA4PrintOverlay(invoice) {
   if (bankBranchEl) bankBranchEl.textContent = bank.branch || "Repalle";
 
   // Payment QR Code (Strict Privacy: NO website links, NO customer details, NO plain text data)
+  const isEstimateDoc = Boolean(invoice.isEstimate || String(invoice.invoiceType || '').toUpperCase().includes("QUOTATION") || String(invoice.invoiceNo || '').startsWith("EST-"));
   const payInfoA4 = (typeof getInvoicePaidAndBalance === "function") 
     ? getInvoicePaidAndBalance(invoice) 
     : { isPaid: true, balance: 0 };
@@ -12493,17 +12508,21 @@ function populateA4PrintOverlay(invoice) {
     : ((invoice.details && invoice.details.balanceDue !== undefined && !isNaN(parseFloat(invoice.details.balanceDue)))
         ? parseFloat(invoice.details.balanceDue)
         : payInfoA4.balance);
-  const isPaidInvoice = Boolean(payInfoA4.isPaid || rawStatusA4 === 'paid' || rawBalanceA4 <= 0);
+  const isPaidInvoice = Boolean(isEstimateDoc || payInfoA4.isPaid || rawStatusA4 === 'paid' || rawBalanceA4 <= 0);
   const qrPaidContainer = document.getElementById("p-print-qr-paid-container");
   const qrUnpaidContainer = document.getElementById("p-print-qr-unpaid-container");
   const qrHeaderTitle = document.getElementById("p-print-qr-header-title");
   const verifyQrImg = document.getElementById("p-print-verify-qr-img");
 
   if (isPaidInvoice) {
-    // If invoice is PAID: NO QR CODE! Show clean official PAID seal. Nothing to scan, zero data exposed!
-    if (qrPaidContainer) qrPaidContainer.style.display = "flex";
+    // If invoice is PAID or QUOTATION: NO QR CODE! Show clean official seal. Nothing to scan, zero data exposed!
+    if (qrPaidContainer) {
+      qrPaidContainer.style.display = "flex";
+      const sealTitle = qrPaidContainer.querySelector("span:first-of-type");
+      if (sealTitle) sealTitle.textContent = isEstimateDoc ? "ESTIMATE" : "PAID";
+    }
     if (qrUnpaidContainer) qrUnpaidContainer.style.display = "none";
-    if (qrHeaderTitle) qrHeaderTitle.textContent = "PAYMENT STATUS";
+    if (qrHeaderTitle) qrHeaderTitle.textContent = isEstimateDoc ? "ESTIMATE STATUS" : "PAYMENT STATUS";
     if (verifyQrImg) verifyQrImg.src = "";
   } else {
     // If UNPAID or PARTIAL: Show pure standard UPI Payment QR (NO website URL, NO customer name, NO customer phone)
@@ -12601,6 +12620,7 @@ function populateThermalPrintOverlay(invoice) {
   }
 
   // Dynamic UPI Payment QR code for physical thermal slip (Strict Privacy)
+  const isEstimateThermal = Boolean(invoice.isEstimate || String(invoice.invoiceType || '').toUpperCase().includes("QUOTATION") || String(invoice.invoiceNo || '').startsWith("EST-"));
   const thUpiContainer = document.getElementById("th-upi-qr-container");
   const payInfoTh = (typeof getInvoicePaidAndBalance === "function") 
     ? getInvoicePaidAndBalance(invoice) 
@@ -12611,7 +12631,7 @@ function populateThermalPrintOverlay(invoice) {
     : ((invoice.details && invoice.details.balanceDue !== undefined && !isNaN(parseFloat(invoice.details.balanceDue)))
         ? parseFloat(invoice.details.balanceDue)
         : payInfoTh.balance);
-  const isPaidThermal = Boolean(payInfoTh.isPaid || rawStatusTh === 'paid' || rawBalanceTh <= 0);
+  const isPaidThermal = Boolean(isEstimateThermal || payInfoTh.isPaid || rawStatusTh === 'paid' || rawBalanceTh <= 0);
   const qrImg = document.getElementById("th-upi-qr-img");
 
   if (isPaidThermal) {
@@ -14079,17 +14099,19 @@ window.submitWhatsAppUnlock = function(e) {
 
   const entered = (pinInput ? pinInput.value : "").trim();
   const sec = globalSettings?.security || {};
-  const targetPin = (sec.whatsappPin || "2024").toString().trim();
-  const masterPassword = (sec.password || activePassword || "Aaryan@2024").toString().trim();
+  const targetPin = (sec.whatsappPin || "").toString().trim();
+  const masterPassword = (sec.password || activePassword || "").toString().trim();
+  const isSuperAdminUser = (typeof window.isMainAdmin === "function" && window.isMainAdmin()) || sessionStorage.getItem("is_main_admin") === "true";
 
-  if (!entered) {
+  if (!entered && !isSuperAdminUser) {
     if (errText) errText.textContent = "Please enter Security PIN or Password!";
     if (errBlock) errBlock.classList.remove("hidden");
     return;
   }
 
   // Validate entered credentials against target PIN or master login password
-  if (entered === targetPin || entered === masterPassword) {
+  const isMatchWa = (targetPin && entered === targetPin) || (masterPassword && entered === masterPassword) || (!targetPin && !masterPassword && isSuperAdminUser);
+  if (isMatchWa) {
     isWhatsAppSessionUnlocked = true;
     const autolockVal = sec.whatsappAutoLockMinutes || "15";
     if (autolockVal !== "immediate" && autolockVal !== "screen" && !isNaN(parseInt(autolockVal))) {
@@ -16219,7 +16241,21 @@ window.editSavedInvoice = function(id) {
     elements.billConsigneeState.value = currentInvoice.consignee.state || "Andhra Pradesh";
     elements.billConsigneeStateCode.value = currentInvoice.consignee.stateCode || "37";
 
-    elements.billPaymentStatus.value = currentInvoice.paymentStatus || "Paid";
+    const payInfo = typeof getInvoicePaidAndBalance === 'function' ? getInvoicePaidAndBalance(inv) : { isPaid: inv.paymentStatus === 'Paid', balance: 0 };
+    const origStatus = (payInfo.isPaid || inv.paymentStatus === 'Paid') ? 'Paid' : (inv.paymentStatus || 'Unpaid');
+    currentInvoice._originalPaymentStatus = origStatus;
+
+    elements.billPaymentStatus.value = origStatus;
+    if (origStatus === 'Paid' && elements.billPaymentStatus && elements.billPaymentStatus.options) {
+      Array.from(elements.billPaymentStatus.options).forEach(opt => {
+        if (opt.value !== 'Paid') opt.disabled = true;
+      });
+    } else if (elements.billPaymentStatus && elements.billPaymentStatus.options) {
+      Array.from(elements.billPaymentStatus.options).forEach(opt => {
+        opt.disabled = false;
+      });
+    }
+
     elements.billPaymentMode.value = currentInvoice.paymentMode || "UPI / QR";
     elements.billPaidAmount.value = currentInvoice.paidAmount !== undefined ? currentInvoice.paidAmount : (currentInvoice.total || 0);
     elements.billBalancePaid.value = currentInvoice.balancePaid !== undefined ? currentInvoice.balancePaid : 0;
@@ -18860,13 +18896,13 @@ function loadSettingsFields() {
 
   elements.setAutolockTimer.value = globalSettings.security?.autolock !== undefined ? globalSettings.security.autolock : "1800";
   elements.setLoginUsername.value = globalSettings.security?.username || "kandukurijagan99@gmail.com";
-  elements.setLoginPassword.value = globalSettings.security?.password || globalSettings.security?.pin || "Aaryan@2024";
-  if (elements.setSecurityPin) elements.setSecurityPin.value = globalSettings.security?.securityPin || globalSettings.security?.pin || "2024";
+  elements.setLoginPassword.value = (globalSettings.security?.password && globalSettings.security?.password !== "Aaryan@2024") ? globalSettings.security.password : "";
+  if (elements.setSecurityPin) elements.setSecurityPin.value = (globalSettings.security?.securityPin && globalSettings.security?.securityPin !== "2024") ? globalSettings.security.securityPin : "";
   if (elements.setStrictBootLock) elements.setStrictBootLock.checked = globalSettings.security?.strictBootLock !== false;
   if (elements.setCounterPrivacyMode) elements.setCounterPrivacyMode.checked = localStorage.getItem("counter_privacy_mode") === "true" || globalSettings.security?.counterPrivacyMode === true;
 
   if (elements.setWaLockEnabled) elements.setWaLockEnabled.checked = globalSettings.security?.whatsappLockEnabled !== false;
-  if (elements.setWaPin) elements.setWaPin.value = globalSettings.security?.whatsappPin || "2024";
+  if (elements.setWaPin) elements.setWaPin.value = (globalSettings.security?.whatsappPin && globalSettings.security?.whatsappPin !== "2024") ? globalSettings.security.whatsappPin : "";
   if (elements.setWaAutolock) elements.setWaAutolock.value = globalSettings.security?.whatsappAutoLockMinutes || "15";
   if (elements.setWaMaskPhones) elements.setWaMaskPhones.checked = globalSettings.security?.whatsappMaskPhones !== false;
   if (elements.setWaProtectChats) elements.setWaProtectChats.checked = globalSettings.security?.whatsappProtectChats !== false;
@@ -19127,12 +19163,14 @@ window.saveSecuritySettings = async function(e) {
   }
 
   const waLockEnabled = elements.setWaLockEnabled ? elements.setWaLockEnabled.checked : true;
-  const waPin = elements.setWaPin ? elements.setWaPin.value.trim() : (globalSettings.security?.whatsappPin || "2024");
+  const rawWaPin = elements.setWaPin ? elements.setWaPin.value.trim() : (globalSettings.security?.whatsappPin || "");
+  const waPin = rawWaPin === "2024" ? "" : rawWaPin;
   const waAutoLock = elements.setWaAutolock ? elements.setWaAutolock.value : "15";
   const waMaskPhones = elements.setWaMaskPhones ? elements.setWaMaskPhones.checked : true;
   const waProtectChats = elements.setWaProtectChats ? elements.setWaProtectChats.checked : true;
 
-  const securityPin = elements.setSecurityPin ? elements.setSecurityPin.value.trim() : (globalSettings.security?.securityPin || "2024");
+  const rawSecPin = elements.setSecurityPin ? elements.setSecurityPin.value.trim() : (globalSettings.security?.securityPin || "");
+  const securityPin = rawSecPin === "2024" ? "" : rawSecPin;
   const strictBootLock = elements.setStrictBootLock ? elements.setStrictBootLock.checked : true;
   const counterPrivacyMode = elements.setCounterPrivacyMode ? elements.setCounterPrivacyMode.checked : false;
 
@@ -19140,12 +19178,12 @@ window.saveSecuritySettings = async function(e) {
     ...(globalSettings.security || {}),
     autolock,
     username,
-    password,
-    securityPin: securityPin || "2024",
+    password: (password === "Aaryan@2024") ? "" : password,
+    securityPin: securityPin || "",
     strictBootLock,
     counterPrivacyMode,
     whatsappLockEnabled: waLockEnabled,
-    whatsappPin: waPin || "2024",
+    whatsappPin: waPin || "",
     whatsappAutoLockMinutes: waAutoLock,
     whatsappMaskPhones: waMaskPhones,
     whatsappProtectChats: waProtectChats
@@ -21042,10 +21080,10 @@ window.sendLoginOtpCodeDirectly = async function() {
   }
 
   if (dispatched) {
-    showFloatingToast(`📩 6-digit OTP sent to ${enteredEmail}! Check your inbox.`, "success", 6000);
+    showFloatingToast(`📩 6-digit verification code sent to ${enteredEmail}! Please check your email inbox.`, "success", 7000);
   } else {
-    // Passcode fallback notification
-    showFloatingToast(`📩 Passcode for ${enteredEmail}: [ ${generatedCode} ] (Valid for 15 mins)`, "success", 12000);
+    // Strict Zero-Trust Security: NEVER display OTP passcodes on screen
+    showFloatingToast(`📩 Verification code request registered for ${enteredEmail}. Please check your email inbox or use 1-Click 'Sign in with Google' above.`, "info", 7000);
   }
 
   const passField = document.getElementById("login-password");
@@ -21406,60 +21444,81 @@ window.handleTraditionalLoginSubmit = async function(e) {
     return;
   }
 
-  const customPin = String(globalSettings?.security?.securityPin || globalSettings?.security?.pin || "").trim();
-  const sysPin = customPin || "2024";
-  const sysPass = String(globalSettings?.security?.password || (customPin ? "" : "Aaryan@2024")).trim();
-
-  // MASTER PIN QUICK-UNLOCK: If user typed master PIN in either input
-  const isDirectMasterPin = (enteredEmail === sysPin || enteredPass === sysPin || enteredPass === "2024" || enteredEmail === "2024");
-  const isStandalonePin = isDirectMasterPin && (!enteredEmail || enteredEmail === sysPin || enteredEmail === "2024" || !enteredPass || enteredPass === sysPin || enteredPass === "2024" || enteredEmail === mainAdminNorm);
-
-  if (!isStandalonePin) {
-    // 1. Check Email required if not entering direct PIN
-    if (!enteredEmail) {
-      if (errBlock) {
-        errBlock.innerHTML = `
-          <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
-            <i class="fa-solid fa-triangle-exclamation"></i> Email or PIN Required!
-          </div>
-          <div style="font-size: 11.5px; color: #cbd5e1;">
-            Please enter your authorized email address or Master PIN (2024).
-          </div>
-        `;
-        errBlock.classList.remove("hidden");
-      }
-      const card = document.querySelector(".login-card");
-      if (card) {
-        card.classList.remove("shake-animation");
-        void card.offsetWidth;
-        card.classList.add("shake-animation");
-      }
-      if (userField) userField.focus();
-      return;
-    }
-
-    // 2. Password or code required
-    if (!enteredPass && enteredEmail !== "2024" && enteredEmail !== sysPin) {
-      if (errBlock) {
-        errBlock.innerHTML = `
-          <div style="font-weight: 700; color: #f59e0b; margin-bottom: 2px;">
-            <i class="fa-solid fa-key"></i> Password or PIN Required!
+  // STRICT ZERO-TRUST BLOCK: Static passwords & PINs ("2024", "Aaryan@2024", etc.) are permanently disabled
+  if (enteredEmail === "2024" || enteredPass === "2024" || enteredPass === "aaryan@2024" || enteredPass.toLowerCase() === "aaryan@2024" || enteredEmail === "1234" || enteredPass === "1234") {
+    if (submitBtn) submitBtn.disabled = false;
+    if (btnText) btnText.classList.remove("hidden");
+    if (btnSpinner) btnSpinner.classList.add("hidden");
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+            <i class="fa-solid fa-lock"></i> Direct Mail Access Only
           </div>
           <div style="font-size: 11.5px; color: #cbd5e1; line-height: 1.4;">
-            Please enter your assigned password or security PIN.
+            Static PINs and passwords are completely disabled. Please click <strong>"Sign in with Google"</strong> or enter the 6-digit verification code sent to your email.
           </div>
-        `;
-        errBlock.classList.remove("hidden");
-      }
-      const card = document.querySelector(".login-card");
-      if (card) {
-        card.classList.remove("shake-animation");
-        void card.offsetWidth;
-        card.classList.add("shake-animation");
-      }
-      if (passField) passField.focus();
-      return;
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
     }
+    if (passField) {
+      passField.value = "";
+      passField.focus();
+    }
+    const card = document.querySelector(".login-card");
+    if (card) {
+      card.classList.remove("shake-animation");
+      void card.offsetWidth;
+      card.classList.add("shake-animation");
+    }
+    return;
+  }
+
+  // 1. Email is required
+  if (!enteredEmail) {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+          <i class="fa-solid fa-envelope"></i> Email Address Required!
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1;">
+          Please enter your authorized email address.
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    const card = document.querySelector(".login-card");
+    if (card) {
+      card.classList.remove("shake-animation");
+      void card.offsetWidth;
+      card.classList.add("shake-animation");
+    }
+    if (userField) userField.focus();
+    return;
+  }
+
+  // 2. 6-Digit Email Code is required
+  if (!enteredPass) {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f59e0b; margin-bottom: 2px;">
+          <i class="fa-solid fa-shield-halved"></i> 6-Digit Email Code Required!
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1; line-height: 1.4;">
+          Please click "Send 6-Digit Code to Email" or enter the code received in your email inbox.
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    const card = document.querySelector(".login-card");
+    if (card) {
+      card.classList.remove("shake-animation");
+      void card.offsetWidth;
+      card.classList.add("shake-animation");
+    }
+    if (passField) passField.focus();
+    return;
   }
 
   if (submitBtn) submitBtn.disabled = true;
@@ -21470,18 +21529,10 @@ window.handleTraditionalLoginSubmit = async function(e) {
   let verifiedRole = "admin";
   let matchedUser = null;
 
-  const checkUserPassword = (u, pass) => {
-    if (!u) return false;
-    const pStr = String(pass).trim();
-    if (u.password && String(u.password).trim() === pStr) return true;
-    if (u.pin && String(u.pin).trim() === pStr) return true;
-    if (u.otp && String(u.otp).trim() === pStr) return true;
-    return false;
-  };
-
-  // Step 0.5: Check Pending Session Mail OTP Code
+  // Step 1: Check Pending Session Mail OTP Code
   const pendingOtp = sessionStorage.getItem("pending_login_otp");
   const pendingEmail = (sessionStorage.getItem("pending_login_email") || "").toLowerCase().trim();
+
   if (pendingOtp && enteredPass === pendingOtp && (!pendingEmail || pendingEmail === enteredEmail)) {
     if (!isMainAdmin && typeof window.isUserSuspendedByAdmin === 'function' && window.isUserSuspendedByAdmin(enteredEmail)) {
       if (submitBtn) submitBtn.disabled = false;
@@ -21507,7 +21558,7 @@ window.handleTraditionalLoginSubmit = async function(e) {
     sessionStorage.removeItem("pending_login_email");
     if (isMainAdmin) {
       verifiedRole = "super_admin";
-      matchedUser = { email: window.AUTHORIZED_LOGIN_EMAIL, name: "Jagan Kandukuri (Main Admin)", role: "super_admin", status: "active", isMainAdmin: true };
+      matchedUser = { email: window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com", name: "Jagan Kandukuri (Main Admin)", role: "super_admin", status: "active", isMainAdmin: true };
     } else {
       let uRec = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList().find(u => (u.email || "").toLowerCase().trim() === enteredEmail) : null;
       verifiedRole = uRec?.role || "admin";
@@ -21520,125 +21571,7 @@ window.handleTraditionalLoginSubmit = async function(e) {
     }
   }
 
-  // Step 1: Check Main Admin credentials or Master PIN
-  if (!isOtpValid && (isMainAdmin || isDirectMasterPin)) {
-    const validSysPass = Boolean(sysPass && sysPass.length >= 4);
-    const validSysPin = Boolean(sysPin && sysPin.length >= 4);
-    if ((validSysPass && enteredPass === sysPass) || (validSysPin && enteredPass === sysPin) || enteredPass === "2024" || enteredPass === sysPin || enteredEmail === "2024" || enteredEmail === sysPin) {
-      isOtpValid = true;
-      verifiedRole = "super_admin";
-      matchedUser = { email: window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com", name: "Jagan Kandukuri (Main Admin)", role: "super_admin", status: "active", isMainAdmin: true };
-    }
-  }
-
-  // Step 2: Check Local & Bundled Authorized Users List
-  if (!isOtpValid) {
-    let usersList = window.getAuthorizedUsersList();
-    matchedUser = usersList.find(u => (u.email || "").toLowerCase().trim() === enteredEmail);
-    if (matchedUser) {
-      if (matchedUser.status === "suspended") {
-        if (submitBtn) submitBtn.disabled = false;
-        if (btnText) btnText.classList.remove("hidden");
-        if (btnSpinner) btnSpinner.classList.add("hidden");
-        if (errBlock) {
-          errBlock.innerHTML = `
-            <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px; text-align: left;">
-              <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
-                <i class="fa-solid fa-user-lock"></i> Account Suspended
-              </div>
-              <div style="font-size: 11.5px; color: #cbd5e1;">
-                Your account (<strong style="color: #fca5a5;">${escapeHtml(enteredEmail)}</strong>) has been paused by the Main Admin.
-              </div>
-            </div>
-          `;
-          errBlock.classList.remove("hidden");
-        }
-        return;
-      }
-
-      if (checkUserPassword(matchedUser, enteredPass)) {
-        isOtpValid = true;
-        verifiedRole = matchedUser.role || "cashier";
-      }
-    }
-  }
-
-  // Step 2.9: If not validated yet, fetch fresh settings from Supabase DB immediately
-  if (!isOtpValid && window.SupabaseDB && typeof window.SupabaseDB.fetchSettings === 'function') {
-    try {
-      const sbRes = await window.SupabaseDB.fetchSettings();
-      if (sbRes && sbRes.ok && sbRes.settings) {
-        const cloudSett = sbRes.settings;
-        const authList = cloudSett.authorizedUsers || cloudSett.authorized_users;
-        if (Array.isArray(authList)) {
-          if (typeof globalSettings !== 'undefined') {
-            globalSettings = Object.assign({}, globalSettings, cloudSett);
-            try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(_) {}
-          }
-          window.saveAuthorizedUsersList(authList, true);
-          const freshList = window.getAuthorizedUsersList();
-          matchedUser = freshList.find(u => (u.email || "").toLowerCase().trim() === enteredEmail);
-          if (matchedUser) {
-            if (matchedUser.status === "suspended") {
-              if (submitBtn) submitBtn.disabled = false;
-              if (btnText) btnText.classList.remove("hidden");
-              if (btnSpinner) btnSpinner.classList.add("hidden");
-              if (errBlock) {
-                errBlock.innerHTML = `
-                  <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px; text-align: left;">
-                    <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
-                      <i class="fa-solid fa-user-lock"></i> Account Suspended
-                    </div>
-                    <div style="font-size: 11.5px; color: #cbd5e1;">
-                      Your account (<strong style="color: #fca5a5;">${escapeHtml(enteredEmail)}</strong>) has been paused by the Main Admin.
-                    </div>
-                  </div>
-                `;
-                errBlock.classList.remove("hidden");
-              }
-              return;
-            }
-            if (checkUserPassword(matchedUser, enteredPass) || enteredPass === sysPin || enteredPass === "2024") {
-              isOtpValid = true;
-              verifiedRole = matchedUser.role || "admin";
-            }
-          }
-        }
-      }
-    } catch(sbErr) {
-      console.warn("[Supabase] Cloud credentials check:", sbErr);
-    }
-  }
-
-  // Step 3: If not validated yet, fetch fresh settings from Google Cloud (in case admin added user on another device)
-  if (!isOtpValid && typeof GOOGLE_SCRIPT_URL !== 'undefined') {
-    try {
-      const syncUrl = `${GOOGLE_SCRIPT_URL}?action=sync&auth=${encodeURIComponent(API_SECRET_TOKEN || '')}&token=${encodeURIComponent(API_SECRET_TOKEN || '')}&_t=${Date.now()}`;
-      const res = await fetch(syncUrl, { redirect: 'follow', cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json();
-        const cloudSettings = data ? (data.settings || data.globalSettings) : null;
-        if (cloudSettings && typeof cloudSettings === 'object') {
-          const authList = cloudSettings.authorizedUsers || cloudSettings.authorized_users;
-          if (authList && Array.isArray(authList)) {
-            window.saveAuthorizedUsersList(authList, true);
-            const freshList = window.getAuthorizedUsersList();
-            matchedUser = freshList.find(u => (u.email || "").toLowerCase().trim() === enteredEmail);
-            if (matchedUser && matchedUser.status === "active") {
-              if (checkUserPassword(matchedUser, enteredPass) || enteredPass === sysPin || enteredPass === "2024") {
-                isOtpValid = true;
-                verifiedRole = matchedUser.role || "admin";
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Cloud credentials verification check:", e);
-    }
-  }
-
-  // Step 4: Fallback to Google Apps Script verify_login_otp if email OTP code was requested
+  // Step 2: Fallback to Google Apps Script verify_login_otp if email OTP code was requested
   if (!isOtpValid && typeof GOOGLE_SCRIPT_URL !== 'undefined') {
     try {
       const res = await fetch(GOOGLE_SCRIPT_URL, {
@@ -21648,54 +21581,40 @@ window.handleTraditionalLoginSubmit = async function(e) {
           action: "verify_login_otp",
           email: enteredEmail,
           otp: enteredPass,
-          token: API_SECRET_TOKEN
+          token: (typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : '')
         })
       });
       const data = await res.json();
       if (data && (data.ok || data.verified)) {
         isOtpValid = true;
-        verifiedRole = data.role || verifiedRole;
+        verifiedRole = data.role || (isMainAdmin ? "super_admin" : "admin");
+        matchedUser = {
+          email: enteredEmail,
+          name: isMainAdmin ? "Jagan Kandukuri (Main Admin)" : (data.name || enteredEmail.split("@")[0]),
+          role: verifiedRole,
+          status: "active",
+          isMainAdmin: isMainAdmin
+        };
       }
     } catch (_) {}
   }
 
-  // If still not valid:
+  // If still not valid: REJECT STRICTLY
   if (!isOtpValid) {
     if (submitBtn) submitBtn.disabled = false;
     if (btnText) btnText.classList.remove("hidden");
     if (btnSpinner) btnSpinner.classList.add("hidden");
 
-    const isKnownAuthorized = window.isUserAuthorizedByAdmin(enteredEmail);
-    if (isKnownAuthorized) {
-      if (errBlock) {
-        errBlock.innerHTML = `
-          <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
-            <i class="fa-solid fa-triangle-exclamation"></i> Incorrect Password!
-          </div>
-          <div style="font-size: 11.5px; color: #cbd5e1;">
-            The password entered for <strong style="color: #fca5a5;">${escapeHtml(enteredEmail)}</strong> is incorrect.
-          </div>
-        `;
-        errBlock.classList.remove("hidden");
-      }
-    } else {
-      // Unregistered user -> offer 1-click Free View Mode
-      if (errBlock) {
-        errBlock.innerHTML = `
-          <div style="background: rgba(14, 165, 233, 0.15); border: 1.5px solid #0ea5e9; border-radius: 10px; padding: 12px; margin-bottom: 6px; text-align: left;">
-            <div style="font-weight: 800; color: #38bdf8; margin-bottom: 4px; font-size: 13px; display: flex; align-items: center; gap: 6px;">
-              <i class="fa-solid fa-circle-info"></i> Unregistered User Account
-            </div>
-            <div style="font-size: 11.5px; color: #e2e8f0; line-height: 1.4; margin-bottom: 10px;">
-              <strong>${escapeHtml(enteredEmail)}</strong> has not been given edit access by the owner. You can explore the full software in <strong>Free View Mode</strong>:
-            </div>
-            <button type="button" onclick="window.loginAsFreeViewer({ email: '${escapeHtml(enteredEmail)}' })" style="width: 100%; padding: 9px; background: linear-gradient(135deg, #0ea5e9, #0284c7); color: #fff; border: none; border-radius: 7px; font-weight: 700; font-size: 12.5px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 8px rgba(14, 165, 233, 0.3);">
-              <i class="fa-solid fa-eye"></i> Open in Free View Mode (Demo)
-            </button>
-          </div>
-        `;
-        errBlock.classList.remove("hidden");
-      }
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
+          <i class="fa-solid fa-triangle-exclamation"></i> Invalid Verification Code!
+        </div>
+        <div style="font-size: 11.5px; color: #cbd5e1;">
+          The code entered does not match the 6-digit code sent to your email. Please check your inbox or sign in with Google.
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
     }
     if (passField) {
       passField.value = "";
@@ -26097,12 +26016,14 @@ window.submitModalAdminUnlock = async function() {
   const customPwd = (sec.password || "").toString().trim();
   const customPin = (sec.whatsappPin || sec.securityPin || sec.pin || "").toString().trim();
 
+  const isSuperAdminUser = (typeof window.isMainAdmin === "function" && window.isMainAdmin()) || sessionStorage.getItem("is_main_admin") === "true";
+
   let isMatch = false;
   if (customPwd && (enteredVal === customPwd || enteredVal.toLowerCase() === customPwd.toLowerCase())) {
     isMatch = true;
   } else if (customPin && enteredVal === customPin) {
     isMatch = true;
-  } else if (!customPwd && !customPin && (enteredVal === "Aaryan@2024" || enteredVal === "2024")) {
+  } else if (!customPwd && !customPin && isSuperAdminUser) {
     isMatch = true;
   }
 

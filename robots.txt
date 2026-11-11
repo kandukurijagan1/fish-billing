@@ -1,17 +1,14 @@
 User-agent: *
-Allow: /
+Disallow: /
 
-# Googlebot, Bingbot & Search Engine Crawlers
 User-agent: Googlebot
-Allow: /
+Disallow: /
 
 User-agent: Bingbot
-Allow: /
+Disallow: /
 
-# Disallow internal desktop bundle folders from web indexing
-Disallow: /dist/
-Disallow: /build/
-Disallow: /.git/
+User-agent: Twitterbot
+Disallow: /
 
-# XML Sitemap
-Sitemap: https://kandukurijagan1.github.io/fish-billing/sitemap.xml
+User-agent: facebookexternalhit
+Disallow: /
