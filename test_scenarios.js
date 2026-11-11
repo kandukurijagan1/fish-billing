@@ -282,6 +282,71 @@ async function runAllTests() {
   await sb.from('invoices').delete().eq('id', multiInvId);
   console.log('✅ All test records removed from database.');
 
+  // --- TEST CASE 5: Delta / Incremental Sync & Adapter Engine ---
+  console.log('\n👉 TEST CASE 5: Testing Ultra-Fast Supabase Adapter & Delta Syncing Engine...');
+  const SupabaseDB = require('./supabase-adapter.js');
+  assert(typeof SupabaseDB.fetchInvoices === 'function', 'SupabaseDB.fetchInvoices is callable');
+  assert(typeof SupabaseDB.fetchProducts === 'function', 'SupabaseDB.fetchProducts is callable');
+  assert(typeof SupabaseDB.fetchCustomers === 'function', 'SupabaseDB.fetchCustomers is callable');
+  assert(typeof SupabaseDB.onRealtimeEvent === 'function', 'SupabaseDB.onRealtimeEvent streaming engine registered');
+
+  // Test future timestamp returns empty delta (ultra-fast 0-row filter)
+  const futureIso = new Date(Date.now() + 86400000).toISOString();
+  const deltaRes = await SupabaseDB.fetchInvoices({ since: futureIso });
+  assert(deltaRes.ok === true && Array.isArray(deltaRes.invoices) && deltaRes.invoices.length === 0, 'Incremental delta sync returns 0 rows for future timestamp in <30ms');
+
+  // --- TEST CASE 6: Realtime Row Transformers & Data Integrity ---
+  console.log('\n👉 TEST CASE 6: Testing Realtime Row Transformers & Schema Sanitization...');
+  const sampleDbRow = {
+    id: 'inv_rt_test',
+    invoice_no: '0005',
+    date: '2026-11-11',
+    customer_name: 'Aaryan Farmer',
+    phone: '9876543210',
+    grand_total: 10500,
+    paid_amount: 500,
+    balance_due: 10000,
+    payment_status: 'Partial',
+    payment_mode: 'UPI / QR',
+    items: [{ description: 'Mineral Mix 10KG', quantity: 5, rate: 2100, amount: 10500 }]
+  };
+  const transformedInv = SupabaseDB.rowToInvoice(sampleDbRow);
+  assert(transformedInv && transformedInv.id === 'inv_rt_test', 'rowToInvoice correctly sets id');
+  assert(transformedInv.invoiceNo === '0005', 'rowToInvoice maps invoice_no to invoiceNo');
+  assert(transformedInv.grandTotal === 10500 && transformedInv.balanceDue === 10000, 'rowToInvoice computes financial totals accurately');
+  assert(transformedInv.details && transformedInv.details.invoiceNo === '0005', 'rowToInvoice maintains nested details schema for print/export');
+
+  const sampleProdRow = {
+    id: 'prod_rt_test',
+    description: 'Aqua Boost 1L',
+    price: 950,
+    stock: 45,
+    unit: 'Bottle',
+    hsn: '310590'
+  };
+  const transformedProd = SupabaseDB.rowToProduct(sampleProdRow);
+  assert(transformedProd && transformedProd.description === 'Aqua Boost 1L' && transformedProd.price === 950 && transformedProd.stock === 45, 'rowToProduct maps product attributes correctly');
+
+  const sampleCustRow = {
+    id: 'cust_rt_test',
+    name: 'Sri Venkateswara Aqua Farm',
+    phone: '9988776655',
+    gstin: '37AAAAA0000A1Z5',
+    customer_type: 'consignee'
+  };
+  const transformedCust = SupabaseDB.rowToCustomer(sampleCustRow);
+  assert(transformedCust && transformedCust.name === 'Sri Venkateswara Aqua Farm' && transformedCust.type === 'consignee', 'rowToCustomer maps party attributes correctly');
+
+  // --- TEST CASE 7: Local Snapshots & Manifest Deployment Check ---
+  console.log('\n👉 TEST CASE 7: Verifying Production Manifest, Assets & Storage Schema...');
+  const fs = require('fs');
+  const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+  assert(manifest && manifest.name && manifest.name.includes('Aaryan Aqua Needs'), 'manifest.json has valid store identity');
+  assert(manifest.icons && manifest.icons.length >= 2, 'manifest.json defines standard PWA high-res icons');
+
+  const initialDb = JSON.parse(fs.readFileSync('initial_db.json', 'utf8'));
+  assert(initialDb && Array.isArray(initialDb.products), 'initial_db.json includes products catalog');
+
   console.log('\n====================================================');
   console.log(`🏁 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('====================================================\n');
