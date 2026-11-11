@@ -1,5 +1,5 @@
 // Aaryan Aqua Needs - Cache-Busting Purge Service Worker
-const CACHE_NAME = 'aaryan-aqua-v5.29.0-backup-mail-and-access-sync';
+const CACHE_NAME = 'aaryan-aqua-v5.30.0-excel-suite-and-auto-backup';
 
 self.addEventListener('install', event => {
   self.skipWaiting();

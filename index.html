@@ -379,6 +379,14 @@
     }
   </script>
 
+  <!-- SheetJS (XLSX) Library for Multi-Tab Excel Database Export & Import -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script>
+    if (typeof XLSX === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>');
+    }
+  </script>
+
   <!-- PWA Manifest & App Icons -->
 
   <link rel="manifest" href="manifest.json">
@@ -4860,40 +4868,82 @@
 
                   </div>
 
-                  <!-- 1-Click Backup Data to Mail -->
-
-                  <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 9px; padding: 13px; display: flex; flex-direction: column; gap: 8px;">
-
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-
-                      <span style="font-size: 13px; font-weight: 700; color: #166534; display: flex; align-items: center; gap: 6px;">
-
-                        <i class="fa-solid fa-envelope" style="color: #16a34a;"></i> Backup Data to Email
-
+                  <!-- MASTER EXCEL (.XLSX) DATABASE CENTER (5-TAB ENTERPRISE WORKBOOK) -->
+                  <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+                      <span style="font-size: 13px; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 6px;">
+                        <i class="fa-solid fa-file-excel" style="color: #10b981; font-size: 15px;"></i> Master Excel Database (.xlsx) Suite
                       </span>
-
-                      <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px;">Direct Inbox Vault</span>
-
+                      <span class="badge" style="background: #d1fae5; color: #065f46; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 5px;">5-Sheet Full Workbook</span>
                     </div>
-
-                    <p style="margin: 0; font-size: 11.5px; color: #166534; line-height: 1.4;">
-
-                      Sends your complete store database (.json attachment with all invoices, products, customers) directly to your Gmail inbox.
-
+                    <p style="margin: 0; font-size: 11.5px; color: #475569; line-height: 1.45;">
+                      Contains all <strong>Stock &amp; Products</strong> (quantities, rates, values), <strong>Customer Directory</strong>, <strong>Invoice Summaries</strong>, <strong>Line Items</strong>, and <strong>Payment History Dates</strong>.
                     </p>
-
-                    <div style="display: flex; gap: 8px;">
-
-                      <input type="email" id="backup-target-email" placeholder="Enter recipient email..." value="kandukurijagan99@gmail.com" style="flex: 1; padding: 8px 11px; font-size: 12.5px; border: 1.5px solid #86efac; border-radius: 7px; background: #ffffff;">
-
-                      <button type="button" class="btn btn-sm" id="btn-email-backup" onclick="window.sendDataBackupToEmail()" style="background: #16a34a; color: white; border: none; font-weight: 700; padding: 8px 16px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap;">
-
-                        <i class="fa-solid fa-paper-plane"></i> Send to Mail
-
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                      <button type="button" class="btn btn-sm" onclick="window.exportMasterExcelBackup()" style="flex: 1; min-width: 140px; background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; font-weight: 700; padding: 8px 12px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px;">
+                        <i class="fa-solid fa-file-arrow-down"></i> Export Excel (.xlsx)
                       </button>
-
+                      <button type="button" class="btn btn-sm" onclick="document.getElementById('import-master-excel-file').click()" style="flex: 1; min-width: 140px; background: linear-gradient(135deg, #0284c7, #0369a1); color: white; border: none; font-weight: 700; padding: 8px 12px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px;">
+                        <i class="fa-solid fa-file-arrow-up"></i> Import Excel (.xlsx)
+                      </button>
+                      <input type="file" id="import-master-excel-file" accept=".xlsx, .xls" style="display: none;" onchange="window.importDataFromMasterExcel(event)">
                     </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; padding-top: 4px; border-top: 1px dashed #e2e8f0;">
+                      <span style="color: #64748b;">Need to format data offline?</span>
+                      <a href="javascript:void(0)" onclick="window.downloadMasterExcelTemplate()" style="color: #0284c7; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+                        <i class="fa-solid fa-download"></i> Download Blank Excel Template
+                      </a>
+                    </div>
+                  </div>
 
+                  <!-- 1-CLICK BACKUP DATA TO EMAIL (ATTACHING .XLSX + .JSON) -->
+                  <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 10px; padding: 13px; display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+                      <span style="font-size: 13px; font-weight: 800; color: #166534; display: flex; align-items: center; gap: 6px;">
+                        <i class="fa-solid fa-envelope" style="color: #16a34a;"></i> 1-Click Backup to Email
+                      </span>
+                      <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px;">Attached: Excel (.xlsx) + JSON</span>
+                    </div>
+                    <p style="margin: 0; font-size: 11.5px; color: #166534; line-height: 1.4;">
+                      Emails the complete store database with <strong>Master Excel Workbook (.xlsx)</strong> and <strong>JSON file</strong> attached directly to your Gmail inbox.
+                    </p>
+                    <div style="display: flex; gap: 8px;">
+                      <input type="email" id="backup-target-email" placeholder="Enter recipient email..." value="kandukurijagan99@gmail.com" style="flex: 1; padding: 8px 11px; font-size: 12.5px; border: 1.5px solid #86efac; border-radius: 7px; background: #ffffff;">
+                      <button type="button" class="btn btn-sm" id="btn-email-backup" onclick="window.sendDataBackupToEmail()" style="background: #16a34a; color: white; border: none; font-weight: 700; padding: 8px 16px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap;">
+                        <i class="fa-solid fa-paper-plane"></i> Send to Mail
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- AUTOMATED WEEKLY & MONTHLY CLOUD EMAIL BACKUP SCHEDULE -->
+                  <div style="background: #eff6ff; border: 1.5px solid #93c5fd; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+                      <span style="font-size: 13px; font-weight: 800; color: #1e40af; display: flex; align-items: center; gap: 6px;">
+                        <i class="fa-solid fa-clock-rotate-left" style="color: #2563eb;"></i> Automated Cloud Email Backup Schedule
+                      </span>
+                      <span class="badge" style="background: #dbeafe; color: #1d4ed8; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px;">Cloud Auto-Cron</span>
+                    </div>
+                    <p style="margin: 0; font-size: 11.5px; color: #1e40af; line-height: 1.45;">
+                      Automatically sends complete store snapshots (Excel + JSON) to your inbox on schedule without having to click manually.
+                    </p>
+                    <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;">
+                      <select id="backup-schedule-frequency" style="padding: 8px 11px; font-size: 12px; border: 1.5px solid #93c5fd; border-radius: 7px; background: #ffffff; color: #1e3a8a; font-weight: 600;">
+                        <option value="both" selected>Both Weekly (Sundays 8 PM) &amp; Monthly (1st 9 PM)</option>
+                        <option value="weekly">Weekly Only (Every Sunday 8:00 PM)</option>
+                        <option value="monthly">Monthly Only (1st of Month 9:00 PM)</option>
+                        <option value="manual">Manual Backup Only (Disabled Auto-Cron)</option>
+                      </select>
+                      <button type="button" class="btn btn-sm" id="btn-save-backup-schedule" onclick="window.saveBackupScheduleSettings()" style="background: #2563eb; color: white; border: none; font-weight: 700; padding: 8px 14px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap;">
+                        <i class="fa-solid fa-floppy-disk"></i> Save Schedule
+                      </button>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: #3b82f6;">
+                      <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600; color: #1e40af;">
+                        <input type="checkbox" id="backup-auto-enabled" checked style="accent-color: #2563eb;"> Enable Background Automated Backups
+                      </label>
+                      <span style="color: #94a3b8;">•</span>
+                      <span id="backup-schedule-status-badge" style="color: #15803d; font-weight: 700;">🟢 Active: Auto-Cron Configured</span>
+                    </div>
                   </div>
 
                   <button type="button" class="btn btn-primary" onclick="openDataSharingModal()" style="width: 100%; padding: 10px 14px; font-weight: 700; border-radius: 6px; cursor: pointer; background: linear-gradient(135deg, #0284c7, #0d9488); border: none; color: white; display: flex; align-items: center; justify-content: center; gap: 8px;">
@@ -11223,13 +11273,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v70_backup_mail_and_access_sync"></script>
+<script src="supabase-adapter.js?v=live_v71_excel_suite_and_auto_backup"></script>
 
 <script src="initial_db.js?v=live_v65_complete_sync_and_purge"></script>
 
 <script src="customer-timeline.js?v=live_v68_advanced_features_and_fixes"></script>
 
-<script src="index_v5.js?v=live_v70_backup_mail_and_access_sync"></script>
+<script src="index_v5.js?v=live_v71_excel_suite_and_auto_backup"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->

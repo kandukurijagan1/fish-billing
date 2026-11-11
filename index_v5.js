@@ -21784,9 +21784,700 @@ window.exportDataBackupJSON = function() {
 };
 
 // ============================================================================
-// 1-Click Store Database Backup to Email (.json Vault Attachment)
+// ENTERPRISE MASTER EXCEL (.XLSX) DATABASE ENGINE (5-SHEET ARCHITECTURE)
+// Full Store Backup, Excel Export, and Complete Excel Import / Restore
 // ============================================================================
-window.sendDataBackupToEmail = async function() {
+
+window.generateMasterExcelWorkbook = function(backupObj) {
+  if (typeof XLSX === 'undefined') {
+    throw new Error("Excel processing library (XLSX) is still loading. Please check your internet connection.");
+  }
+
+  const wb = XLSX.utils.book_new();
+  const invoices = (backupObj && backupObj.invoices) || invoicesDb || [];
+  const products = (backupObj && backupObj.products) || productsDb || [];
+  const parties = (backupObj && backupObj.parties) || partiesDb || [];
+
+  // -------------------------------------------------------------
+  // Sheet 1: Stock & Products (Product Master with Live Stock)
+  // -------------------------------------------------------------
+  const prodsData = [
+    [
+      "Product ID",
+      "Description / Product Name",
+      "HSN Code",
+      "Pack Size",
+      "Unit",
+      "Cost Rate (₹)",
+      "Default Discount %",
+      "Selling Price (₹)",
+      "Current Stock Quantity",
+      "Total Stock Valuation (₹)",
+      "Stock Status",
+      "Barcode"
+    ]
+  ];
+
+  products.forEach(p => {
+    if (!p) return;
+    const qty = Number(p.stock !== undefined ? p.stock : 0);
+    const prc = Number(p.price || p.rate || 0);
+    const rate = Number(p.rate || 0);
+    const disc = Number(p.discount || 0);
+    const totVal = Number(p.totalValue || (qty * prc));
+    prodsData.push([
+      p.id || "",
+      p.description || "",
+      p.hsn || "",
+      p.packSize || p.pack_size || "",
+      p.unit || "NOS",
+      rate,
+      disc,
+      prc,
+      qty,
+      totVal,
+      p.status || (qty > 10 ? "In Stock" : (qty > 0 ? "Low Stock" : "Out of Stock")),
+      p.barcode || ""
+    ]);
+  });
+  const wsProds = XLSX.utils.aoa_to_sheet(prodsData);
+  XLSX.utils.book_append_sheet(wb, wsProds, "Stock_&_Products");
+
+  // -------------------------------------------------------------
+  // Sheet 2: Customer Directory & Ledgers
+  // -------------------------------------------------------------
+  const custsData = [
+    [
+      "Customer ID",
+      "Customer / Business Name",
+      "Phone Number",
+      "Email Address",
+      "GSTIN",
+      "Billing Address",
+      "City",
+      "State",
+      "State Code",
+      "Customer Type",
+      "Total Invoices Billed",
+      "Total Billed Amount (₹)",
+      "Total Amount Paid (₹)",
+      "Pending Balance Due (₹)"
+    ]
+  ];
+
+  parties.forEach(c => {
+    if (!c) return;
+    const nameNorm = String(c.name || '').trim().toLowerCase();
+    const matchingInvs = invoices.filter(inv => {
+      const b = inv.details?.buyer || {};
+      const invCust = String(inv.customerName || b.name || '').trim().toLowerCase();
+      return invCust && (invCust === nameNorm || (c.phone && String(inv.customerPhone || b.phone || '').includes(c.phone)));
+    });
+
+    let billed = 0;
+    let paid = 0;
+    matchingInvs.forEach(inv => {
+      billed += Number(inv.totalAmount || inv.grandTotal || inv.total || 0);
+      paid += Number(inv.paidAmount !== undefined ? inv.paidAmount : (inv.paymentStatus === 'Paid' ? (inv.totalAmount || inv.total || 0) : 0));
+    });
+    const balDue = Math.max(0, Math.round((billed - paid) * 100) / 100);
+
+    custsData.push([
+      c.id || "",
+      c.name || "",
+      c.phone || "",
+      c.email || "",
+      c.gstin || "",
+      c.address || "",
+      c.city || "",
+      c.state || "Andhra Pradesh",
+      c.stateCode || "37",
+      c.type || "receiver",
+      matchingInvs.length,
+      billed,
+      paid,
+      balDue
+    ]);
+  });
+  const wsCusts = XLSX.utils.aoa_to_sheet(custsData);
+  XLSX.utils.book_append_sheet(wb, wsCusts, "Customer_Directory");
+
+  // -------------------------------------------------------------
+  // Sheet 3: Invoices Summary Master
+  // -------------------------------------------------------------
+  const invsData = [
+    [
+      "Invoice Number",
+      "Invoice Date",
+      "Document Type",
+      "Customer Name",
+      "Customer Phone",
+      "Customer GSTIN",
+      "Taxable Subtotal (₹)",
+      "CGST Amount (₹)",
+      "SGST Amount (₹)",
+      "IGST Amount (₹)",
+      "Round Off (₹)",
+      "Grand Total (₹)",
+      "Payment Status",
+      "Payment Mode",
+      "Amount Paid on Invoice Date (₹)",
+      "Balance Due (₹)",
+      "Last Payment Date",
+      "Payment Reference / Note"
+    ]
+  ];
+
+  invoices.forEach(inv => {
+    if (!inv) return;
+    const d = inv.details || {};
+    const buyer = d.buyer || {};
+    const totals = d.totals || {};
+    const gTotal = Number(inv.totalAmount || inv.grandTotal || inv.total || totals.grandTotal || 0);
+    const paid = Number(inv.paidAmount !== undefined ? inv.paidAmount : (inv.paymentStatus === 'Paid' ? gTotal : 0));
+    const bal = Number(inv.balanceAmount !== undefined ? inv.balanceAmount : Math.max(0, gTotal - paid));
+
+    invsData.push([
+      inv.invoiceNo || d.invoiceNo || inv.id || "",
+      inv.date || inv.invoiceDate || d.date || "",
+      d.docType || "Bill of Supply",
+      inv.customerName || buyer.name || "Cash Customer",
+      inv.customerPhone || buyer.phone || "",
+      buyer.gstin || "",
+      Number(inv.subtotal || totals.subtotal || gTotal),
+      Number(totals.cgst || 0),
+      Number(totals.sgst || 0),
+      Number(totals.igst || 0),
+      Number(totals.roundOff || 0),
+      gTotal,
+      inv.paymentStatus || d.paymentStatus || (bal <= 0 ? "Paid" : (paid > 0 ? "Partial" : "Credit")),
+      inv.paymentMode || d.paymentMode || "Cash",
+      paid,
+      bal,
+      inv.lastPaymentTime || inv.date || "",
+      inv.paymentReference || d.paymentReference || ""
+    ]);
+  });
+  const wsInvs = XLSX.utils.aoa_to_sheet(invsData);
+  XLSX.utils.book_append_sheet(wb, wsInvs, "Invoices_Summary");
+
+  // -------------------------------------------------------------
+  // Sheet 4: Invoice Line Items (Product Breakdown)
+  // -------------------------------------------------------------
+  const itemsData = [
+    [
+      "Invoice Number",
+      "Invoice Date",
+      "Customer Name",
+      "Product ID",
+      "Item Description",
+      "HSN Code",
+      "Pack Size",
+      "Unit",
+      "Quantity",
+      "Rate (₹)",
+      "Discount %",
+      "Taxable Value (₹)",
+      "GST Rate %",
+      "Total Item Amount (₹)"
+    ]
+  ];
+
+  invoices.forEach(inv => {
+    if (!inv) return;
+    const invNo = inv.invoiceNo || inv.details?.invoiceNo || inv.id || "";
+    const invDate = inv.date || inv.invoiceDate || inv.details?.date || "";
+    const custName = inv.customerName || inv.details?.buyer?.name || "";
+    const items = inv.details?.items || inv.items || [];
+    items.forEach(it => {
+      if (!it) return;
+      const q = Number(it.quantity || it.qty || 1);
+      const r = Number(it.rate || it.price || 0);
+      const disc = Number(it.discount || 0);
+      const taxRate = Number(it.taxRate || it.gstRate || 0);
+      const amt = Number(it.amount || it.total || (q * r * (1 - disc/100)));
+      itemsData.push([
+        invNo,
+        invDate,
+        custName,
+        it.productId || it.id || "",
+        it.description || it.name || "Product Item",
+        it.hsn || "",
+        it.packSize || "",
+        it.unit || "NOS",
+        q,
+        r,
+        disc,
+        Number(it.taxableValue || it.taxable || amt),
+        taxRate,
+        amt
+      ]);
+    });
+  });
+  const wsItems = XLSX.utils.aoa_to_sheet(itemsData);
+  XLSX.utils.book_append_sheet(wb, wsItems, "Invoice_Line_Items");
+
+  // -------------------------------------------------------------
+  // Sheet 5: Payment Ledger History (All Dates & Installments)
+  // -------------------------------------------------------------
+  const payData = [
+    [
+      "Invoice Number",
+      "Customer Name",
+      "Installment No",
+      "Payment Date & Time",
+      "Amount Paid (₹)",
+      "Payment Mode",
+      "Reference / UTR No",
+      "Payment Note",
+      "Remaining Balance After (₹)"
+    ]
+  ];
+
+  invoices.forEach(inv => {
+    if (!inv) return;
+    const invNo = inv.invoiceNo || inv.details?.invoiceNo || inv.id || "";
+    const custName = inv.customerName || inv.details?.buyer?.name || "";
+    const history = inv.paymentHistory || inv.details?.paymentHistory || [];
+
+    if (Array.isArray(history) && history.length > 0) {
+      history.forEach((pay, idx) => {
+        payData.push([
+          invNo,
+          custName,
+          pay.installmentNo || idx + 1,
+          pay.date || pay.timestamp || "",
+          Number(pay.amount || 0),
+          pay.mode || "Cash",
+          pay.reference || pay.utr || "",
+          pay.note || "Installment payment",
+          Number(pay.balanceAfter !== undefined ? pay.balanceAfter : 0)
+        ]);
+      });
+    } else {
+      const paid = Number(inv.paidAmount || (inv.paymentStatus === 'Paid' ? (inv.totalAmount || 0) : 0));
+      if (paid > 0) {
+        payData.push([
+          invNo,
+          custName,
+          1,
+          inv.date || inv.invoiceDate || "",
+          paid,
+          inv.paymentMode || "Cash",
+          inv.paymentReference || "Upfront Bill Settlement",
+          "Initial on-spot settlement",
+          Number(inv.balanceAmount || 0)
+        ]);
+      }
+    }
+  });
+  const wsPay = XLSX.utils.aoa_to_sheet(payData);
+  XLSX.utils.book_append_sheet(wb, wsPay, "Payment_Ledger_History");
+
+  const base64 = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' });
+  const arrayBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+
+  return { workbook: wb, base64, arrayBuffer };
+};
+
+// 1. Export Master Excel (.xlsx) file directly to user device
+window.exportMasterExcelBackup = function() {
+  try {
+    loadAllDatabases();
+    const backupObj = {
+      invoices: invoicesDb || [],
+      products: productsDb || [],
+      parties: partiesDb || [],
+      settings: globalSettings || {}
+    };
+
+    const res = window.generateMasterExcelWorkbook(backupObj);
+    const blob = new Blob([res.arrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const fileDate = new Date().toISOString().split('T')[0];
+    const compName = (globalSettings.company?.name || "AARYAN_AQUA").replace(/[^a-zA-Z0-9]/g, "_");
+    a.download = `${compName}_Master_Database_${fileDate}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    showFloatingToast(`📊 Master Excel Database downloaded successfully! (5 sheets: Stock, Customers, Invoices, Items, Payments)`, "success", 5000);
+  } catch (err) {
+    console.error("Export Excel error:", err);
+    showFloatingToast(`❌ Export Excel failed: ${err.message}`, "error", 5000);
+  }
+};
+
+// 2. Download Blank Master Excel Template for offline entry
+window.downloadMasterExcelTemplate = function() {
+  try {
+    if (typeof XLSX === 'undefined') {
+      showFloatingToast("⚠️ Excel library is still loading. Please try again in a few seconds.", "warning");
+      return;
+    }
+    const sampleBackup = {
+      products: [
+        { id: "PRD-SAMPLE-1", description: "Sample Vannamei Feed 25KG", hsn: "230990", packSize: "25 KG", unit: "Bag", rate: 1650, discount: 0, price: 1750, stock: 50, totalValue: 87500, status: "In Stock", barcode: "8901234567890" }
+      ],
+      parties: [
+        { id: "CUST-SAMPLE-1", name: "Sample Aqua Farm", phone: "9876543210", email: "sample@farm.com", gstin: "37SAMPLE1234Z1", address: "Pond Rd, Nellore", city: "Nellore", state: "Andhra Pradesh", stateCode: "37", type: "receiver" }
+      ],
+      invoices: [
+        {
+          id: "INV-SAMPLE-1",
+          invoiceNo: "INV-2026-0001",
+          date: new Date().toISOString().split('T')[0],
+          customerName: "Sample Aqua Farm",
+          customerPhone: "9876543210",
+          subtotal: 1750,
+          totalAmount: 1750,
+          paidAmount: 1000,
+          balanceAmount: 750,
+          paymentStatus: "Partial",
+          paymentMode: "UPI",
+          details: {
+            items: [
+              { productId: "PRD-SAMPLE-1", description: "Sample Vannamei Feed 25KG", hsn: "230990", packSize: "25 KG", unit: "Bag", quantity: 1, rate: 1750, discount: 0, taxableValue: 1750, taxRate: 0, amount: 1750 }
+            ]
+          },
+          paymentHistory: [
+            { installmentNo: 1, date: new Date().toISOString(), amount: 1000, mode: "UPI", reference: "UPI-SAMPLE-REF", note: "Advance on bill date", balanceAfter: 750 }
+          ]
+        }
+      ]
+    };
+
+    const res = window.generateMasterExcelWorkbook(sampleBackup);
+    const blob = new Blob([res.arrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "AARYAN_AQUA_Master_Excel_Import_Template.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showFloatingToast("📋 Blank Master Excel Template downloaded!", "info", 4000);
+  } catch (err) {
+    showFloatingToast(`❌ Could not download template: ${err.message}`, "error");
+  }
+};
+
+// 3. Import and restore complete store database from Master Excel (.xlsx)
+window.importDataFromMasterExcel = async function(event) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof window.showProductBuyModal === 'function') {
+      window.showProductBuyModal("To import Excel backups, please upgrade to a Commercial License.");
+    }
+    return;
+  }
+
+  const file = event.target?.files?.[0];
+  if (!file) return;
+
+  if (typeof XLSX === 'undefined') {
+    showFloatingToast("⚠️ Excel library is loading. Please check internet connection.", "warning", 4000);
+    return;
+  }
+
+  showFloatingToast("⏳ Reading and parsing Master Excel Workbook...", "info", 3000);
+
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetNames = workbook.SheetNames || [];
+
+      // A. Parse Products & Stock Master
+      const prodSheetName = sheetNames.find(s => s.toLowerCase().includes("stock") || s.toLowerCase().includes("product"));
+      let importedProducts = [];
+      if (prodSheetName) {
+        const rawProds = XLSX.utils.sheet_to_json(workbook.Sheets[prodSheetName]);
+        importedProducts = rawProds.map((row, idx) => {
+          const desc = String(row["Description / Product Name"] || row["Description"] || row["Product Name"] || row["Item Name"] || row["description"] || "").trim();
+          if (!desc) return null;
+          const qty = Number(row["Current Stock Quantity"] || row["Stock Quantity"] || row["Stock"] || row["stock"] || 0);
+          const prc = Number(row["Selling Price (₹)"] || row["Price"] || row["price"] || row["Selling Price"] || 0);
+          const rate = Number(row["Cost Rate (₹)"] || row["Cost"] || row["Rate"] || row["rate"] || prc);
+          const disc = Number(row["Default Discount %"] || row["Discount %"] || row["discount"] || 0);
+          const hsn = String(row["HSN Code"] || row["HSN"] || row["hsn"] || "230990");
+          const unit = String(row["Unit"] || row["unit"] || "NOS");
+          const pack = String(row["Pack Size"] || row["packSize"] || "");
+          const id = String(row["Product ID"] || row["ID"] || row["id"] || `PRD-${Date.now()}-${idx}`);
+          const barcode = String(row["Barcode"] || row["barcode"] || "");
+          const totVal = Number(row["Total Stock Valuation (₹)"] || row["Total Value"] || (qty * prc));
+          return {
+            id,
+            description: desc,
+            hsn,
+            packSize: pack,
+            unit,
+            rate,
+            discount: disc,
+            price: prc,
+            stock: qty,
+            totalValue: totVal,
+            status: qty > 10 ? "In Stock" : (qty > 0 ? "Low Stock" : "Out of Stock"),
+            barcode
+          };
+        }).filter(Boolean);
+      }
+
+      // B. Parse Customer Directory
+      const custSheetName = sheetNames.find(s => s.toLowerCase().includes("customer") || s.toLowerCase().includes("part"));
+      let importedParties = [];
+      if (custSheetName) {
+        const rawCusts = XLSX.utils.sheet_to_json(workbook.Sheets[custSheetName]);
+        importedParties = rawCusts.map((row, idx) => {
+          const name = String(row["Customer / Business Name"] || row["Customer Name"] || row["Name"] || row["name"] || "").trim();
+          if (!name) return null;
+          return {
+            id: String(row["Customer ID"] || row["ID"] || row["id"] || `CUST-${Date.now()}-${idx}`),
+            name,
+            phone: String(row["Phone Number"] || row["Phone"] || row["phone"] || "").trim(),
+            email: String(row["Email Address"] || row["Email"] || row["email"] || "").trim(),
+            gstin: String(row["GSTIN"] || row["gstin"] || "").trim(),
+            address: String(row["Billing Address"] || row["Address"] || row["address"] || "").trim(),
+            city: String(row["City"] || row["city"] || "").trim(),
+            state: String(row["State"] || row["state"] || "Andhra Pradesh").trim(),
+            stateCode: String(row["State Code"] || row["stateCode"] || "37").trim(),
+            type: String(row["Customer Type"] || row["type"] || "receiver").trim()
+          };
+        }).filter(Boolean);
+      }
+
+      // C. Parse Invoice Line Items
+      const itemsSheetName = sheetNames.find(s => s.toLowerCase().includes("line") || s.toLowerCase().includes("item"));
+      const itemsByInvoiceNo = new Map();
+      if (itemsSheetName) {
+        const rawItems = XLSX.utils.sheet_to_json(workbook.Sheets[itemsSheetName]);
+        rawItems.forEach(row => {
+          const invNo = String(row["Invoice Number"] || row["Invoice No"] || row["Invoice #"] || row["invoiceNo"] || "").trim();
+          if (!invNo) return;
+          if (!itemsByInvoiceNo.has(invNo)) itemsByInvoiceNo.set(invNo, []);
+          itemsByInvoiceNo.get(invNo).push({
+            productId: String(row["Product ID"] || ""),
+            description: String(row["Item Description"] || row["Description"] || "Product Item"),
+            hsn: String(row["HSN Code"] || row["HSN"] || "230990"),
+            packSize: String(row["Pack Size"] || ""),
+            unit: String(row["Unit"] || "NOS"),
+            quantity: Number(row["Quantity"] || row["Qty"] || 1),
+            rate: Number(row["Rate (₹)"] || row["Rate"] || 0),
+            discount: Number(row["Discount %"] || 0),
+            taxableValue: Number(row["Taxable Value (₹)"] || 0),
+            taxRate: Number(row["GST Rate %"] || 0),
+            amount: Number(row["Total Item Amount (₹)"] || row["Amount"] || 0)
+          });
+        });
+      }
+
+      // D. Parse Payment Ledger History
+      const paySheetName = sheetNames.find(s => s.toLowerCase().includes("payment") || s.toLowerCase().includes("ledger"));
+      const paymentsByInvoiceNo = new Map();
+      if (paySheetName) {
+        const rawPay = XLSX.utils.sheet_to_json(workbook.Sheets[paySheetName]);
+        rawPay.forEach(row => {
+          const invNo = String(row["Invoice Number"] || row["Invoice No"] || row["Invoice #"] || row["invoiceNo"] || "").trim();
+          if (!invNo) return;
+          if (!paymentsByInvoiceNo.has(invNo)) paymentsByInvoiceNo.set(invNo, []);
+          paymentsByInvoiceNo.get(invNo).push({
+            installmentNo: Number(row["Installment No"] || 1),
+            date: String(row["Payment Date & Time"] || row["Payment Date"] || row["Date"] || ""),
+            amount: Number(row["Amount Paid (₹)"] || row["Amount Paid"] || row["Amount"] || 0),
+            mode: String(row["Payment Mode"] || row["Mode"] || "Cash"),
+            reference: String(row["Reference / UTR No"] || row["Reference"] || row["UTR"] || ""),
+            note: String(row["Payment Note"] || row["Notes"] || "Installment payment"),
+            balanceAfter: Number(row["Remaining Balance After (₹)"] || 0)
+          });
+        });
+      }
+
+      // E. Parse Invoices Summary
+      const invSheetName = sheetNames.find(s => s.toLowerCase().includes("invoices_summary") || (s.toLowerCase().includes("invoice") && !s.toLowerCase().includes("item")));
+      let importedInvoices = [];
+      if (invSheetName) {
+        const rawInvs = XLSX.utils.sheet_to_json(workbook.Sheets[invSheetName]);
+        importedInvoices = rawInvs.map((row, idx) => {
+          const invNo = String(row["Invoice Number"] || row["Invoice No"] || row["Invoice #"] || row["invoiceNo"] || `INV-${Date.now()}-${idx}`).trim();
+          const invDate = String(row["Invoice Date"] || row["Date"] || new Date().toISOString().split('T')[0]);
+          const custName = String(row["Customer Name"] || row["Customer"] || "Cash Customer");
+          const custPhone = String(row["Customer Phone"] || row["Phone"] || "");
+          const gstin = String(row["Customer GSTIN"] || row["GSTIN"] || "");
+          const gTotal = Number(row["Grand Total (₹)"] || row["Grand Total"] || row["Total"] || 0);
+          const paid = Number(row["Amount Paid on Invoice Date (₹)"] || row["Amount Paid"] || row["Paid"] || 0);
+          const bal = Number(row["Balance Due (₹)"] || row["Balance"] || Math.max(0, gTotal - paid));
+          const subtotal = Number(row["Taxable Subtotal (₹)"] || row["Subtotal"] || gTotal);
+          const cgst = Number(row["CGST Amount (₹)"] || row["CGST"] || 0);
+          const sgst = Number(row["SGST Amount (₹)"] || row["SGST"] || 0);
+          const igst = Number(row["IGST Amount (₹)"] || row["IGST"] || 0);
+          const roundOff = Number(row["Round Off (₹)"] || row["Round Off"] || 0);
+          const status = String(row["Payment Status"] || (bal <= 0 ? "Paid" : (paid > 0 ? "Partial" : "Credit")));
+          const mode = String(row["Payment Mode"] || "Cash");
+          const lastPay = String(row["Last Payment Date"] || invDate);
+
+          const items = itemsByInvoiceNo.get(invNo) || [
+            {
+              description: "Items per Excel Master",
+              quantity: 1,
+              unit: "NOS",
+              rate: subtotal,
+              amount: subtotal
+            }
+          ];
+
+          const paymentHistory = paymentsByInvoiceNo.get(invNo) || (paid > 0 ? [{
+            installmentNo: 1,
+            date: invDate,
+            amount: paid,
+            mode: mode,
+            reference: "Upfront Bill Settlement",
+            note: "Initial settlement",
+            balanceAfter: bal
+          }] : []);
+
+          return {
+            id: invNo,
+            invoiceNo: invNo,
+            date: invDate,
+            invoiceDate: invDate,
+            customerName: custName,
+            customerPhone: custPhone,
+            paymentStatus: status,
+            paymentMode: mode,
+            subtotal: subtotal,
+            taxAmount: cgst + sgst + igst,
+            totalAmount: gTotal,
+            paidAmount: paid,
+            balanceAmount: bal,
+            lastPaymentTime: lastPay,
+            paymentHistory: paymentHistory,
+            details: {
+              invoiceNo: invNo,
+              date: invDate,
+              docType: String(row["Document Type"] || "Bill of Supply"),
+              buyer: {
+                name: custName,
+                phone: custPhone,
+                gstin: gstin
+              },
+              items: items,
+              totals: {
+                subtotal: subtotal,
+                cgst: cgst,
+                sgst: sgst,
+                igst: igst,
+                roundOff: roundOff,
+                grandTotal: gTotal
+              },
+              paymentStatus: status,
+              paymentMode: mode,
+              paidAmount: paid,
+              balanceDue: bal,
+              paymentHistory: paymentHistory
+            }
+          };
+        });
+      }
+
+      const confirmMsg = `📊 RESTORE MASTER EXCEL DATABASE (.XLSX)?\n\n` +
+        `• 📦 Products & Stock: ${importedProducts.length}\n` +
+        `• 👥 Customers & Ledgers: ${importedParties.length}\n` +
+        `• 📄 Invoices & Line Items: ${importedInvoices.length}\n\n` +
+        `Click OK to restore these records and synchronize across Supabase Cloud.`;
+
+      if (!confirm(confirmMsg)) {
+        if (event.target) event.target.value = "";
+        return;
+      }
+
+      // Clear deletion tombstones so imported data loads clean
+      localStorage.removeItem("products_cleared");
+      localStorage.removeItem("database_history_cleared");
+      localStorage.removeItem("database_history_cleared_at");
+      localStorage.removeItem("deleted_product_ids");
+      localStorage.removeItem("deleted_customer_ids");
+
+      // 1. Commit Products
+      if (importedProducts.length > 0) {
+        productsDb = importedProducts;
+        window.productsDb = productsDb;
+        localStorage.setItem("products", JSON.stringify(productsDb));
+        if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllProducts(productsDb);
+        if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+          window.SupabaseDB.saveAllProducts(productsDb).catch(() => {});
+        }
+        if (typeof pushDirectToGoogleDatabase === 'function') {
+          pushDirectToGoogleDatabase("save_products", { products: productsDb });
+        }
+      }
+
+      // 2. Commit Customers
+      if (importedParties.length > 0) {
+        partiesDb = importedParties;
+        window.partiesDb = partiesDb;
+        localStorage.setItem("parties", JSON.stringify(partiesDb));
+        if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllParties(partiesDb);
+        if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+          window.SupabaseDB.saveAllCustomers(partiesDb).catch(() => {});
+        }
+        if (typeof pushDirectToGoogleDatabase === 'function') {
+          pushDirectToGoogleDatabase("save_parties", { parties: partiesDb });
+        }
+      }
+
+      // 3. Commit Invoices
+      if (importedInvoices.length > 0) {
+        invoicesDb = importedInvoices;
+        window.invoicesDb = invoicesDb;
+        localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+        if (window.TurboIndexedDB) {
+          for (let i = 0; i < invoicesDb.length; i++) {
+            window.TurboIndexedDB.saveInvoice(invoicesDb[i]);
+          }
+        }
+        if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+          for (let i = 0; i < invoicesDb.length; i++) {
+            window.SupabaseDB.upsertInvoice(invoicesDb[i]).catch(() => {});
+          }
+        }
+        if (typeof syncDatabaseToServer === 'function') {
+          syncDatabaseToServer("invoices", invoicesDb);
+        }
+      }
+
+      if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
+
+      // Refresh all views
+      loadAllDatabases();
+      if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+      if (typeof renderHistoryTableRows === 'function') renderHistoryTableRows(invoicesDb);
+      if (typeof loadProductsDatabaseTable === 'function') loadProductsDatabaseTable();
+      if (typeof window.renderCustomersDirectoryView === 'function') window.renderCustomersDirectoryView();
+      if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+
+      showFloatingToast(`🎉 Master Excel Restore Completed! Restored ${importedProducts.length} Products, ${importedParties.length} Customers, and ${importedInvoices.length} Invoices.`, "success", 7000);
+
+    } catch (err) {
+      console.error("Excel import error:", err);
+      showFloatingToast(`❌ Failed importing Excel file: ${err.message}`, "error", 6000);
+    } finally {
+      if (event.target) event.target.value = "";
+    }
+  };
+  reader.readAsArrayBuffer(file);
+};
+
+// ============================================================================
+// 1-Click Store Database Backup to Email (.xlsx Master Excel + .json Archive)
+// ============================================================================
+window.sendDataBackupToEmail = async function(options = {}) {
+  const isSilent = !!options.isSilent;
+  const scheduleType = options.scheduleType || "MANUAL";
+
   const emailInput = document.getElementById('backup-target-email');
   const sendBtn = document.getElementById('btn-email-backup');
   let targetEmail = (emailInput ? emailInput.value : "").trim().toLowerCase();
@@ -21807,8 +22498,9 @@ window.sendDataBackupToEmail = async function() {
 
   const backupObj = {
     app: "Aaryan Aqua GST Billing & Store Management",
-    version: "5.28.0",
+    version: "5.29.0",
     exportDate: new Date().toISOString(),
+    scheduleType: scheduleType,
     invoices: invoicesDb || [],
     products: productsDb || [],
     parties: partiesDb || [],
@@ -21816,26 +22508,43 @@ window.sendDataBackupToEmail = async function() {
     authorized_users: sanitizedUsers
   };
 
-  // 1. Instant local file download as a guaranteed offline copy
+  // Generate Master Excel (.xlsx) file in memory
+  let excelBase64 = null;
+  let excelArrayBuffer = null;
   try {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupObj, null, 2));
-    const dl = document.createElement('a');
-    dl.setAttribute("href", dataStr);
-    const today = new Date().toISOString().split('T')[0];
-    dl.setAttribute("download", `Aaryan_Aqua_Backup_${today}.json`);
-    document.body.appendChild(dl);
-    dl.click();
-    dl.remove();
-  } catch (_) {}
+    if (typeof window.generateMasterExcelWorkbook === 'function') {
+      const xlRes = window.generateMasterExcelWorkbook(backupObj);
+      excelBase64 = xlRes.base64;
+      excelArrayBuffer = xlRes.arrayBuffer;
+    }
+  } catch (xlErr) {
+    console.warn("Could not generate Excel attachment:", xlErr);
+  }
 
-  // 2. Dispatch email with JSON attachment via Google Apps Script MailApp
+  // 1. Instant local offline copies (JSON + Excel) if manual
+  if (!isSilent) {
+    try {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupObj, null, 2));
+      const dl = document.createElement('a');
+      dl.setAttribute("href", dataStr);
+      const today = new Date().toISOString().split('T')[0];
+      dl.setAttribute("download", `Aaryan_Aqua_Backup_${today}.json`);
+      document.body.appendChild(dl);
+      dl.click();
+      dl.remove();
+    } catch (_) {}
+  }
+
+  // 2. Dispatch email with Excel + JSON attachments via Google Apps Script MailApp
   const origBtnHtml = sendBtn ? sendBtn.innerHTML : "";
-  if (sendBtn) {
+  if (sendBtn && !isSilent) {
     sendBtn.disabled = true;
     sendBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Sending...`;
   }
 
-  showFloatingToast(`📤 Dispatching complete store backup (.json) to ${targetEmail}...`, "info", 4000);
+  if (!isSilent) {
+    showFloatingToast(`📤 Dispatching complete store backup (Excel .xlsx + JSON) to ${targetEmail}...`, "info", 4000);
+  }
 
   try {
     const scriptUrl = typeof GOOGLE_SCRIPT_URL !== 'undefined' ? GOOGLE_SCRIPT_URL : "https://script.google.com/macros/s/AKfycbxHi4L_xLrfRhx1KWxRxQD1QcqbVEZVMcYR37DJEGSPe2ykZyy-ATnYyZFxnSySS6OF/exec";
@@ -21846,14 +22555,22 @@ window.sendDataBackupToEmail = async function() {
         action: "email_backup",
         email: targetEmail,
         backup: backupObj,
+        excelBase64: excelBase64,
+        scheduleType: scheduleType,
         token: typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : ""
       })
     });
 
     const resJson = await res.json().catch(() => null);
     if (resJson && resJson.ok) {
-      showFloatingToast(`✅ Success! Complete Store Backup (.json attachment) delivered to ${targetEmail}!`, "success", 7000);
-      if (sendBtn) {
+      const msg = scheduleType === "WEEKLY_AUTOMATED"
+        ? `📅 Weekly Automated Backup (Excel + JSON) delivered to ${targetEmail}!`
+        : (scheduleType === "MONTHLY_AUTOMATED"
+          ? `📊 Monthly Automated Backup (Excel + JSON) delivered to ${targetEmail}!`
+          : `✅ Success! Complete Store Backup (Excel .xlsx + JSON) delivered to ${targetEmail}!`);
+
+      showFloatingToast(msg, "success", 7000);
+      if (sendBtn && !isSilent) {
         sendBtn.innerHTML = `<i class="fa-solid fa-check"></i> Sent!`;
         setTimeout(() => {
           sendBtn.disabled = false;
@@ -21865,22 +22582,85 @@ window.sendDataBackupToEmail = async function() {
     throw new Error(resJson?.error || "Script returned error");
   } catch (err) {
     console.warn("[Backup to Email] Primary cloud dispatch note:", err);
-    // Fallback: Mailto client prefilled draft
-    const compName = globalSettings.company?.name || "Aaryan Aqua Needs";
-    const subject = encodeURIComponent(`📦 Store Database Backup Snapshot - ${compName}`);
-    const body = encodeURIComponent(
-      `Store Database Backup generated on ${new Date().toLocaleString()}\n\n` +
-      `Summary:\n` +
-      `• Total Invoices: ${(backupObj.invoices || []).length}\n` +
-      `• Total Products: ${(backupObj.products || []).length}\n` +
-      `• Total Parties: ${(backupObj.parties || []).length}\n\n` +
-      `The full JSON backup file has been saved to your Downloads folder and can be restored anytime via Settings > Import Backup.`
-    );
-    window.open(`mailto:${targetEmail}?subject=${subject}&body=${body}`, '_blank');
-    showFloatingToast(`📁 Backup downloaded to your computer & email draft opened for ${targetEmail}.`, "info", 6000);
-    if (sendBtn) {
-      sendBtn.disabled = false;
-      sendBtn.innerHTML = origBtnHtml;
+    if (!isSilent) {
+      const compName = globalSettings.company?.name || "Aaryan Aqua Needs";
+      const subject = encodeURIComponent(`📦 Store Database Backup Snapshot - ${compName}`);
+      const body = encodeURIComponent(
+        `Store Database Backup generated on ${new Date().toLocaleString()}\n\n` +
+        `Summary:\n` +
+        `• Total Invoices: ${(backupObj.invoices || []).length}\n` +
+        `• Total Products: ${(backupObj.products || []).length}\n` +
+        `• Total Parties: ${(backupObj.parties || []).length}\n\n` +
+        `The full JSON backup file has been saved to your Downloads folder and can be restored anytime via Settings > Import Excel / Backup.`
+      );
+      window.open(`mailto:${targetEmail}?subject=${subject}&body=${body}`, '_blank');
+      showFloatingToast(`📁 Backup downloaded to your computer & email draft opened for ${targetEmail}.`, "info", 6000);
+      if (sendBtn) {
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = origBtnHtml;
+      }
+    }
+  }
+};
+
+// ============================================================================
+// AUTOMATED BACKUP SCHEDULE CONTROLLER
+// ============================================================================
+window.saveBackupScheduleSettings = async function() {
+  const freqSelect = document.getElementById("backup-schedule-frequency");
+  const autoToggle = document.getElementById("backup-auto-enabled");
+  const emailInput = document.getElementById("backup-target-email");
+  const statusBadge = document.getElementById("backup-schedule-status-badge");
+  const saveBtn = document.getElementById("btn-save-backup-schedule");
+
+  const freq = freqSelect ? freqSelect.value : "both";
+  const enabled = autoToggle ? autoToggle.checked : true;
+  const targetEmail = (emailInput ? emailInput.value : "").trim().toLowerCase() || (globalSettings.company?.email || "kandukurijagan99@gmail.com");
+
+  globalSettings.backupSchedule = {
+    enabled,
+    frequency: freq,
+    targetEmail,
+    lastSaved: new Date().toISOString()
+  };
+
+  try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(_) {}
+  if (window.SupabaseDB && typeof window.SupabaseDB.saveSettings === 'function') {
+    window.SupabaseDB.saveSettings(globalSettings).catch(() => {});
+  }
+
+  let origBtn = saveBtn ? saveBtn.innerHTML : "";
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Saving...`;
+  }
+
+  try {
+    const scriptUrl = typeof GOOGLE_SCRIPT_URL !== 'undefined' ? GOOGLE_SCRIPT_URL : "";
+    if (scriptUrl) {
+      await fetch(scriptUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "setup_backup_schedule",
+          frequency: enabled ? freq : "manual",
+          email: targetEmail,
+          token: typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : ""
+        })
+      });
+    }
+    if (statusBadge) {
+      statusBadge.textContent = enabled
+        ? `🟢 Active: Automated ${freq === 'both' ? 'Weekly & Monthly' : (freq === 'weekly' ? 'Weekly' : 'Monthly')} Cloud Cron`
+        : "⏸️ Paused: Manual Backups Only";
+    }
+    showFloatingToast("✅ Automated Cloud Backup Schedule saved and synced with Google Cloud Cron!", "success", 6000);
+  } catch (err) {
+    showFloatingToast("✅ Backup schedule saved locally.", "info", 4000);
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = origBtn;
     }
   }
 };
@@ -26059,3 +26839,33 @@ window.quickCreateProductWithBarcode = function() {
     window.closeBarcodeScannerModal();
   }
 };
+
+// Automated Background Backup Watcher (runs 4 seconds after boot)
+setTimeout(() => {
+  try {
+    const sched = (typeof globalSettings !== 'undefined' && globalSettings.backupSchedule) ? globalSettings.backupSchedule : null;
+    if (!sched || sched.enabled === false || sched.frequency === 'manual') return;
+
+    const now = Date.now();
+    const lastWeekly = parseInt(localStorage.getItem("last_weekly_auto_backup") || "0", 10);
+    const lastMonthly = parseInt(localStorage.getItem("last_monthly_auto_backup") || "0", 10);
+    const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+
+    let triggerType = null;
+    if ((sched.frequency === 'monthly' || sched.frequency === 'both') && (now - lastMonthly > ONE_MONTH_MS)) {
+      triggerType = "MONTHLY_AUTOMATED";
+      localStorage.setItem("last_monthly_auto_backup", String(now));
+    } else if ((sched.frequency === 'weekly' || sched.frequency === 'both') && (now - lastWeekly > ONE_WEEK_MS)) {
+      triggerType = "WEEKLY_AUTOMATED";
+      localStorage.setItem("last_weekly_auto_backup", String(now));
+    }
+
+    if (triggerType && typeof window.sendDataBackupToEmail === 'function') {
+      console.log(`[Auto-Backup] Dispatching background ${triggerType} store backup...`);
+      window.sendDataBackupToEmail({ isSilent: true, scheduleType: triggerType });
+    }
+  } catch(e) {
+    console.warn("Auto-backup watcher note:", e);
+  }
+}, 4000);

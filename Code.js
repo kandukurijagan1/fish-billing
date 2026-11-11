@@ -1482,6 +1482,11 @@ function handleApiPost(e) {
       return handleEmailBackupRequest(data);
     }
 
+    // 1.8 Automated Backup Schedule Setup
+    if (action === "setup_backup_schedule") {
+      return handleSetupBackupSchedule(data);
+    }
+
     // 2. Authentication Enforcement
     var auth = authenticateRequest(e, data);
     if (!auth.ok) {
@@ -1991,7 +1996,7 @@ function handleClientInquirySubmission(data) {
 }
 
 // ============================================================================
-// Automated Store Backup Email Dispatcher
+// Automated Store Backup Email Dispatcher & Excel (.xlsx) Engine
 // ============================================================================
 function handleEmailBackupRequest(data) {
   try {
@@ -2008,49 +2013,110 @@ function handleEmailBackupRequest(data) {
     var compName = (settings.company && settings.company.name) || "AARYAN AQUA NEEDS";
     var todayStr = Utilities.formatDate(new Date(), "Asia/Kolkata", "dd-MMM-yyyy HH:mm");
     var fileDate = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd");
+    var scheduleType = String(data.scheduleType || "MANUAL").toUpperCase();
 
+    // Calculate total inventory valuation & revenue
+    var totalStockVal = 0;
+    for (var p = 0; p < products.length; p++) {
+      var prod = products[p];
+      var qty = Number(prod.stock || 0);
+      var prc = Number(prod.price || prod.rate || 0);
+      totalStockVal += (Number(prod.totalValue || 0) || (qty * prc));
+    }
+
+    var totalRev = 0;
+    for (var v = 0; v < invoices.length; v++) {
+      totalRev += (Number(invoices[v].totalAmount || invoices[v].grandTotal || invoices[v].total || 0));
+    }
+
+    var attachments = [];
+
+    // 1. Attach Master Excel Workbook (.xlsx) if Base64 is provided
+    var hasExcel = false;
+    if (data.excelBase64) {
+      try {
+        var cleanBase64 = String(data.excelBase64).replace(/^data:.*base64,/, '').trim();
+        var excelBytes = Utilities.base64Decode(cleanBase64);
+        var excelBlob = Utilities.newBlob(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", compName.replace(/[^a-zA-Z0-9]/g, "_") + "_Master_Database_" + fileDate + ".xlsx");
+        attachments.push(excelBlob);
+        hasExcel = true;
+      } catch (errXlsx) {
+        Logger.log("Failed attaching client Excel base64: " + errXlsx.message);
+      }
+    }
+
+    // 2. Attach JSON snapshot
     var jsonStr = JSON.stringify(backupObj, null, 2);
-    var blob = Utilities.newBlob(jsonStr, "application/json", compName.replace(/[^a-zA-Z0-9]/g, "_") + "_Backup_" + fileDate + ".json");
+    var jsonBlob = Utilities.newBlob(jsonStr, "application/json", compName.replace(/[^a-zA-Z0-9]/g, "_") + "_Vault_Backup_" + fileDate + ".json");
+    attachments.push(jsonBlob);
 
-    var emailSubject = "📦 Official Store Backup (" + todayStr + ") - " + compName;
+    // Subject customization based on schedule
+    var subjectPrefix = "📦 [Store Backup]";
+    var scheduleLabel = "Manual Store Snapshot";
+    if (scheduleType === "WEEKLY_AUTOMATED") {
+      subjectPrefix = "📅 [Weekly Auto-Backup]";
+      scheduleLabel = "Weekly Automated Cloud Vault";
+    } else if (scheduleType === "MONTHLY_AUTOMATED") {
+      subjectPrefix = "📊 [Monthly Auto-Backup]";
+      scheduleLabel = "Monthly Automated Cloud Vault";
+    }
+
+    var emailSubject = subjectPrefix + " " + compName + " (" + todayStr + ") - Excel & JSON Data";
+
     var htmlBody = 
       "<div style='font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; padding: 32px 16px; color: #1e293b;'>" +
-        "<div style='max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.06);'>" +
-          "<div style='background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); padding: 24px 28px; text-align: center; color: #ffffff;'>" +
+        "<div style='max-width: 620px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.06);'>" +
+          "<div style='background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); padding: 26px 28px; text-align: center; color: #ffffff;'>" +
             "<h2 style='margin: 0; font-size: 22px; font-weight: 800; color: #ffffff;'>" + compName + "</h2>" +
-            "<p style='margin: 4px 0 0 0; color: #e0f2fe; font-size: 13px;'>Automated Data Vault &amp; Store Snapshot</p>" +
+            "<p style='margin: 4px 0 0 0; color: #e0f2fe; font-size: 13.5px; font-weight: 600;'>" + scheduleLabel + "</p>" +
           "</div>" +
           "<div style='padding: 28px;'>" +
             "<h3 style='margin-top: 0; color: #0f172a; font-size: 17px;'>Namaste Store Owner,</h3>" +
             "<p style='color: #475569; font-size: 14px; line-height: 1.6;'>" +
-              "Attached to this email is your complete <strong>Store Database Backup (.json)</strong> generated on <strong>" + todayStr + "</strong>." +
+              "Attached to this email is your complete <strong>Store Database Backup</strong> generated on <strong>" + todayStr + "</strong>." +
             "</p>" +
-            "<div style='background: #f1f5f9; border-left: 4px solid #0284c7; border-radius: 8px; padding: 16px; margin: 20px 0; font-size: 13.5px; color: #334155; line-height: 1.8;'>" +
-              "<strong>Backup Content Summary:</strong><br>" +
-              "• 📄 <strong>Total Invoices:</strong> " + invoices.length + "<br>" +
-              "• 📦 <strong>Products in Catalog:</strong> " + products.length + "<br>" +
-              "• 👥 <strong>Parties &amp; Customers:</strong> " + parties.length + "<br>" +
-              "• ⚙️ <strong>Store Configuration:</strong> Included<br>" +
-              "• 🕒 <strong>Snapshot Timestamp:</strong> " + todayStr +
+            "<div style='background: #f1f5f9; border-left: 4px solid #0284c7; border-radius: 8px; padding: 18px; margin: 20px 0; font-size: 13.5px; color: #334155; line-height: 1.8;'>" +
+              "<strong>📊 Executive Store Summary:</strong><br>" +
+              "• 📄 <strong>Total Invoices Billed:</strong> " + invoices.length + " (₹ " + totalRev.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ")<br>" +
+              "• 📦 <strong>Product Master Catalog:</strong> " + products.length + " items (Stock Valuation: ₹ " + totalStockVal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ")<br>" +
+              "• 👥 <strong>Customer Directory &amp; Ledger:</strong> " + parties.length + " registered accounts<br>" +
+              "• 🕒 <strong>Snapshot Generated:</strong> " + todayStr + "<br>" +
+              "• 🔒 <strong>Schedule Frequency:</strong> " + scheduleLabel +
+            "</div>" +
+            "<div style='background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 8px; padding: 14px; margin: 18px 0; font-size: 13px; color: #166534;'>" +
+              "<strong>📎 Attached Files in this Email:</strong><br>" +
+              "1. <strong>" + (hasExcel ? "✅ " + compName.replace(/[^a-zA-Z0-9]/g, "_") + "_Master_Database_" + fileDate + ".xlsx" : "Spreadsheet export") + "</strong>: Multi-tab Microsoft Excel file containing full products, stock levels, customers, exact invoices, and all payment dates.<br>" +
+              "2. <strong>✅ " + compName.replace(/[^a-zA-Z0-9]/g, "_") + "_Vault_Backup_" + fileDate + ".json</strong>: Direct 1-click database restore file." +
             "</div>" +
             "<p style='color: #475569; font-size: 13px; line-height: 1.6;'>" +
-              "<strong>How to restore:</strong> If you ever switch computers or want to recover data, open your billing software, go to <em>Settings &gt; Backup &amp; Data Recovery Center &gt; Import Backup</em>, and select the attached JSON file." +
+              "<strong>How to restore or open:</strong><br>" +
+              "• <strong>To view/edit in Excel:</strong> Double-click the attached <code>.xlsx</code> file to open it in Microsoft Excel, Google Sheets, or LibreOffice.<br>" +
+              "• <strong>To restore into software:</strong> Go to <em>Settings &gt; Backup &amp; Data Recovery Center &gt; Import Excel (.xlsx)</em> or <em>Import Backup (.json)</em>." +
             "</p>" +
             "<p style='color: #64748b; font-size: 12px; margin-top: 24px; border-top: 1px solid #f1f5f9; padding-top: 16px; text-align: center;'>" +
               "Aaryan Aqua Needs • High-Speed GST Cloud Billing Hub<br>" +
-              "Secure Database Backup Service" +
+              "Automated Weekly &amp; Monthly Cloud Backup Service" +
             "</p>" +
           "</div>" +
         "</div>" +
       "</div>";
 
-    var plainTextBody = "Namaste Store Owner,\n\n" +
-      "Attached is your complete Store Database Backup (.json) generated on " + todayStr + ".\n\n" +
-      "Summary:\n" +
-      "• Total Invoices: " + invoices.length + "\n" +
-      "• Total Products: " + products.length + "\n" +
-      "• Total Parties: " + parties.length + "\n\n" +
-      "To restore on any computer, open Settings > Import Backup in your billing app.\n\n" + compName;
+        var plainTextBody = [
+      "Namaste Store Owner,",
+      "",
+      "Attached is your complete Store Database Backup generated on " + todayStr + " (" + scheduleLabel + ").",
+      "",
+      "Summary:",
+      "• Total Invoices: " + invoices.length + " (₹ " + totalRev.toFixed(2) + ")",
+      "• Total Products: " + products.length + " (Stock Valuation: ₹ " + totalStockVal.toFixed(2) + ")",
+      "• Total Customers: " + parties.length,
+      "",
+      "Attached Files:",
+      "1. Master Excel Workbook (.xlsx) with products, stock, customers, invoices, and payments.",
+      "2. Complete JSON Database Vault (.json) for 1-click restore.",
+      "",
+      compName
+    ].join("\n");
 
     MailApp.sendEmail({
       to: rawEmail,
@@ -2058,18 +2124,20 @@ function handleEmailBackupRequest(data) {
       body: plainTextBody,
       htmlBody: htmlBody,
       name: compName + " Vault",
-      attachments: [blob]
+      attachments: attachments
     });
 
     return ContentService.createTextOutput(JSON.stringify({
       ok: true,
       success: true,
       email: rawEmail,
+      scheduleType: scheduleType,
+      hasExcel: hasExcel,
       invoicesCount: invoices.length,
       productsCount: products.length,
       partiesCount: parties.length,
       timestamp: todayStr,
-      message: "Backup file attached and successfully sent to " + rawEmail
+      message: "Backup files (.xlsx + .json) successfully delivered to " + rawEmail
     })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     Logger.log("handleEmailBackupRequest error: " + err.message);
@@ -2077,6 +2145,96 @@ function handleEmailBackupRequest(data) {
       ok: false,
       error: "Failed to send backup email: " + err.message
     })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ============================================================================
+// AUTOMATED BACKUP SCHEDULE SETUP & TIME-DRIVEN TRIGGERS
+// ============================================================================
+function handleSetupBackupSchedule(data) {
+  try {
+    var freq = String(data.frequency || "both").toLowerCase().trim();
+    setupAutomaticBackupTriggers(freq);
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: true,
+      frequency: freq,
+      message: "Automated backup schedule triggers configured successfully (" + freq + ")."
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    Logger.log("handleSetupBackupSchedule error: " + err.message);
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: false,
+      error: "Failed configuring backup schedule: " + err.message
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function setupAutomaticBackupTriggers(frequency) {
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      var h = triggers[i].getHandlerFunction();
+      if (h === "triggerWeeklyStoreBackup" || h === "triggerMonthlyStoreBackup") {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+    }
+
+    if (frequency === "weekly" || frequency === "both") {
+      ScriptApp.newTrigger("triggerWeeklyStoreBackup")
+        .timeBased()
+        .onWeekDay(ScriptApp.WeekDay.SUNDAY)
+        .atHour(20)
+        .create();
+    }
+
+    if (frequency === "monthly" || frequency === "both") {
+      ScriptApp.newTrigger("triggerMonthlyStoreBackup")
+        .timeBased()
+        .onMonthDay(1)
+        .atHour(21)
+        .create();
+    }
+  } catch (e) {
+    Logger.log("setupAutomaticBackupTriggers note: " + e.message);
+  }
+}
+
+function triggerWeeklyStoreBackup() {
+  runScheduledCloudBackup("WEEKLY_AUTOMATED");
+}
+
+function triggerMonthlyStoreBackup() {
+  runScheduledCloudBackup("MONTHLY_AUTOMATED");
+}
+
+function runScheduledCloudBackup(scheduleType) {
+  try {
+    var ss = getMasterSpreadsheet();
+    var invoices = readInvoicesFromSheet(ss);
+    var products = readInventoryFromSheet(ss);
+    var parties = readCustomersFromSheet(ss);
+    var rawSettings = readGlobalSettings(ss);
+
+    var targetEmail = (rawSettings && rawSettings.company && rawSettings.company.email) || "kandukurijagan99@gmail.com";
+
+    var backupObj = {
+      app: "Aaryan Aqua GST Billing & Store Management",
+      version: "5.29.0",
+      exportDate: new Date().toISOString(),
+      scheduleType: scheduleType,
+      invoices: invoices,
+      products: products,
+      parties: parties,
+      settings: rawSettings
+    };
+
+    handleEmailBackupRequest({
+      email: targetEmail,
+      backup: backupObj,
+      scheduleType: scheduleType
+    });
+  } catch (err) {
+    Logger.log("runScheduledCloudBackup error: " + err.message);
   }
 }
 
