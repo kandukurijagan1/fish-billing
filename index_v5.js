@@ -18808,11 +18808,38 @@ window.getAuthorizedUsersList = function() {
   return list;
 };
 
-// Clean local & global storage of any rogue or unapproved emails
+// Clean local & global storage of any rogue, unapproved, or deleted users
 window.cleanStorageOfUnauthorizedUsers = function() {
   try {
     const bannedEmails = window.BANNED_EMAILS || ["nenduku644@gmail.com"];
-    const isBanned = (e) => bannedEmails.some(b => b.toLowerCase().trim() === (e || "").toLowerCase().trim());
+    const deletedLegacyEmails = [
+      "kandukurijagan7@gmail.com",
+      "kandukurijagan642@gmail.com",
+      "192472374.simats@saveetha.com",
+      "endukuniku35@gmail.com",
+      "kandukurijagan@gmail.com"
+    ];
+
+    const shouldPurge = (e) => {
+      const norm = (e || "").toLowerCase().trim();
+      return bannedEmails.some(b => b.toLowerCase().trim() === norm) ||
+             deletedLegacyEmails.some(d => d.toLowerCase().trim() === norm);
+    };
+
+    // Auto-tombstone permanently deleted legacy emails into localStorage
+    try {
+      let revoked = [];
+      const rawRevoked = localStorage.getItem("revoked_authorized_emails");
+      if (rawRevoked) {
+        try { revoked = JSON.parse(rawRevoked); } catch(_) {}
+      }
+      if (!Array.isArray(revoked)) revoked = [];
+      deletedLegacyEmails.forEach(em => {
+        const norm = em.toLowerCase().trim();
+        if (!revoked.includes(norm)) revoked.push(norm);
+      });
+      localStorage.setItem("revoked_authorized_emails", JSON.stringify(revoked));
+    } catch(_) {}
 
     // 1. Scrub from authorized_users localStorage
     const rawLocal = localStorage.getItem("authorized_users");
@@ -18820,7 +18847,7 @@ window.cleanStorageOfUnauthorizedUsers = function() {
       try {
         let arr = JSON.parse(rawLocal);
         if (Array.isArray(arr)) {
-          arr = arr.filter(u => u && u.email && !isBanned(u.email));
+          arr = arr.filter(u => u && u.email && !shouldPurge(u.email));
           localStorage.setItem("authorized_users", JSON.stringify(arr));
         }
       } catch(_) {}
@@ -18828,35 +18855,35 @@ window.cleanStorageOfUnauthorizedUsers = function() {
 
     // 2. Scrub from globalSettings
     if (typeof globalSettings !== 'undefined' && Array.isArray(globalSettings.authorizedUsers)) {
-      globalSettings.authorizedUsers = globalSettings.authorizedUsers.filter(u => u && u.email && !isBanned(u.email));
+      globalSettings.authorizedUsers = globalSettings.authorizedUsers.filter(u => u && u.email && !shouldPurge(u.email));
       try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch (_) {}
     }
 
-    // 3. CRITICAL: Clear persistent auth session if it belongs to a banned email
+    // 3. CRITICAL: Clear persistent auth session if it belongs to a purged email
     try {
       const rawSession = localStorage.getItem("aaryan_auth_session");
       if (rawSession) {
         const sess = JSON.parse(rawSession);
-        if (sess && sess.email && isBanned(sess.email)) {
+        if (sess && sess.email && shouldPurge(sess.email)) {
           localStorage.removeItem("aaryan_auth_session");
           localStorage.removeItem("app_authenticated");
           localStorage.removeItem("app_locked");
           localStorage.setItem("is_demo_mode", "true");
           localStorage.removeItem("last_logged_in_email");
-          console.warn("[SECURITY] Cleared persistent session for banned email:", sess.email);
+          console.warn("[SECURITY] Cleared persistent session for purged email:", sess.email);
         }
       }
     } catch(_) {}
 
-    // 4. Clear sessionStorage if current user is banned
+    // 4. Clear sessionStorage if current user is purged
     try {
       const sessEmail = sessionStorage.getItem("current_user_email");
-      if (sessEmail && isBanned(sessEmail)) {
+      if (sessEmail && shouldPurge(sessEmail)) {
         sessionStorage.setItem("current_user_role", "viewer");
         sessionStorage.setItem("is_demo_mode", "true");
         sessionStorage.setItem("is_main_admin", "false");
         localStorage.setItem("is_demo_mode", "true");
-        console.warn("[SECURITY] Forced viewer role for banned email in session:", sessEmail);
+        console.warn("[SECURITY] Forced viewer role for purged email in session:", sessEmail);
       }
     } catch(_) {}
   } catch (_) {}
