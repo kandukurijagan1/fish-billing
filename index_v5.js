@@ -1556,7 +1556,7 @@ window.lastSyncTimestamp = parseInt(localStorage.getItem("aaryan_last_sync_time"
 const GOOGLE_SCRIPT_URL = window.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbxHi4L_xLrfRhx1KWxRxQD1QcqbVEZVMcYR37DJEGSPe2ykZyy-ATnYyZFxnSySS6OF/exec";
 const API_SECRET_TOKEN = (typeof window.API_SECRET_TOKEN !== "undefined" && window.API_SECRET_TOKEN)
   ? String(window.API_SECRET_TOKEN).trim()
-  : "AARYAN_AQUA_SECURE_KEY_2026";
+  : (typeof localStorage !== "undefined" ? (localStorage.getItem("aaryan_api_secret_token") || "") : "");
 const GOOGLE_SCRIPT_FALLBACK_URL = GOOGLE_SCRIPT_URL;
 
 // =========================================================
@@ -3051,7 +3051,7 @@ async function pushDirectToGoogleDatabaseRaw(action, payload) {
   }
   const minPayload = minifyTransferPayload(payload) || {};
   const reqTs = Date.now();
-  const secret = (typeof API_SECRET_TOKEN !== "undefined" && API_SECRET_TOKEN) ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026";
+  const secret = (typeof API_SECRET_TOKEN !== "undefined" && API_SECRET_TOKEN) ? API_SECRET_TOKEN : "";
   const gasPayload = {
     action,
     auth: secret,
@@ -3115,7 +3115,7 @@ async function pushDirectToGoogleDatabase(action, payload, maxRetries = 2) {
 
   const minPayload = minifyTransferPayload(payload) || {};
   const reqTs = Date.now();
-  const secret = (typeof API_SECRET_TOKEN !== "undefined" && API_SECRET_TOKEN) ? API_SECRET_TOKEN : "AARYAN_AQUA_SECURE_KEY_2026";
+  const secret = (typeof API_SECRET_TOKEN !== "undefined" && API_SECRET_TOKEN) ? API_SECRET_TOKEN : "";
   const gasPayload = {
     action,
     auth: secret,
@@ -21210,35 +21210,12 @@ window.handleTraditionalLoginSubmit = async function(e) {
 
   // Step 1: Check Main Admin credentials
   if (!isOtpValid && isMainAdmin) {
-    if (enteredPass === sysPass || enteredPass === sysPin || enteredPass === "2024" || enteredPass === "2026" || enteredPass === "1234" || enteredPass === "0000") {
+    const validSysPass = Boolean(sysPass && sysPass.length >= 4);
+    const validSysPin = Boolean(sysPin && sysPin.length >= 4);
+    if ((validSysPass && enteredPass === sysPass) || (validSysPin && enteredPass === sysPin)) {
       isOtpValid = true;
       verifiedRole = "super_admin";
       matchedUser = { email: window.AUTHORIZED_LOGIN_EMAIL, name: "Jagan Kandukuri (Main Admin)", role: "super_admin", status: "active", isMainAdmin: true };
-    }
-  }
-
-  // Step 1.5: Direct Customer Account Portal Access
-  // If email belongs to a customer/farmer or they use their phone number as PIN/pass
-  if (!isOtpValid && enteredEmail && enteredEmail.includes("@")) {
-    const custEmail = enteredEmail.toLowerCase().trim();
-    const custPhone = enteredPass.replace(/[^0-9]/g, '');
-    const foundInvoice = (invoicesDb || []).find(inv => {
-      const b = inv.details?.buyer || {};
-      const buyerEmail = String(b.email || '').toLowerCase().trim();
-      const buyerPhone = String(inv.customerPhone || b.phone || '').replace(/[^0-9]/g, '');
-      return (buyerEmail && buyerEmail === custEmail) || (custPhone && buyerPhone && buyerPhone.endsWith(custPhone));
-    });
-
-    if (foundInvoice) {
-      const custName = foundInvoice.customerName || foundInvoice.details?.buyer?.name || "Customer";
-      isOtpValid = true;
-      verifiedRole = "customer";
-      matchedUser = {
-        email: custEmail,
-        name: custName,
-        role: "customer",
-        status: "active"
-      };
     }
   }
 
@@ -21267,42 +21244,11 @@ window.handleTraditionalLoginSubmit = async function(e) {
         return;
       }
 
-      if (checkUserPassword(matchedUser, enteredPass) || enteredPass === sysPin || enteredPass === "2024") {
+      if (checkUserPassword(matchedUser, enteredPass)) {
         isOtpValid = true;
-        verifiedRole = matchedUser.role || "admin";
+        verifiedRole = matchedUser.role || "cashier";
       }
     }
-  }
-
-  // Step 2.5: If entered password is the Master PIN 2024, ANY non-suspended email or terminal operator gets Admin Edit access!
-  if (!isOtpValid && (enteredPass === sysPin || enteredPass === "2024")) {
-    if (!isMainAdmin && enteredEmail && typeof window.isUserSuspendedByAdmin === 'function' && window.isUserSuspendedByAdmin(enteredEmail)) {
-      if (submitBtn) submitBtn.disabled = false;
-      if (btnText) btnText.classList.remove("hidden");
-      if (btnSpinner) btnSpinner.classList.add("hidden");
-      if (errBlock) {
-        errBlock.innerHTML = `
-          <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
-            <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
-              <i class="fa-solid fa-user-lock"></i> Account Suspended
-            </div>
-            <div style="font-size: 11.5px; color: #cbd5e1;">
-              Your account (<strong style="color: #fca5a5;">${escapeHtml(enteredEmail)}</strong>) has been paused by the Main Admin. Access is blocked.
-            </div>
-          </div>
-        `;
-        errBlock.classList.remove("hidden");
-      }
-      return;
-    }
-    isOtpValid = true;
-    verifiedRole = "admin";
-    matchedUser = {
-      email: enteredEmail || window.AUTHORIZED_LOGIN_EMAIL,
-      name: enteredEmail ? enteredEmail.split("@")[0] : "Store Admin",
-      role: "admin",
-      status: "active"
-    };
   }
 
   // Step 2.9: If not validated yet, fetch fresh settings from Supabase DB immediately

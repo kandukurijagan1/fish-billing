@@ -126,9 +126,8 @@ npm run build:win
 ---
 
 ## 🔐 Credentials & Security Notice
-* **Authorized Administrator Email**: `kandukurijagan99@gmail.com`
-* **Default Security PIN**: `2024`
-* **Master System Password**: `Aaryan@2024`
+* **Authorized Administrator**: Configured via Google Identity Services & Authorized Email Accounts.
+* **Security Passcode & PIN**: Set securely by the store owner during first-time system initialization. Hardcoded factory credentials have been decommissioned for production security.
 
 ---
 

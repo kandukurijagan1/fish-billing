@@ -262,11 +262,19 @@ try {
   }
 } catch (e) {}
 
+function validateIpcSender(event) {
+  if (!mainWindow || !event || !event.sender) return false;
+  return event.sender.id === mainWindow.webContents.id;
+}
+
 ipcMain.handle('fast-save-cache', async (event, { key, data }) => {
+  if (!validateIpcSender(event)) return { ok: false, error: 'Unauthorized IPC sender' };
   try {
     const safeKey = String(key || 'cache').replace(/[^a-zA-Z0-9_-]/g, '_');
     const filePath = path.join(cacheDir, `${safeKey}.json`);
-    await fs.promises.writeFile(filePath, JSON.stringify(data), 'utf8');
+    const payloadStr = JSON.stringify(data || {});
+    if (payloadStr.length > 50 * 1024 * 1024) return { ok: false, error: 'Payload exceeds 50MB limit' };
+    await fs.promises.writeFile(filePath, payloadStr, 'utf8');
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -274,6 +282,7 @@ ipcMain.handle('fast-save-cache', async (event, { key, data }) => {
 });
 
 ipcMain.handle('fast-read-cache', async (event, { key }) => {
+  if (!validateIpcSender(event)) return { ok: false, error: 'Unauthorized IPC sender' };
   try {
     const safeKey = String(key || 'cache').replace(/[^a-zA-Z0-9_-]/g, '_');
     const filePath = path.join(cacheDir, `${safeKey}.json`);
@@ -285,7 +294,8 @@ ipcMain.handle('fast-read-cache', async (event, { key }) => {
   return { ok: false };
 });
 
-ipcMain.handle('load-initial-db', async () => {
+ipcMain.handle('load-initial-db', async (event) => {
+  if (!validateIpcSender(event)) return { ok: false, error: 'Unauthorized IPC sender' };
   try {
     const candidates = [
       path.join(__dirname, 'initial_db.json'),
@@ -306,6 +316,7 @@ ipcMain.handle('load-initial-db', async () => {
 });
 
 ipcMain.on('print-invoice', (event, options) => {
+  if (!validateIpcSender(event)) return;
   if (mainWindow) {
     mainWindow.webContents.print({
       silent: false,
@@ -317,6 +328,7 @@ ipcMain.on('print-invoice', (event, options) => {
 });
 
 ipcMain.handle('print-to-pdf', async (event, options) => {
+  if (!validateIpcSender(event)) return { ok: false, error: 'Unauthorized IPC sender' };
   if (!mainWindow) return { ok: false, error: 'No active window' };
   try {
     const pdfData = await mainWindow.webContents.printToPDF({
@@ -332,7 +344,9 @@ ipcMain.handle('print-to-pdf', async (event, options) => {
 });
 
 ipcMain.on('open-external', (event, url) => {
-  if (url && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:') || url.startsWith('tel:'))) {
+  if (!validateIpcSender(event)) return;
+  // Strict HTTPS / Mailto / Tel only (disallow plain HTTP and non-standard schemes)
+  if (url && (url.startsWith('https://') || url.startsWith('mailto:') || url.startsWith('tel:'))) {
     shell.openExternal(url);
   }
 });

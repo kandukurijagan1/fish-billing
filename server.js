@@ -29,11 +29,20 @@ const mimeTypes = {
 const server = http.createServer((req, res) => {
   let reqPath = req.url.split('?')[0];
 
+  const reqOrigin = req.headers.origin || '';
+  const isTrustedOrigin = !reqOrigin || reqOrigin === 'null' ||
+    reqOrigin.includes('aaryanaqua.netlify.app') ||
+    reqOrigin.includes('aaryan-aqua-billing.netlify.app') ||
+    reqOrigin.includes('kandukurijagan1.github.io') ||
+    reqOrigin.includes('localhost') ||
+    reqOrigin.includes('127.0.0.1');
+  const safeCorsOrigin = isTrustedOrigin ? (reqOrigin || '*') : 'https://aaryanaqua.netlify.app';
+
   // Cloud Health Check endpoint (for Render, Railway, Fly.io, Kubernetes, Docker)
   if (reqPath === '/health' || reqPath === '/api/health') {
     res.writeHead(200, {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*'
+      'Access-Control-Allow-Origin': safeCorsOrigin
     });
     res.end(JSON.stringify({
       status: 'healthy',
@@ -49,7 +58,7 @@ const server = http.createServer((req, res) => {
     autoStartWhatsAppBot();
     res.writeHead(200, {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*'
+      'Access-Control-Allow-Origin': safeCorsOrigin
     });
     res.end(JSON.stringify({ ok: true, active: !!botProcess }));
     return;

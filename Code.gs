@@ -1316,6 +1316,16 @@ function handleApiGet(e) {
     }
 
     var settingsData = readSettingsFromSheet(ssMaster || ss);
+    // Security Hardening (OWASP A01 / Data Protection): Redact private credentials before transmission
+    if (settingsData && typeof settingsData === 'object') {
+      if (settingsData.telegram) settingsData.telegram.token = "";
+      if (settingsData.security) {
+        settingsData.security.password = "";
+        settingsData.security.securityPin = "";
+        settingsData.security.pin = "";
+        settingsData.security.whatsappPin = "";
+      }
+    }
     var fullBundle = {
       ok: true,
       hash: serverHash,
@@ -1359,7 +1369,22 @@ function handleApiGet(e) {
       }
     }
     if (found) {
-      return ContentService.createTextOutput(JSON.stringify({ ok: true, found: true, invoice: found })).setMimeType(ContentService.MimeType.JSON);
+      // Authenticated users (cashiers/admins) receive complete invoice records
+      var authCheck = authenticateRequest(e, null);
+      if (authCheck.ok) {
+        return ContentService.createTextOutput(JSON.stringify({ ok: true, found: true, invoice: found })).setMimeType(ContentService.MimeType.JSON);
+      }
+      // Public QR verification: Return only verified non-sensitive metadata (OWASP A01 / Data Minimization)
+      var d = found.details || found;
+      var publicVerification = {
+        verified: true,
+        invoiceNumber: found.invoiceNo || d.invoiceNo || "",
+        invoiceDate: found.invoiceDate || d.invoiceDate || d.date || "",
+        businessName: "AARYAN AQUA NEEDS",
+        grandTotal: found.grandTotal || d.grandTotal || found.total || 0,
+        paymentStatus: found.paymentStatus || d.paymentStatus || "Paid"
+      };
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, found: true, verified: true, invoice: publicVerification })).setMimeType(ContentService.MimeType.JSON);
     } else {
       return ContentService.createTextOutput(JSON.stringify({ ok: true, found: false, error: "Invoice record not found in master database" })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -1409,9 +1434,21 @@ function handleApiPost(e) {
       } catch (pe) {}
 
       try {
-        var appBaseUrl = String(data.origin || "https://kandukurijagan1.github.io/fish-billing/").trim();
-      if (!appBaseUrl.endsWith("/") && !appBaseUrl.includes("?")) appBaseUrl += "/";
-      var directLoginLink = appBaseUrl + (appBaseUrl.includes("?") ? "&" : "?") + "auth_otp=" + otpCode + "&auth_email=" + encodeURIComponent(targetEmail);
+        var allowedOrigins = [
+          "https://aaryanaqua.netlify.app",
+          "https://aaryan-aqua-billing.netlify.app",
+          "https://kandukurijagan1.github.io/fish-billing"
+        ];
+        var rawOrigin = String(data.origin || "").trim();
+        var appBaseUrl = "https://aaryanaqua.netlify.app/";
+        for (var o = 0; o < allowedOrigins.length; o++) {
+          if (rawOrigin && rawOrigin.startsWith(allowedOrigins[o])) {
+            appBaseUrl = rawOrigin;
+            break;
+          }
+        }
+        if (!appBaseUrl.endsWith("/") && !appBaseUrl.includes("?")) appBaseUrl += "/";
+        var directLoginLink = appBaseUrl + (appBaseUrl.includes("?") ? "&" : "?") + "auth_otp=" + otpCode + "&auth_email=" + encodeURIComponent(targetEmail);
         MailApp.sendEmail({
           to: targetEmail,
           subject: "🔐 Aaryan Aqua Needs - Direct Login Link & Security Code: " + otpCode,
@@ -1450,6 +1487,22 @@ function handleApiPost(e) {
           error: "This email is not authorized to access the billing system."
         })).setMimeType(ContentService.MimeType.JSON);
       }
+
+      // Security (OWASP A07): Rate-limit OTP verification attempts (max 5 failed attempts per window)
+      var cache = CacheService.getScriptCache();
+      var attemptKey = "otp_fail_count_" + Utilities.base64EncodeWebSafe(targetEmailVerify).slice(0, 80);
+      var failCount = parseInt(cache.get(attemptKey) || "0", 10);
+      if (failCount >= 5) {
+        try {
+          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_" + targetEmailVerify);
+          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_EXP_" + targetEmailVerify);
+        } catch (_) {}
+        return ContentService.createTextOutput(JSON.stringify({
+          ok: false,
+          error: "Too many incorrect attempts. This one-time code has been invalidated for security. Please request a new code."
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+
       var storedOtp = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_" + targetEmailVerify);
       var expStr = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_EXP_" + targetEmailVerify);
       var expTime = expStr ? parseInt(expStr, 10) : 0;
@@ -1457,6 +1510,7 @@ function handleApiPost(e) {
         try {
           PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_" + targetEmailVerify);
           PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_EXP_" + targetEmailVerify);
+          cache.remove(attemptKey);
         } catch (_) {}
         try {
           var ssLog2 = getMasterSpreadsheet();
@@ -1464,6 +1518,9 @@ function handleApiPost(e) {
         } catch (_) {}
         return ContentService.createTextOutput(JSON.stringify({ ok: true, verified: true, role: verifiedUser.role, email: verifiedUser.email })).setMimeType(ContentService.MimeType.JSON);
       } else {
+        try {
+          cache.put(attemptKey, String(failCount + 1), 900);
+        } catch (_) {}
         return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Invalid or expired security code." })).setMimeType(ContentService.MimeType.JSON);
       }
     }
