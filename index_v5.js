@@ -22185,11 +22185,50 @@ window.importDataFromMasterExcel = async function(event) {
 
   showFloatingToast("⏳ Reading and parsing Master Excel Workbook...", "info", 3000);
 
+  // Helper: Safe number parsing from Excel cells
+  function safeParseExcelNumber(val, defaultVal = 0) {
+    if (val === null || val === undefined || val === '') return defaultVal;
+    if (typeof val === 'number') return isNaN(val) ? defaultVal : val;
+    const cleaned = String(val).replace(/[₹$,\s]/g, '').trim();
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? defaultVal : num;
+  }
+
+  // Helper: Safe date parsing from Excel cells (supports Date objects, serials, ISO strings)
+  function formatExcelDate(val) {
+    if (!val) return new Date().toISOString().split('T')[0];
+    if (val instanceof Date) {
+      return val.toISOString().split('T')[0];
+    }
+    if (typeof val === 'number') {
+      if (val > 10000 && val < 60000) {
+        const utc_days = Math.floor(val - 25569);
+        const utc_value = utc_days * 86400;
+        const date_info = new Date(utc_value * 1000);
+        return date_info.toISOString().split('T')[0];
+      }
+    }
+    const str = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.substring(0, 10);
+    if (/^\d{1,2}[-\/]\d{1,2}[-\/]\d{4}/.test(str)) {
+      const parts = str.split(/[-\/]/);
+      if (parts[2].length === 4) {
+        const d = parts[0].padStart(2, '0');
+        const m = parts[1].padStart(2, '0');
+        const y = parts[2];
+        return `${y}-${m}-${d}`;
+      }
+    }
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+    return new Date().toISOString().split('T')[0];
+  }
+
   const reader = new FileReader();
   reader.onload = async function(e) {
     try {
       const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
+      const workbook = XLSX.read(data, { type: 'array', cellDates: true });
       const sheetNames = workbook.SheetNames || [];
 
       // A. Parse Products & Stock Master
@@ -22200,16 +22239,16 @@ window.importDataFromMasterExcel = async function(event) {
         importedProducts = rawProds.map((row, idx) => {
           const desc = String(row["Description / Product Name"] || row["Description"] || row["Product Name"] || row["Item Name"] || row["description"] || "").trim();
           if (!desc) return null;
-          const qty = Number(row["Current Stock Quantity"] || row["Stock Quantity"] || row["Stock"] || row["stock"] || 0);
-          const prc = Number(row["Selling Price (₹)"] || row["Price"] || row["price"] || row["Selling Price"] || 0);
-          const rate = Number(row["Cost Rate (₹)"] || row["Cost"] || row["Rate"] || row["rate"] || prc);
-          const disc = Number(row["Default Discount %"] || row["Discount %"] || row["discount"] || 0);
+          const qty = safeParseExcelNumber(row["Current Stock Quantity"] || row["Stock Quantity"] || row["Stock"] || row["stock"] || 0);
+          const prc = safeParseExcelNumber(row["Selling Price (₹)"] || row["Price"] || row["price"] || row["Selling Price"] || 0);
+          const rate = safeParseExcelNumber(row["Cost Rate (₹)"] || row["Cost"] || row["Rate"] || row["rate"] || prc);
+          const disc = safeParseExcelNumber(row["Default Discount %"] || row["Discount %"] || row["discount"] || 0);
           const hsn = String(row["HSN Code"] || row["HSN"] || row["hsn"] || "230990");
           const unit = String(row["Unit"] || row["unit"] || "NOS");
           const pack = String(row["Pack Size"] || row["packSize"] || "");
           const id = String(row["Product ID"] || row["ID"] || row["id"] || `PRD-${Date.now()}-${idx}`);
           const barcode = String(row["Barcode"] || row["barcode"] || "");
-          const totVal = Number(row["Total Stock Valuation (₹)"] || row["Total Value"] || (qty * prc));
+          const totVal = safeParseExcelNumber(row["Total Stock Valuation (₹)"] || row["Total Value"] || (qty * prc));
           return {
             id,
             description: desc,
@@ -22222,7 +22261,9 @@ window.importDataFromMasterExcel = async function(event) {
             stock: qty,
             totalValue: totVal,
             status: qty > 10 ? "In Stock" : (qty > 0 ? "Low Stock" : "Out of Stock"),
-            barcode
+            barcode,
+            is_deleted: false,
+            updatedAt: new Date().toISOString()
           };
         }).filter(Boolean);
       }
@@ -22235,8 +22276,10 @@ window.importDataFromMasterExcel = async function(event) {
         importedParties = rawCusts.map((row, idx) => {
           const name = String(row["Customer / Business Name"] || row["Customer Name"] || row["Name"] || row["name"] || "").trim();
           if (!name) return null;
+          const rawType = String(row["Customer Type"] || row["type"] || "receiver").trim().toLowerCase();
+          const pType = (rawType === 'consignee' || rawType.includes('consignee')) ? 'consignee' : 'receiver';
           return {
-            id: String(row["Customer ID"] || row["ID"] || row["id"] || `CUST-${Date.now()}-${idx}`),
+            id: String(row["Customer ID"] || row["ID"] || row["id"] || `party-${Date.now()}-${idx}`),
             name,
             phone: String(row["Phone Number"] || row["Phone"] || row["phone"] || "").trim(),
             email: String(row["Email Address"] || row["Email"] || row["email"] || "").trim(),
@@ -22245,7 +22288,10 @@ window.importDataFromMasterExcel = async function(event) {
             city: String(row["City"] || row["city"] || "").trim(),
             state: String(row["State"] || row["state"] || "Andhra Pradesh").trim(),
             stateCode: String(row["State Code"] || row["stateCode"] || "37").trim(),
-            type: String(row["Customer Type"] || row["type"] || "receiver").trim()
+            type: pType,
+            company: String(row["Customer / Business Name"] || name),
+            is_deleted: false,
+            updatedAt: new Date().toISOString()
           };
         }).filter(Boolean);
       }
@@ -22256,21 +22302,27 @@ window.importDataFromMasterExcel = async function(event) {
       if (itemsSheetName) {
         const rawItems = XLSX.utils.sheet_to_json(workbook.Sheets[itemsSheetName]);
         rawItems.forEach(row => {
-          const invNo = String(row["Invoice Number"] || row["Invoice No"] || row["Invoice #"] || row["invoiceNo"] || "").trim();
-          if (!invNo) return;
-          if (!itemsByInvoiceNo.has(invNo)) itemsByInvoiceNo.set(invNo, []);
-          itemsByInvoiceNo.get(invNo).push({
-            productId: String(row["Product ID"] || ""),
+          const rawInvNo = String(row["Invoice Number"] || row["Invoice No"] || row["Invoice #"] || row["invoiceNo"] || "").trim();
+          if (!rawInvNo) return;
+          const cleanInvNo = rawInvNo.replace(/^#/, '');
+          const itemObj = {
+            productId: String(row["Product ID"] || `PRD-${Date.now()}`),
             description: String(row["Item Description"] || row["Description"] || "Product Item"),
             hsn: String(row["HSN Code"] || row["HSN"] || "230990"),
             packSize: String(row["Pack Size"] || ""),
             unit: String(row["Unit"] || "NOS"),
-            quantity: Number(row["Quantity"] || row["Qty"] || 1),
-            rate: Number(row["Rate (₹)"] || row["Rate"] || 0),
-            discount: Number(row["Discount %"] || 0),
-            taxableValue: Number(row["Taxable Value (₹)"] || 0),
-            taxRate: Number(row["GST Rate %"] || 0),
-            amount: Number(row["Total Item Amount (₹)"] || row["Amount"] || 0)
+            quantity: safeParseExcelNumber(row["Quantity"] || row["Qty"] || 1),
+            rate: safeParseExcelNumber(row["Rate (₹)"] || row["Rate"] || 0),
+            discount: safeParseExcelNumber(row["Discount %"] || 0),
+            taxableValue: safeParseExcelNumber(row["Taxable Value (₹)"] || 0),
+            taxRate: safeParseExcelNumber(row["GST Rate %"] || 0),
+            amount: safeParseExcelNumber(row["Total Item Amount (₹)"] || row["Amount"] || 0)
+          };
+          [rawInvNo, cleanInvNo, cleanInvNo.toLowerCase(), rawInvNo.toLowerCase()].forEach(k => {
+            if (k) {
+              if (!itemsByInvoiceNo.has(k)) itemsByInvoiceNo.set(k, []);
+              itemsByInvoiceNo.get(k).push(itemObj);
+            }
           });
         });
       }
@@ -22281,17 +22333,25 @@ window.importDataFromMasterExcel = async function(event) {
       if (paySheetName) {
         const rawPay = XLSX.utils.sheet_to_json(workbook.Sheets[paySheetName]);
         rawPay.forEach(row => {
-          const invNo = String(row["Invoice Number"] || row["Invoice No"] || row["Invoice #"] || row["invoiceNo"] || "").trim();
-          if (!invNo) return;
-          if (!paymentsByInvoiceNo.has(invNo)) paymentsByInvoiceNo.set(invNo, []);
-          paymentsByInvoiceNo.get(invNo).push({
-            installmentNo: Number(row["Installment No"] || 1),
-            date: String(row["Payment Date & Time"] || row["Payment Date"] || row["Date"] || ""),
-            amount: Number(row["Amount Paid (₹)"] || row["Amount Paid"] || row["Amount"] || 0),
-            mode: String(row["Payment Mode"] || row["Mode"] || "Cash"),
+          const rawInvNo = String(row["Invoice Number"] || row["Invoice No"] || row["Invoice #"] || row["invoiceNo"] || "").trim();
+          if (!rawInvNo) return;
+          const cleanInvNo = rawInvNo.replace(/^#/, '');
+          const payDate = formatExcelDate(row["Payment Date & Time"] || row["Payment Date"] || row["Date"] || new Date().toISOString());
+          const payObj = {
+            id: `pay_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            installmentNo: safeParseExcelNumber(row["Installment No"] || 1),
+            date: payDate,
+            amount: safeParseExcelNumber(row["Amount Paid (₹)"] || row["Amount Paid"] || row["Amount"] || 0),
+            mode: String(row["Payment Mode"] || row["Mode"] || "UPI / Online"),
             reference: String(row["Reference / UTR No"] || row["Reference"] || row["UTR"] || ""),
             note: String(row["Payment Note"] || row["Notes"] || "Installment payment"),
-            balanceAfter: Number(row["Remaining Balance After (₹)"] || 0)
+            balanceAfter: safeParseExcelNumber(row["Remaining Balance After (₹)"] || 0)
+          };
+          [rawInvNo, cleanInvNo, cleanInvNo.toLowerCase(), rawInvNo.toLowerCase()].forEach(k => {
+            if (k) {
+              if (!paymentsByInvoiceNo.has(k)) paymentsByInvoiceNo.set(k, []);
+              paymentsByInvoiceNo.get(k).push(payObj);
+            }
           });
         });
       }
@@ -22302,25 +22362,30 @@ window.importDataFromMasterExcel = async function(event) {
       if (invSheetName) {
         const rawInvs = XLSX.utils.sheet_to_json(workbook.Sheets[invSheetName]);
         importedInvoices = rawInvs.map((row, idx) => {
-          const invNo = String(row["Invoice Number"] || row["Invoice No"] || row["Invoice #"] || row["invoiceNo"] || `INV-${Date.now()}-${idx}`).trim();
-          const invDate = String(row["Invoice Date"] || row["Date"] || new Date().toISOString().split('T')[0]);
-          const custName = String(row["Customer Name"] || row["Customer"] || "Cash Customer");
-          const custPhone = String(row["Customer Phone"] || row["Phone"] || "");
-          const gstin = String(row["Customer GSTIN"] || row["GSTIN"] || "");
-          const gTotal = Number(row["Grand Total (₹)"] || row["Grand Total"] || row["Total"] || 0);
-          const paid = Number(row["Amount Paid on Invoice Date (₹)"] || row["Amount Paid"] || row["Paid"] || 0);
-          const bal = Number(row["Balance Due (₹)"] || row["Balance"] || Math.max(0, gTotal - paid));
-          const subtotal = Number(row["Taxable Subtotal (₹)"] || row["Subtotal"] || gTotal);
-          const cgst = Number(row["CGST Amount (₹)"] || row["CGST"] || 0);
-          const sgst = Number(row["SGST Amount (₹)"] || row["SGST"] || 0);
-          const igst = Number(row["IGST Amount (₹)"] || row["IGST"] || 0);
-          const roundOff = Number(row["Round Off (₹)"] || row["Round Off"] || 0);
-          const status = String(row["Payment Status"] || (bal <= 0 ? "Paid" : (paid > 0 ? "Partial" : "Credit")));
-          const mode = String(row["Payment Mode"] || "Cash");
-          const lastPay = String(row["Last Payment Date"] || invDate);
+          const rawInvNo = String(row["Invoice Number"] || row["Invoice No"] || row["Invoice #"] || row["invoiceNo"] || `INV-${Date.now()}-${idx}`).trim();
+          const cleanInvNo = rawInvNo.replace(/^#/, '');
+          const invDate = formatExcelDate(row["Invoice Date"] || row["Date"]);
+          const custName = String(row["Customer Name"] || row["Customer"] || "Cash Customer").trim();
+          const custPhone = String(row["Customer Phone"] || row["Phone"] || "").trim();
+          const gstin = String(row["Customer GSTIN"] || row["GSTIN"] || "").trim();
+          const docType = String(row["Document Type"] || (cleanInvNo.startsWith("EST-") ? "Bill of Supply" : "Tax Invoice")).trim();
+          const isEstimate = Boolean(cleanInvNo.startsWith("EST-") || docType.toLowerCase().includes("estimate") || docType.toLowerCase().includes("quotation"));
 
-          const items = itemsByInvoiceNo.get(invNo) || [
+          const gTotal = safeParseExcelNumber(row["Grand Total (₹)"] || row["Grand Total"] || row["Total"] || 0);
+          const paid = safeParseExcelNumber(row["Amount Paid on Invoice Date (₹)"] || row["Amount Paid"] || row["Paid"] || 0);
+          const bal = safeParseExcelNumber(row["Balance Due (₹)"] || row["Balance"] || Math.max(0, gTotal - paid));
+          const subtotal = safeParseExcelNumber(row["Taxable Subtotal (₹)"] || row["Subtotal"] || gTotal);
+          const cgst = safeParseExcelNumber(row["CGST Amount (₹)"] || row["CGST"] || 0);
+          const sgst = safeParseExcelNumber(row["SGST Amount (₹)"] || row["SGST"] || 0);
+          const igst = safeParseExcelNumber(row["IGST Amount (₹)"] || row["IGST"] || 0);
+          const roundOff = safeParseExcelNumber(row["Round Off (₹)"] || row["Round Off"] || 0);
+          const status = String(row["Payment Status"] || (bal <= 0.01 ? "Paid" : (paid > 0 ? "Partial" : "Credit")));
+          const mode = String(row["Payment Mode"] || "UPI / Online");
+          const lastPay = formatExcelDate(row["Last Payment Date"] || invDate);
+
+          const items = itemsByInvoiceNo.get(cleanInvNo) || itemsByInvoiceNo.get(rawInvNo) || itemsByInvoiceNo.get(cleanInvNo.toLowerCase()) || [
             {
+              productId: "PRD-EXCEL-01",
               description: "Items per Excel Master",
               quantity: 1,
               unit: "NOS",
@@ -22329,7 +22394,8 @@ window.importDataFromMasterExcel = async function(event) {
             }
           ];
 
-          const paymentHistory = paymentsByInvoiceNo.get(invNo) || (paid > 0 ? [{
+          const paymentHistory = paymentsByInvoiceNo.get(cleanInvNo) || paymentsByInvoiceNo.get(rawInvNo) || paymentsByInvoiceNo.get(cleanInvNo.toLowerCase()) || (paid > 0 ? [{
+            id: `pay_${Date.now()}_${idx}`,
             installmentNo: 1,
             date: invDate,
             amount: paid,
@@ -22339,27 +22405,65 @@ window.importDataFromMasterExcel = async function(event) {
             balanceAfter: bal
           }] : []);
 
+          const uniqueId = String(row["id"] || row["ID"] || (cleanInvNo.startsWith("inv_") ? cleanInvNo : `inv_${Date.now()}_${idx}`));
+          const randSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+          const qrToken = `Q-${cleanInvNo}-${Date.now().toString(36).slice(-4).toUpperCase()}${randSuffix}`;
+          const invTs = new Date(invDate).getTime() || Date.now();
+
           return {
-            id: invNo,
-            invoiceNo: invNo,
-            date: invDate,
+            id: uniqueId,
+            qrToken: qrToken,
+            invoiceNo: cleanInvNo,
             invoiceDate: invDate,
+            date: invDate,
             customerName: custName,
             customerPhone: custPhone,
-            paymentStatus: status,
-            paymentMode: mode,
+            phone: custPhone,
+            buyer: {
+              name: custName,
+              phone: custPhone,
+              gstin: gstin
+            },
+            consignee: {
+              name: custName,
+              phone: custPhone,
+              gstin: gstin
+            },
+            items: items,
+            itemsCount: items.length,
+            taxable: subtotal,
             subtotal: subtotal,
+            cgst: cgst,
+            sgst: sgst,
+            igst: igst,
             taxAmount: cgst + sgst + igst,
+            roundOff: roundOff,
+            total: gTotal,
+            grandTotal: gTotal,
             totalAmount: gTotal,
             paidAmount: paid,
+            balanceDue: bal,
             balanceAmount: bal,
+            paymentStatus: status,
+            paymentMode: mode,
+            isEstimate: isEstimate,
+            _ts: invTs,
             lastPaymentTime: lastPay,
             paymentHistory: paymentHistory,
+            isDeleted: false,
             details: {
-              invoiceNo: invNo,
+              id: uniqueId,
+              invoiceNo: cleanInvNo,
+              invoiceDate: invDate,
               date: invDate,
-              docType: String(row["Document Type"] || "Bill of Supply"),
+              docType: docType,
+              isEstimate: isEstimate,
               buyer: {
+                name: custName,
+                phone: custPhone,
+                gstin: gstin
+              },
+              consignee: {
                 name: custName,
                 phone: custPhone,
                 gstin: gstin
@@ -22373,13 +22477,73 @@ window.importDataFromMasterExcel = async function(event) {
                 roundOff: roundOff,
                 grandTotal: gTotal
               },
-              paymentStatus: status,
-              paymentMode: mode,
+              total: gTotal,
+              grandTotal: gTotal,
+              subtotal: subtotal,
               paidAmount: paid,
               balanceDue: bal,
+              paymentStatus: status,
+              paymentMode: mode,
               paymentHistory: paymentHistory
             }
           };
+        });
+      }
+
+      // Auto-Synthesis: If line items referenced products not in Stock & Products, ensure they exist
+      if (itemsByInvoiceNo.size > 0) {
+        const seenPids = new Set(importedProducts.map(p => p.id || p.description));
+        itemsByInvoiceNo.forEach(items => {
+          items.forEach(it => {
+            const pid = it.productId || `PRD-${Date.now()}`;
+            const desc = it.description;
+            if (desc && !seenPids.has(pid) && !seenPids.has(desc)) {
+              seenPids.add(pid);
+              seenPids.add(desc);
+              importedProducts.push({
+                id: pid,
+                description: desc,
+                hsn: it.hsn || "310590",
+                packSize: it.packSize || "",
+                unit: it.unit || "NOS",
+                rate: it.rate || 0,
+                discount: it.discount || 0,
+                price: it.rate || 0,
+                stock: 100,
+                totalValue: (it.rate || 0) * 100,
+                status: "In Stock",
+                barcode: "",
+                is_deleted: false,
+                updatedAt: new Date().toISOString()
+              });
+            }
+          });
+        });
+      }
+
+      // Auto-Synthesis: If invoices reference customers not in Customer Directory, ensure they exist
+      if (importedInvoices.length > 0) {
+        const seenCusts = new Set(importedParties.map(p => String(p.name || '').trim().toLowerCase()));
+        importedInvoices.forEach(inv => {
+          const cName = String(inv.customerName || '').trim();
+          if (cName && !seenCusts.has(cName.toLowerCase())) {
+            seenCusts.add(cName.toLowerCase());
+            importedParties.push({
+              id: `party-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+              name: cName,
+              phone: String(inv.customerPhone || '').trim(),
+              email: '',
+              gstin: String((inv.buyer && inv.buyer.gstin) || '').trim(),
+              address: '',
+              city: '',
+              state: 'Andhra Pradesh',
+              stateCode: '37',
+              type: 'receiver',
+              company: cName,
+              is_deleted: false,
+              updatedAt: new Date().toISOString()
+            });
+          }
         });
       }
 
@@ -22394,38 +22558,43 @@ window.importDataFromMasterExcel = async function(event) {
         return;
       }
 
-      // Clear deletion tombstones so imported data loads clean
-      localStorage.removeItem("products_cleared");
+      // CRITICAL: Clear ALL deletion tombstones, cancelled lists, and history clearance flags
+      localStorage.removeItem("deleted_party_ids");
+      localStorage.removeItem("deleted_invoice_ids");
+      localStorage.removeItem("cancelled_invoices");
       localStorage.removeItem("database_history_cleared");
       localStorage.removeItem("database_history_cleared_at");
+      window.databaseHistoryClearedAt = 0;
+      localStorage.removeItem("products_cleared");
       localStorage.removeItem("deleted_product_ids");
       localStorage.removeItem("deleted_customer_ids");
+      localStorage.removeItem("turbo_outbox_queue");
+
+      // Explicitly unblock each restored invoice
+      importedInvoices.forEach(inv => {
+        if (typeof window.clearInvoiceTombstone === 'function') {
+          window.clearInvoiceTombstone(inv.invoiceNo, inv.id);
+        }
+      });
 
       // 1. Commit Products
       if (importedProducts.length > 0) {
         productsDb = importedProducts;
         window.productsDb = productsDb;
         localStorage.setItem("products", JSON.stringify(productsDb));
-        if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllProducts(productsDb);
-        if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
-          window.SupabaseDB.saveAllProducts(productsDb).catch(() => {});
-        }
-        if (typeof pushDirectToGoogleDatabase === 'function') {
-          pushDirectToGoogleDatabase("save_products", { products: productsDb });
+        if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllProducts === 'function') {
+          window.TurboIndexedDB.saveAllProducts(productsDb);
         }
       }
 
-      // 2. Commit Customers
+      // 2. Commit Customers / Parties
       if (importedParties.length > 0) {
         partiesDb = importedParties;
         window.partiesDb = partiesDb;
         localStorage.setItem("parties", JSON.stringify(partiesDb));
-        if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllParties(partiesDb);
-        if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
-          window.SupabaseDB.saveAllCustomers(partiesDb).catch(() => {});
-        }
-        if (typeof pushDirectToGoogleDatabase === 'function') {
-          pushDirectToGoogleDatabase("save_parties", { parties: partiesDb });
+        localStorage.setItem("parties_seeded", "true");
+        if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllParties === 'function') {
+          window.TurboIndexedDB.saveAllParties(partiesDb);
         }
       }
 
@@ -22434,30 +22603,54 @@ window.importDataFromMasterExcel = async function(event) {
         invoicesDb = importedInvoices;
         window.invoicesDb = invoicesDb;
         localStorage.setItem("invoices", JSON.stringify(invoicesDb));
-        if (window.TurboIndexedDB) {
+        if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveInvoice === 'function') {
           for (let i = 0; i < invoicesDb.length; i++) {
             window.TurboIndexedDB.saveInvoice(invoicesDb[i]);
           }
         }
-        if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
-          for (let i = 0; i < invoicesDb.length; i++) {
-            window.SupabaseDB.upsertInvoice(invoicesDb[i]).catch(() => {});
-          }
-        }
-        if (typeof syncDatabaseToServer === 'function') {
-          syncDatabaseToServer("invoices", invoicesDb);
-        }
       }
 
-      if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
+      if (window.TurboDataStore && typeof window.TurboDataStore.rebuildIndexes === 'function') {
+        window.TurboDataStore.rebuildIndexes();
+      }
 
-      // Refresh all views
+      // Refresh memory stores
       loadAllDatabases();
+
+      // Refresh all UI views completely
       if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+      if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
       if (typeof renderHistoryTableRows === 'function') renderHistoryTableRows(invoicesDb);
       if (typeof loadProductsDatabaseTable === 'function') loadProductsDatabaseTable();
+      if (typeof loadPartiesDatabaseLists === 'function') loadPartiesDatabaseLists();
+      if (typeof renderPartiesLists === 'function') renderPartiesLists(partiesDb);
+      if (typeof renderPartiesTable === 'function') renderPartiesTable();
       if (typeof window.renderCustomersDirectoryView === 'function') window.renderCustomersDirectoryView();
       if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+      if (elements && elements.historyCount) elements.historyCount.textContent = String(invoicesDb.length);
+
+      // Push restored data to Supabase Cloud Database in background
+      if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+        try {
+          if (importedProducts.length > 0) {
+            window.SupabaseDB.saveAllProducts(productsDb).catch(console.warn);
+          }
+          if (importedParties.length > 0) {
+            window.SupabaseDB.saveAllCustomers(partiesDb).catch(console.warn);
+          }
+          if (importedInvoices.length > 0) {
+            if (typeof window.SupabaseDB.bulkUpsertInvoices === 'function') {
+              window.SupabaseDB.bulkUpsertInvoices(invoicesDb).catch(console.warn);
+            } else {
+              for (let i = 0; i < invoicesDb.length; i++) {
+                window.SupabaseDB.upsertInvoice(invoicesDb[i]).catch(console.warn);
+              }
+            }
+          }
+        } catch (sbErr) {
+          console.warn("[Excel Import] Supabase push error:", sbErr);
+        }
+      }
 
       showFloatingToast(`🎉 Master Excel Restore Completed! Restored ${importedProducts.length} Products, ${importedParties.length} Customers, and ${importedInvoices.length} Invoices.`, "success", 7000);
 
@@ -22691,12 +22884,25 @@ window.importDataBackupJSON = function(event) {
         `Click OK to overwrite local data and synchronize with Supabase Cloud.`;
 
       if (confirm(confirmMsg)) {
-        // Clear any previous deletion flags so imported data loads clean
+        // Clear any previous deletion flags and tombstones so imported data loads clean
         try {
           localStorage.removeItem("products_cleared");
           localStorage.removeItem("database_history_cleared");
           localStorage.removeItem("database_history_cleared_at");
+          window.databaseHistoryClearedAt = 0;
+          localStorage.removeItem("deleted_party_ids");
+          localStorage.removeItem("deleted_invoice_ids");
+          localStorage.removeItem("cancelled_invoices");
+          localStorage.removeItem("deleted_product_ids");
+          localStorage.removeItem("deleted_customer_ids");
+          localStorage.removeItem("turbo_outbox_queue");
         } catch(err) {}
+
+        importedInvoices.forEach(inv => {
+          if (typeof window.clearInvoiceTombstone === 'function') {
+            window.clearInvoiceTombstone(inv.invoiceNo, inv.id);
+          }
+        });
 
         localStorage.setItem("invoices", JSON.stringify(importedInvoices));
         localStorage.setItem("products", JSON.stringify(importedProducts));

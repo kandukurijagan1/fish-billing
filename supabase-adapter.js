@@ -111,6 +111,60 @@
       return { ok: true, data };
     },
 
+    async bulkUpsertInvoices(invoices) {
+      if (isDemoActive()) return { ok: true, isDemo: true, blocked: true };
+      const sb = initClient();
+      if (!sb || !Array.isArray(invoices) || invoices.length === 0) return { ok: false };
+
+      const rows = invoices.map(inv => {
+        const raw = inv.details || inv;
+        const gTot = Number(inv.total !== undefined ? inv.total : (inv.grandTotal !== undefined ? inv.grandTotal : (raw.total || raw.grandTotal || 0)));
+        const paid = Number(inv.paidAmount !== undefined ? inv.paidAmount : (raw.paidAmount || 0));
+        const bal = Number(inv.balanceDue !== undefined ? inv.balanceDue : (raw.balanceDue !== undefined ? raw.balanceDue : Math.max(0, gTot - paid)));
+        const items = Array.isArray(inv.items) && inv.items.length > 0 ? inv.items : (Array.isArray(raw.items) ? raw.items : []);
+        const invDate = String(inv.date || inv.invoiceDate || raw.date || raw.invoiceDate || "");
+        const custName = String(inv.customerName || (raw.buyer && raw.buyer.name) || raw.customerName || "");
+        const phone = String(inv.customerPhone || inv.phone || (raw.buyer && raw.buyer.phone) || "");
+
+        return {
+          id: String(inv.id || inv.invoiceNo),
+          invoice_no: String(inv.invoiceNo || raw.invoiceNo || inv.id),
+          date: invDate,
+          customer_name: custName,
+          phone: phone,
+          items: items,
+          subtotal: Number(inv.subtotal || raw.subtotal || gTot),
+          tax: Number(inv.tax || raw.tax || 0),
+          cgst: Number(inv.cgst || (raw.totals && raw.totals.cgst) || 0),
+          sgst: Number(inv.sgst || (raw.totals && raw.totals.sgst) || 0),
+          igst: Number(inv.igst || (raw.totals && raw.totals.igst) || 0),
+          discount: Number(inv.discount || raw.discount || 0),
+          round_off: Number(inv.roundOff || (raw.totals && raw.totals.roundOff) || 0),
+          grand_total: gTot,
+          paid_amount: paid,
+          balance_due: bal,
+          payment_status: String(inv.paymentStatus || raw.paymentStatus || (bal <= 0.01 ? "PAID" : (paid > 0 ? "PARTIAL" : "CREDIT"))),
+          payment_mode: String(inv.paymentMode || raw.paymentMode || "UPI / QR"),
+          vehicle_no: String(inv.vehicleNo || raw.vehicleNo || ""),
+          transport_name: String(inv.transportName || raw.transportName || ""),
+          destination: String(inv.destination || raw.destination || ""),
+          raw_data: inv,
+          is_deleted: false,
+          updated_at: new Date().toISOString()
+        };
+      });
+
+      for (let i = 0; i < rows.length; i += 50) {
+        const chunk = rows.slice(i, i + 50);
+        const { error } = await sb.from("invoices").upsert(chunk, { onConflict: "id" });
+        if (error) {
+          console.error("[Supabase] bulkUpsertInvoices chunk error:", error);
+          return { ok: false, error };
+        }
+      }
+      return { ok: true, count: rows.length };
+    },
+
     async fetchInvoices() {
       if (isDemoActive()) {
         const snap = getDemoSnapshot();
