@@ -437,11 +437,14 @@ try {
     if (!globalSettings.bank && snapDemo.bank) globalSettings.bank = snapDemo.bank;
     if (!globalSettings.upiId && snapDemo.upiId) globalSettings.upiId = snapDemo.upiId;
   } else {
+    const productsCleared = (typeof localStorage !== "undefined" && localStorage.getItem("products_cleared") === "true");
     const localProds = JSON.parse(localStorage.getItem("products") || "null");
     const prodsSeeded = (typeof localStorage !== "undefined" && localStorage.getItem("products_seeded") === "true");
-    if (Array.isArray(localProds)) {
+    if (productsCleared) {
+      productsDb = [];
+    } else if (Array.isArray(localProds)) {
       productsDb = localProds;
-    } else if (!prodsSeeded && snapLive && Array.isArray(snapLive.products)) {
+    } else if (!prodsSeeded && snapLive && Array.isArray(snapLive.products) && snapLive.products.length > 0) {
       productsDb = snapLive.products;
       try { localStorage.setItem("products_seeded", "true"); } catch(e){}
     } else {
@@ -3258,6 +3261,9 @@ function syncDatabaseToServer(type, data) {
 function deleteProductFromServer(id) {
   window.lastSyncETag = null;
   productsDb = (productsDb || []).filter(p => p && p.id !== id);
+  if (productsDb.length === 0) {
+    localStorage.setItem("products_cleared", "true");
+  }
   try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
   if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllProducts(productsDb);
   if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
@@ -3443,44 +3449,57 @@ window.triggerDatabaseSync = async function(forceReload = false) {
         }
 
         if (prodRes && prodRes.ok && Array.isArray(prodRes.products)) {
-          const nowMs = Date.now();
-          const recentMut = window.recentProductMutations || {};
-          const timeSinceLastWrite = nowMs - (window._lastWriteTimestamp || 0);
+          let _dpri = [];
+          try { _dpri = JSON.parse(localStorage.getItem("deleted_product_ids")) || []; } catch(e){}
+          const productsCleared = (typeof localStorage !== 'undefined' && localStorage.getItem("products_cleared") === "true");
 
-          // Optimistic Union Merge: Server products + recently mutated local products
-          const serverProdMap = new Map();
-          prodRes.products.forEach(sp => {
-            if (!sp || !sp.id) return;
-            const descKey = (sp.description || '').trim().toLowerCase();
-            const mutTime = recentMut[sp.id] || recentMut[sp.description] || recentMut[descKey] || 0;
-            if (nowMs - mutTime < 30000 || timeSinceLastWrite < 15000) {
-              const localP = (productsDb || []).find(lp => lp && (lp.id === sp.id || (lp.description && lp.description.trim().toLowerCase() === descKey)));
-              if (localP) {
-                serverProdMap.set(sp.id, localP);
-                return;
-              }
-            }
-            serverProdMap.set(sp.id, sp);
-          });
+          let validServerProds = prodRes.products.filter(sp => sp && sp.id && !_dpri.includes(String(sp.id)));
 
-          (productsDb || []).forEach(lp => {
-            if (lp && lp.id && !serverProdMap.has(lp.id)) {
-              const descKey = (lp.description || '').trim().toLowerCase();
-              const hasMatchingDesc = Array.from(serverProdMap.values()).some(p => (p.description || '').trim().toLowerCase() === descKey);
-              if (!hasMatchingDesc) {
-                serverProdMap.set(lp.id, lp);
-              }
-            }
-          });
-
-          const mergedProducts = Array.from(serverProdMap.values());
-          const prodFingerprint = mergedProducts.length + '_' + mergedProducts.map(p => (p.id || '') + ':' + (p.stock ?? '') + ':' + (p.price ?? '')).sort().slice(0, 15).join('|');
-          if (prodFingerprint !== window._lastProdFingerprint) {
-            window._lastProdFingerprint = prodFingerprint;
-            hasProductsChanged = true;
-            productsDb = mergedProducts;
+          if (productsCleared && validServerProds.length === 0) {
+            productsDb = [];
             window.productsDb = productsDb;
-            try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
+            try { localStorage.setItem("products", "[]"); } catch(e){}
+          } else {
+            const nowMs = Date.now();
+            const recentMut = window.recentProductMutations || {};
+            const timeSinceLastWrite = nowMs - (window._lastWriteTimestamp || 0);
+
+            const serverProdMap = new Map();
+            validServerProds.forEach(sp => {
+              if (!sp || !sp.id) return;
+              const descKey = (sp.description || '').trim().toLowerCase();
+              const mutTime = recentMut[sp.id] || recentMut[sp.description] || recentMut[descKey] || 0;
+              if (nowMs - mutTime < 30000 || timeSinceLastWrite < 15000) {
+                const localP = (productsDb || []).find(lp => lp && (lp.id === sp.id || (lp.description && lp.description.trim().toLowerCase() === descKey)));
+                if (localP && !_dpri.includes(String(localP.id))) {
+                  serverProdMap.set(sp.id, localP);
+                  return;
+                }
+              }
+              serverProdMap.set(sp.id, sp);
+            });
+
+            if (!productsCleared) {
+              (productsDb || []).forEach(lp => {
+                if (lp && lp.id && !serverProdMap.has(lp.id) && !_dpri.includes(String(lp.id))) {
+                  const descKey = (lp.description || '').trim().toLowerCase();
+                  const mutTime = recentMut[lp.id] || recentMut[lp.description] || recentMut[descKey] || 0;
+                  if (nowMs - mutTime < 30000) {
+                    serverProdMap.set(lp.id, lp);
+                  }
+                }
+              });
+            }
+
+            const mergedProducts = Array.from(serverProdMap.values());
+            const prodFingerprint = mergedProducts.length + '_' + mergedProducts.map(p => (p.id || '') + ':' + (p.stock ?? '') + ':' + (p.price ?? '')).sort().slice(0, 15).join('|');
+            if (prodFingerprint !== window._lastProdFingerprint) {
+              window._lastProdFingerprint = prodFingerprint;
+              hasProductsChanged = true;
+              productsDb = mergedProducts;
+              window.productsDb = productsDb;
+              try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
+            }
           }
         }
 
@@ -3498,7 +3517,15 @@ window.triggerDatabaseSync = async function(forceReload = false) {
         if (setRes && setRes.ok && setRes.settings) {
           globalSettings = Object.assign({}, globalSettings, setRes.settings);
           window.globalSettings = globalSettings;
-          try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(e){}
+          try {
+            localStorage.setItem("settings", JSON.stringify(globalSettings));
+            if (Array.isArray(setRes.settings.authorizedUsers)) {
+              localStorage.setItem("authorized_users", JSON.stringify(setRes.settings.authorizedUsers));
+            }
+          } catch(e){}
+          if (typeof window.renderUserManagerTable === 'function') {
+            window.renderUserManagerTable();
+          }
         }
 
         // Silent non-blinking UI updates: only re-render if data ACTUALLY changed and user is on that view
@@ -3808,12 +3835,15 @@ window.hydrateFromSnapshot = function(data) {
   }
   let changed = false;
 
-  // 1. Hydrate Products
-  if (Array.isArray(data.products) && data.products.length > 0) {
+  // 1. Hydrate Products (Strictly respect deletions & cleared state)
+  const productsCleared = (typeof localStorage !== 'undefined' && localStorage.getItem("products_cleared") === "true");
+  if (!productsCleared && Array.isArray(data.products) && data.products.length > 0) {
+    let _dpri = [];
+    try { _dpri = JSON.parse(localStorage.getItem("deleted_product_ids")) || []; } catch(e){}
     const prodMap = new Map();
-    (productsDb || []).forEach(p => { if (p && p.id) prodMap.set(p.id, p); });
+    (productsDb || []).forEach(p => { if (p && p.id && !_dpri.includes(String(p.id))) prodMap.set(p.id, p); });
     data.products.forEach(p => {
-      if (p && p.id) {
+      if (p && p.id && !_dpri.includes(String(p.id))) {
         if (!prodMap.has(p.id)) {
           prodMap.set(p.id, p);
           changed = true;
@@ -3830,6 +3860,10 @@ window.hydrateFromSnapshot = function(data) {
     window.productsDb = productsDb;
     try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
     if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllProducts(productsDb);
+  } else if (productsCleared) {
+    productsDb = [];
+    window.productsDb = [];
+    try { localStorage.setItem("products", "[]"); } catch(e){}
   }
 
   // 2. Hydrate Parties
@@ -5602,18 +5636,32 @@ window.seedDatabasesIfEmpty = function seedDatabasesIfEmpty() {
     window.globalSettings = globalSettings;
   }
 
-  // 2. Seed Products if empty
+  // 2. Seed Products if empty (First boot only, never if cleared)
   try {
-    const localProds = JSON.parse(localStorage.getItem("products") || "[]");
-    if (!Array.isArray(localProds) || localProds.length === 0) {
+    const productsCleared = (typeof localStorage !== "undefined" && localStorage.getItem("products_cleared") === "true");
+    const productsSeeded = (typeof localStorage !== "undefined" && localStorage.getItem("products_seeded") === "true");
+    const localProds = JSON.parse(localStorage.getItem("products") || "null");
+    if (productsCleared) {
+      productsDb = [];
+      window.productsDb = productsDb;
+      localStorage.setItem("products", "[]");
+    } else if (Array.isArray(localProds)) {
+      productsDb = localProds;
+      window.productsDb = productsDb;
+    } else if (!productsSeeded && typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.products) && INITIAL_BOOTSTRAP_SNAPSHOT.products.length > 0) {
       localStorage.setItem("products", JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.products));
+      localStorage.setItem("products_seeded", "true");
       productsDb = INITIAL_BOOTSTRAP_SNAPSHOT.products;
       window.productsDb = productsDb;
+    } else {
+      productsDb = [];
+      window.productsDb = productsDb;
+      localStorage.setItem("products", "[]");
     }
   } catch (e) {
-    localStorage.setItem("products", JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.products));
-    productsDb = INITIAL_BOOTSTRAP_SNAPSHOT.products;
+    productsDb = [];
     window.productsDb = productsDb;
+    localStorage.setItem("products", "[]");
   }
 
   // 3. Seed Parties if empty (First boot only)
@@ -5725,11 +5773,16 @@ window.loadAllDatabases = function loadAllDatabases() {
   window.invoicesDb = invoicesDb;
 
   try {
-    const prodLocal = JSON.parse(localStorage.getItem("products") || "[]");
-    if (Array.isArray(prodLocal) && prodLocal.length > 0) {
+    const productsCleared = (typeof localStorage !== "undefined" && localStorage.getItem("products_cleared") === "true");
+    const prodLocal = JSON.parse(localStorage.getItem("products") || "null");
+    if (productsCleared) {
+      productsDb = [];
+    } else if (Array.isArray(prodLocal)) {
       productsDb = prodLocal;
-    } else if ((!productsDb || productsDb.length === 0) && typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.products)) {
+    } else if (!localStorage.getItem("products_seeded") && (!productsDb || productsDb.length === 0) && typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.products) && INITIAL_BOOTSTRAP_SNAPSHOT.products.length > 0) {
       productsDb = INITIAL_BOOTSTRAP_SNAPSHOT.products;
+    } else {
+      productsDb = productsDb || [];
     }
     
     // Client-side self-healing: Fix massive negative epoch numbers & backfill barcodes
@@ -16883,23 +16936,79 @@ window.deleteProductRowDb = function(id) {
     return;
   }
   if (confirm("Delete product from inventory list permanently?")) {
-    productsDb = productsDb.filter(p => p.id !== id);
+    productsDb = (productsDb || []).filter(p => p && p.id !== id);
+    if (productsDb.length === 0) {
+      localStorage.setItem("products_cleared", "true");
+    }
     localStorage.setItem("products", JSON.stringify(productsDb));
     
     let deletedProdIds = [];
     try {
       deletedProdIds = JSON.parse(localStorage.getItem("deleted_product_ids")) || [];
     } catch (e) { deletedProdIds = []; }
-    if (!deletedProdIds.includes(id)) {
-      deletedProdIds.push(id);
+    if (!deletedProdIds.includes(String(id))) {
+      deletedProdIds.push(String(id));
       localStorage.setItem("deleted_product_ids", JSON.stringify(deletedProdIds));
     }
 
     deleteProductFromServer(id);
     if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts(productsDb);
+    if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllProducts(productsDb);
+    if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
     loadProductsDatabaseTable();
+    if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
     if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+    if (typeof showFloatingToast === 'function') showFloatingToast("🗑️ Product deleted permanently.", "info", 2500);
   }
+};
+
+window.clearAllProductsDb = async function() {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    if (typeof window.showProductBuyModal === 'function') {
+      window.showProductBuyModal("To clear inventory, please upgrade to a Commercial License.");
+    }
+    return;
+  }
+  if (!confirm("⚠️ Are you sure you want to delete ALL products from the database? This action is permanent and cannot be undone.")) {
+    return;
+  }
+
+  const allIds = (productsDb || []).map(p => p.id).filter(Boolean);
+  
+  localStorage.setItem("products_cleared", "true");
+  let deletedProdIds = [];
+  try {
+    deletedProdIds = JSON.parse(localStorage.getItem("deleted_product_ids")) || [];
+  } catch(e) {}
+  allIds.forEach(id => {
+    if (!deletedProdIds.includes(String(id))) deletedProdIds.push(String(id));
+  });
+  localStorage.setItem("deleted_product_ids", JSON.stringify(deletedProdIds));
+
+  productsDb = [];
+  window.productsDb = [];
+  localStorage.setItem("products", "[]");
+
+  if (window.AaryanDB && window.AaryanDB.isReady) AaryanDB.saveAllProducts([]);
+  if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllProducts([]);
+  if (window.TurboDataStore) window.TurboDataStore.rebuildIndexes();
+
+  // Delete from Supabase
+  if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+    const sb = window.SupabaseDB.getClient();
+    if (sb) {
+      try {
+        await sb.from("products").delete().neq("id", "___NEVER_MATCH___");
+      } catch (err) {
+        console.warn("[Supabase] Batch delete products note:", err);
+      }
+    }
+  }
+
+  loadProductsDatabaseTable();
+  if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+  if (typeof window.broadcastDatabaseMutation === 'function') window.broadcastDatabaseMutation();
+  if (typeof showFloatingToast === 'function') showFloatingToast("🗑️ All products deleted successfully.", "success", 3000);
 };
 
 window.filterProductsByStockStatus = function() {
@@ -18632,16 +18741,22 @@ window.isUserSuspendedByAdmin = function(email) {
 // 1. Authoritative list of authorized users (Main Admin is permanent master)
 window.getAuthorizedUsersList = function() {
   let list = [];
+  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
   try {
-    let localArr = [];
-    let globalArr = [];
-    const rawLocal = localStorage.getItem("authorized_users");
-    const rawGlobal = (typeof globalSettings !== 'undefined' && globalSettings.authorizedUsers);
-    if (rawLocal) {
-      try { localArr = JSON.parse(rawLocal); } catch(_) {}
+    let cloudList = null;
+    if (typeof globalSettings !== 'undefined' && globalSettings && globalSettings.authorizedUsers) {
+      const raw = globalSettings.authorizedUsers;
+      const parsed = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw) : null);
+      if (Array.isArray(parsed) && parsed.length > 0) cloudList = parsed;
     }
-    if (rawGlobal) {
-      globalArr = Array.isArray(rawGlobal) ? rawGlobal : (typeof rawGlobal === 'string' ? JSON.parse(rawGlobal) : []);
+
+    let localList = null;
+    const rawLocal = localStorage.getItem("authorized_users");
+    if (rawLocal) {
+      try {
+        const parsed = JSON.parse(rawLocal);
+        if (Array.isArray(parsed)) localList = parsed;
+      } catch(_) {}
     }
     
     // Revoked tombstone emails (permanently deleted users)
@@ -18652,39 +18767,29 @@ window.getAuthorizedUsersList = function() {
     } catch(_) {}
     const isRevoked = (em) => Array.isArray(revoked) && revoked.includes(String(em).toLowerCase().trim());
 
-    // Combine all sources: bundled defaults -> localStorage -> globalSettings
+    // Single source of truth: cloudList (from Supabase) takes absolute priority; fallback to localList
+    const sourceArr = cloudList !== null ? cloudList : (localList !== null ? localList : (window.DEFAULT_AUTHORIZED_USERS || []));
+
     const map = new Map();
-    (window.DEFAULT_AUTHORIZED_USERS || []).forEach(u => {
-      if (u && u.email) map.set(u.email.toLowerCase().trim(), Object.assign({}, u));
-    });
-    (Array.isArray(localArr) ? localArr : []).forEach(u => {
+    (Array.isArray(sourceArr) ? sourceArr : []).forEach(u => {
       if (u && u.email) {
         const k = u.email.toLowerCase().trim();
-        map.set(k, Object.assign(map.get(k) || {}, u));
-      }
-    });
-    (Array.isArray(globalArr) ? globalArr : []).forEach(u => {
-      if (u && u.email) {
-        const k = u.email.toLowerCase().trim();
-        map.set(k, Object.assign(map.get(k) || {}, u));
+        if (k !== mainAdminNorm && !isRevoked(k)) {
+          map.set(k, Object.assign({}, u));
+        }
       }
     });
     list = Array.from(map.values());
-    // Filter out revoked tombstone emails
-    list = list.filter(u => u && u.email && !isRevoked(u.email));
   } catch (e) {
-    list = Array.from(window.DEFAULT_AUTHORIZED_USERS || []);
+    list = [];
   }
   if (!Array.isArray(list)) list = [];
 
-  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-
-  // Retain all authorized users explicitly added to the access list
-  // Also filter out banned emails
+  // Filter out banned emails
   list = list.filter(u => {
     if (!u || !u.email) return false;
     const email = (u.email || "").toLowerCase().trim();
-    if (email === mainAdminNorm) return false; // Handled below as permanent master
+    if (email === mainAdminNorm) return false;
     if (typeof window.isEmailBanned === 'function' && window.isEmailBanned(email)) return false;
     return true;
   });
@@ -18936,7 +19041,16 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
     ? { email: window.AUTHORIZED_LOGIN_EMAIL, name: displayName || "Jagan (Main Admin)", role: "super_admin", status: "active" }
     : usersList.find(u => (u.email || "").toLowerCase().trim() === normEmail && u.status === "active");
 
-  if (!matchedUser || matchedUser.status !== "active") {
+  if (!matchedUser) {
+    window.loginAsFreeViewer({
+      email: normEmail,
+      name: displayName || normEmail.split("@")[0],
+      isGuest: true
+    });
+    return true;
+  }
+
+  if (matchedUser.status === "suspended") {
     if (errBlock) {
       errBlock.innerHTML = `
         <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
@@ -18944,7 +19058,7 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
             <i class="fa-solid fa-user-lock"></i> Account Suspended
           </div>
           <div style="font-size: 11.5px; color: #cbd5e1;">
-            Your account (<strong style="color: #fca5a5;">${escapeHtml(normEmail)}</strong>) has been paused by the Main Admin.
+            Your account (<strong style="color: #fca5a5;">${escapeHtml(normEmail)}</strong>) has been paused by the Main Administrator. Access is blocked.
           </div>
         </div>
       `;
