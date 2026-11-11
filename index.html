@@ -459,7 +459,7 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=live_v76_lock_hardened">
+  <link rel="stylesheet" href="index.css?v=live_v77_mail_only_lock">
 
   <script src="invoice_utils_v5.js?v=live_v62_google_script_endpoint_updated"></script>
 
@@ -505,74 +505,32 @@
 
   <!-- HIGH-END LOGIN / LOCK SCREEN OVERLAY (Enforced strictly on boot for Zero-Trust security) -->
   <div id="lock-screen-overlay" class="lock-overlay no-print">
-    <div class="login-card" style="max-width: 390px; padding: 32px 26px;">
-      <div class="login-header" style="margin-bottom: 16px;">
+    <div class="login-card" style="max-width: 400px; padding: 34px 28px;">
+      <div class="login-header" style="margin-bottom: 18px;">
         <div class="login-logo-wrapper" style="margin: 0 auto 12px auto;">
           <div class="login-brand-emblem">
             <img src="rallis_logo.png" alt="Aaryan Aqua Needs" class="login-brand-img">
           </div>
         </div>
-        <h2 style="font-size: 19px; font-weight: 800; letter-spacing: 0.5px; margin: 0 0 4px 0; color: #ffffff;">AARYAN AQUA NEEDS</h2>
-        <p style="font-size: 12px; color: #94a3b8; margin: 0;">GST Billing &amp; Aquaculture Management</p>
+        <h2 style="font-size: 20px; font-weight: 800; letter-spacing: 0.5px; margin: 0 0 4px 0; color: #ffffff;">AARYAN AQUA NEEDS</h2>
+        <p style="font-size: 12.5px; color: #94a3b8; margin: 0;">GST Billing &amp; Aquaculture Management</p>
       </div>
 
       <!-- REAL-TIME SESSION LOCK CONTEXT BANNER -->
-      <div id="login-session-status-banner" style="display: none; margin: 0 0 12px 0; padding: 10px 14px; border-radius: 10px; font-size: 12px; font-weight: 600; text-align: center; transition: all 0.25s ease;">
+      <div id="login-session-status-banner" style="display: none; margin: 0 0 14px 0; padding: 10px 14px; border-radius: 10px; font-size: 12px; font-weight: 600; text-align: center; transition: all 0.25s ease;">
         <span id="login-session-status-text"></span>
       </div>
 
-      <div id="login-error-message" class="login-error hidden" style="margin-bottom: 12px;">
+      <div id="login-error-message" class="login-error hidden" style="margin-bottom: 14px;">
         <i class="fa-solid fa-triangle-exclamation"></i> Invalid credentials!
       </div>
 
-      <!-- MASTER PIN / PASSWORD UNLOCK FORM -->
-      <form id="lock-screen-login-form" onsubmit="window.handleTraditionalLoginSubmit(event)" style="display: flex; flex-direction: column; gap: 12px; width: 100%; text-align: left;">
-        
-        <!-- Optional Staff / Cashier Email Toggle -->
-        <div id="login-alt-email-container" style="display: none;">
-          <label for="login-email" style="font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; display: block; letter-spacing: 0.5px;">Staff / Cashier Email</label>
-          <div class="input-icon-wrapper">
-            <i class="fa-solid fa-envelope input-icon"></i>
-            <input type="email" id="login-email" value="kandukurijagan99@gmail.com" placeholder="authorized@example.com" autocomplete="username">
-          </div>
-        </div>
-
-        <!-- Security PIN / Password Field -->
-        <div class="login-input-group">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-            <label for="login-password" style="font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">Security PIN or Password</label>
-            <button type="button" id="btn-toggle-alt-email" onclick="window.toggleAlternateEmailInput()" style="background: none; border: none; color: #38bdf8; font-size: 11px; font-weight: 600; cursor: pointer; padding: 0;">
-              <i class="fa-solid fa-users"></i> Staff Sign-in
-            </button>
-          </div>
-          <div class="input-icon-wrapper">
-            <i class="fa-solid fa-lock input-icon"></i>
-            <input type="password" id="login-password" autocomplete="current-password" placeholder="Enter Security PIN (e.g. 2024)" autofocus>
-            <button type="button" class="btn-toggle-pwd" onclick="window.toggleLoginPasswordVisibility()" title="Show/Hide PIN">
-              <i id="toggle-login-pass-icon" class="fa-solid fa-eye"></i>
-            </button>
-          </div>
-        </div>
-
-        <button type="submit" class="btn-login-submit" style="width: 100%; margin-top: 4px; display: flex; align-items: center; justify-content: center; gap: 8px;">
-          <span id="login-btn-spinner" class="hidden"><i class="fa-solid fa-spinner fa-spin"></i></span>
-          <span id="login-btn-text"><i class="fa-solid fa-key"></i> Unlock System</span>
-        </button>
-      </form>
-
-      <!-- DIVIDER -->
-      <div style="display: flex; align-items: center; width: 100%; margin: 6px 0; gap: 10px;">
-        <div style="flex: 1; height: 1px; background: rgba(255, 255, 255, 0.12);"></div>
-        <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">or</span>
-        <div style="flex: 1; height: 1px; background: rgba(255, 255, 255, 0.12);"></div>
-      </div>
-
-      <!-- EXCLUSIVE OFFICIAL GOOGLE SIGN-IN -->
-      <div style="display: flex; flex-direction: column; gap: 10px; align-items: center; width: 100%;">
-        <!-- Native Google Rendered Button Slot (Official Single Sign-in Button) -->
+      <!-- DIRECT GOOGLE MAIL SIGN-IN (OFFICIAL SINGLE SIGN-IN) -->
+      <div style="display: flex; flex-direction: column; gap: 12px; align-items: center; width: 100%;">
+        <!-- Native Google Rendered Button Slot -->
         <div id="google-signin-btn-container" style="display: flex; justify-content: center; width: 100%; min-height: 44px;"></div>
 
-        <!-- Direct Google OAuth Prompt Button (Hidden fallback only used if GIS fails to load) -->
+        <!-- Direct Google OAuth Prompt Button (Fallback if GIS button rendering is delayed) -->
         <button type="button" id="btn-google-direct" onclick="window.triggerDirectGoogleAuth()" style="display: none; width: 100%; max-width: 320px; padding: 12px 18px; border-radius: 8px; background: #ffffff; color: #1f2937; border: 1.5px solid #e5e7eb; font-weight: 700; font-size: 14px; cursor: pointer; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); transition: all 0.2s ease;">
           <svg style="width: 18px; height: 18px;" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
@@ -584,12 +542,49 @@
         </button>
       </div>
 
-      <div class="login-footer" style="margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 11px; color: #64748b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+      <!-- DIVIDER -->
+      <div style="display: flex; align-items: center; width: 100%; margin: 10px 0; gap: 10px;">
+        <div style="flex: 1; height: 1px; background: rgba(255, 255, 255, 0.12);"></div>
+        <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">or email access</span>
+        <div style="flex: 1; height: 1px; background: rgba(255, 255, 255, 0.12);"></div>
+      </div>
+
+      <!-- DIRECT EMAIL MAGIC LINK / PASSCODE DISPATCH -->
+      <form id="lock-screen-mail-form" onsubmit="event.preventDefault(); window.sendLoginOtpCodeDirectly();" style="display: flex; flex-direction: column; gap: 10px; width: 100%; text-align: left;">
+        <div class="login-input-group">
+          <label for="login-email" style="font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">Authorized Email</label>
+          <div class="input-icon-wrapper">
+            <i class="fa-solid fa-envelope input-icon"></i>
+            <input type="email" id="login-email" value="kandukurijagan99@gmail.com" placeholder="kandukurijagan99@gmail.com" required autocomplete="email">
+          </div>
+        </div>
+
+        <button type="submit" id="btn-request-mail-login" class="btn-login-submit" style="width: 100%; margin-top: 2px; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #0284c7, #0369a1);">
+          <span id="login-btn-spinner" class="hidden"><i class="fa-solid fa-spinner fa-spin"></i></span>
+          <span id="btn-request-mail-text"><i class="fa-solid fa-paper-plane"></i> Send Direct Login Link</span>
+        </button>
+
+        <!-- Mail Code Input (Only shown if user opts to enter code received in email) -->
+        <div id="otp-input-container" style="display: none; margin-top: 6px;">
+          <div class="login-input-group">
+            <label for="login-password" style="font-size: 11px; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px;">6-Digit Code Received in Mail</label>
+            <div class="input-icon-wrapper">
+              <i class="fa-solid fa-shield-halved input-icon"></i>
+              <input type="text" id="login-password" maxlength="6" placeholder="Enter 6-digit code" autocomplete="one-time-code" style="letter-spacing: 3px; font-weight: 700;">
+            </div>
+          </div>
+          <button type="button" onclick="window.handleTraditionalLoginSubmit(event)" class="btn-login-submit" style="width: 100%; margin-top: 8px; background: #16a34a; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <i class="fa-solid fa-check"></i> Verify Code &amp; Unlock
+          </button>
+        </div>
+      </form>
+
+      <div class="login-footer" style="margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 11px; color: #64748b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
         <div style="display: flex; align-items: center; gap: 6px;">
           <i class="fa-solid fa-shield-halved" style="color: #0ea5e9;"></i>
-          <span style="font-weight: 700; color: #94a3b8;">Zero-Trust Protected</span>
+          <span style="font-weight: 700; color: #94a3b8;">Direct Mail Access Only</span>
         </div>
-        <span style="font-size: 10px; color: #64748b; text-align: center;">Master PIN or Google Authentication required to access billing data</span>
+        <span style="font-size: 10px; color: #64748b; text-align: center;">Direct Google Sign-in or 1-Click Email Login Link required</span>
       </div>
 
     </div>
@@ -11266,13 +11261,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v76_lock_hardened"></script>
+<script src="supabase-adapter.js?v=live_v77_mail_only_lock"></script>
 
-<script src="initial_db.js?v=live_v76_lock_hardened"></script>
+<script src="initial_db.js?v=live_v77_mail_only_lock"></script>
 
-<script src="customer-timeline.js?v=live_v76_lock_hardened"></script>
+<script src="customer-timeline.js?v=live_v77_mail_only_lock"></script>
 
-<script src="index_v5.js?v=live_v76_lock_hardened"></script>
+<script src="index_v5.js?v=live_v77_mail_only_lock"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->
