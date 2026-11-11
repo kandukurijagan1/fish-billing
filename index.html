@@ -856,6 +856,10 @@
 
             </div>
 
+            <button type="button" class="btn btn-sm" onclick="window.openKeyboardShortcutsModal()" title="Keyboard Shortcuts Cheat Sheet (Press ? or F1)" style="background: rgba(14, 165, 233, 0.12); color: #0284c7; border: 1px solid rgba(14, 165, 233, 0.3); border-radius: 20px; padding: 4px 10px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
+              <i class="fa-solid fa-keyboard"></i> <span>Shortcuts</span>
+            </button>
+
             <button type="button" class="btn btn-sm" onclick="triggerManualLock()" title="Lock Screen (Keep Session Active)" style="background: rgba(244, 63, 94, 0.12); color: #f43f5e; border: 1px solid rgba(244, 63, 94, 0.3); border-radius: 20px; padding: 4px 10px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;">
 
               <i class="fa-solid fa-lock"></i> <span>Lock</span>
@@ -2994,9 +2998,23 @@
 
               <!-- Actions -->
 
-              <button class="btn btn-secondary btn-sm export-btn" onclick="exportProductsToCSV()">
+              <button class="btn btn-secondary btn-sm export-btn" onclick="exportProductsToCSV()" title="Export Product Master to CSV">
 
                 <i class="fa-solid fa-file-csv text-emerald"></i> Export CSV
+
+              </button>
+
+              <button class="btn btn-secondary btn-sm" onclick="document.getElementById('import-products-csv-input').click()" title="Bulk Import Products Catalog from CSV file" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700;">
+
+                <i class="fa-solid fa-file-import text-cyan"></i> Import CSV
+
+              </button>
+
+              <input type="file" id="import-products-csv-input" accept=".csv" style="display: none;" onchange="window.importProductsFromCSV(event)">
+
+              <button class="btn btn-sm" onclick="window.openSupplierPoModal()" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: white; border: none; font-weight: 700; padding: 7px 14px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 13px;" title="Generate Supplier Reorder Purchase Order for Low Stock Products">
+
+                <i class="fa-solid fa-clipboard-list"></i> Reorder PO
 
               </button>
 
@@ -3568,6 +3586,14 @@
 
               </button>
 
+              <!-- Action: Add New Customer -->
+
+              <button type="button" class="btn btn-primary btn-sm" onclick="window.openPartyModal('receiver')" style="display: flex; align-items: center; gap: 6px; font-weight: 700; padding: 7px 14px; border-radius: 8px;" title="Register New Customer / Party">
+
+                <i class="fa-solid fa-user-plus"></i> + Add Customer
+
+              </button>
+
 
 
               <!-- View Switcher Toggle (Table vs Cards) -->
@@ -3738,6 +3764,26 @@
 
           </div>
 
+          <!-- Quick Date Range Presets -->
+
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; padding: 0 4px;">
+
+            <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;"><i class="fa-solid fa-clock-rotate-left"></i> Presets:</span>
+
+            <button type="button" class="btn btn-xs btn-secondary" onclick="window.setReportDatePreset('today')" style="padding: 4px 10px; font-size: 11.5px; border-radius: 6px;">Today</button>
+
+            <button type="button" class="btn btn-xs btn-secondary" onclick="window.setReportDatePreset('week')" style="padding: 4px 10px; font-size: 11.5px; border-radius: 6px;">This Week</button>
+
+            <button type="button" class="btn btn-xs btn-secondary" onclick="window.setReportDatePreset('month')" style="padding: 4px 10px; font-size: 11.5px; border-radius: 6px;">This Month</button>
+
+            <button type="button" class="btn btn-xs btn-secondary" onclick="window.setReportDatePreset('last_month')" style="padding: 4px 10px; font-size: 11.5px; border-radius: 6px;">Last Month</button>
+
+            <button type="button" class="btn btn-xs btn-secondary" onclick="window.setReportDatePreset('fy')" style="padding: 4px 10px; font-size: 11.5px; border-radius: 6px;">FY 2026-27</button>
+
+            <button type="button" class="btn btn-xs btn-secondary" onclick="window.setReportDatePreset('all')" style="padding: 4px 10px; font-size: 11.5px; border-radius: 6px;">All Time</button>
+
+          </div>
+
           <div class="form-grid-horizontal">
 
             <div class="form-group inline-picker">
@@ -3785,6 +3831,52 @@
           </div>
 
           <div id="report-results-content" class="hidden">
+
+            <!-- Executive Revenue & Profit Margin Summary Cards -->
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px;">
+
+              <div class="card-box" style="margin: 0; padding: 14px; border-left: 4px solid #0284c7; background: #f8fafc;">
+
+                <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Total Sales Revenue</div>
+
+                <div style="font-size: 20px; font-weight: 800; color: #0284c7; margin-top: 4px;" id="report-kpi-revenue">₹ 0.00</div>
+
+                <span style="font-size: 11px; color: #64748b;" id="report-kpi-inv-count">0 Invoices</span>
+
+              </div>
+
+              <div class="card-box" style="margin: 0; padding: 14px; border-left: 4px solid #64748b; background: #f8fafc;">
+
+                <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Est. Cost of Goods (COGS)</div>
+
+                <div style="font-size: 20px; font-weight: 800; color: #475569; margin-top: 4px;" id="report-kpi-cogs">₹ 0.00</div>
+
+                <span style="font-size: 11px; color: #64748b;">Direct Product Cost</span>
+
+              </div>
+
+              <div class="card-box" style="margin: 0; padding: 14px; border-left: 4px solid #16a34a; background: #f0fdf4;">
+
+                <div style="font-size: 11px; font-weight: 700; color: #166534; text-transform: uppercase;">Gross Profit</div>
+
+                <div style="font-size: 20px; font-weight: 800; color: #16a34a; margin-top: 4px;" id="report-kpi-profit">₹ 0.00</div>
+
+                <span style="font-size: 11px; color: #15803d; font-weight: 700;" id="report-kpi-margin">Margin: 0%</span>
+
+              </div>
+
+              <div class="card-box" style="margin: 0; padding: 14px; border-left: 4px solid #f59e0b; background: #fffbeb;">
+
+                <div style="font-size: 11px; font-weight: 700; color: #92400e; text-transform: uppercase;">Total GST Collected</div>
+
+                <div style="font-size: 20px; font-weight: 800; color: #d97706; margin-top: 4px;" id="report-kpi-tax">₹ 0.00</div>
+
+                <span style="font-size: 11px; color: #b45309;">CGST + SGST + IGST</span>
+
+              </div>
+
+            </div>
 
             <div class="table-responsive">
 
@@ -9360,6 +9452,14 @@
 
           <div class="shortcut-row">
 
+            <span class="shortcut-label"><strong>New GST Bill</strong></span>
+
+            <div class="shortcut-keys"><kbd>Alt</kbd> + <kbd>N</kbd></div>
+
+          </div>
+
+          <div class="shortcut-row">
+
             <span class="shortcut-label">Search / Select Product</span>
 
             <div class="shortcut-keys"><kbd>Alt</kbd> + <kbd>P</kbd></div>
@@ -9376,15 +9476,15 @@
 
           <div class="shortcut-row">
 
-            <span class="shortcut-label">Generate &amp; Save Invoice</span>
+            <span class="shortcut-label">Fast 1-Key POS Save</span>
 
-            <div class="shortcut-keys"><kbd>Ctrl</kbd> + <kbd>S</kbd></div>
+            <div class="shortcut-keys"><kbd>F4</kbd> <em>or</em> <kbd>Ctrl</kbd> + <kbd>S</kbd></div>
 
           </div>
 
           <div class="shortcut-row">
 
-            <span class="shortcut-label">Print A4 Invoice</span>
+            <span class="shortcut-label">Print A4 / Thermal Invoice</span>
 
             <div class="shortcut-keys"><kbd>Ctrl</kbd> + <kbd>P</kbd></div>
 
@@ -9400,25 +9500,33 @@
 
           <div class="shortcut-row">
 
-            <span class="shortcut-label">Toggle Audio FX</span>
+            <span class="shortcut-label">Quick POS Calculator</span>
 
-            <div class="shortcut-keys"><kbd>Alt</kbd> + <kbd>M</kbd></div>
-
-          </div>
-
-          <div class="shortcut-row">
-
-            <span class="shortcut-label">New GST Bill</span>
-
-            <div class="shortcut-keys"><kbd>Alt</kbd> + <kbd>N</kbd></div>
+            <div class="shortcut-keys"><kbd>Alt</kbd> + <kbd>C</kbd></div>
 
           </div>
 
           <div class="shortcut-row">
 
-            <span class="shortcut-label">Jump to Dashboard / History / Products</span>
+            <span class="shortcut-label">Command Palette</span>
 
-            <div class="shortcut-keys"><kbd>Alt</kbd> + <kbd>D</kbd> / <kbd>H</kbd> / <kbd>P</kbd></div>
+            <div class="shortcut-keys"><kbd>Ctrl</kbd> + <kbd>K</kbd> <em>or</em> <kbd>Alt</kbd> + <kbd>K</kbd></div>
+
+          </div>
+
+          <div class="shortcut-row">
+
+            <span class="shortcut-label">Jump to Tabs (Dash / Bill / Hist / Prod / Cust / Rep / Set)</span>
+
+            <div class="shortcut-keys"><kbd>Alt</kbd> + <kbd>1</kbd> to <kbd>8</kbd></div>
+
+          </div>
+
+          <div class="shortcut-row">
+
+            <span class="shortcut-label">Show Shortcuts HUD</span>
+
+            <div class="shortcut-keys"><kbd>?</kbd> <em>or</em> <kbd>F1</kbd></div>
 
           </div>
 
@@ -10995,15 +11103,97 @@
     </div>
   </div>
 
+  <!-- SMART SUPPLIER PURCHASE ORDER & REORDER MODAL -->
+  <div id="supplier-po-modal" class="modal-overlay hidden no-print" onclick="if(event.target === this) window.closeSupplierPoModal();" style="display: none; z-index: 2147483645;">
+    <div class="modal-card" style="max-width: 680px; width: 95%; background: #ffffff; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.3); border: 1px solid #cbd5e1; overflow: hidden; animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1); display: flex; flex-direction: column; max-height: 90vh;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff; padding: 18px 24px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <i class="fa-solid fa-clipboard-list" style="font-size: 22px; color: #bae6fd;"></i>
+          <div>
+            <h3 style="margin: 0; font-size: 17px; font-weight: 800; color: #ffffff;">Generate Supplier Purchase Order (PO)</h3>
+            <p style="margin: 3px 0 0 0; font-size: 12px; color: #e0f2fe;">Quick reorder planner for low-stock and out-of-stock aquaculture items</p>
+          </div>
+        </div>
+        <button type="button" class="modal-close-btn" onclick="window.closeSupplierPoModal()" style="background: rgba(255,255,255,0.15); border: none; color: #ffffff; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div class="modal-body" style="padding: 20px; overflow-y: auto; flex: 1;">
+        <!-- Supplier Selector -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+          <div class="form-group" style="margin: 0;">
+            <label style="font-size: 11.5px; font-weight: 700; color: #475569;">Select Supplier / Party</label>
+            <select id="po-supplier-select" onchange="window.handlePoSupplierSelectChange()" style="width: 100%; padding: 8px 12px; font-size: 13px; border: 1.5px solid #cbd5e1; border-radius: 8px; background: #ffffff;">
+              <option value="">-- Choose Supplier from Parties --</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin: 0;">
+            <label style="font-size: 11.5px; font-weight: 700; color: #475569;">Supplier WhatsApp Phone</label>
+            <input type="text" id="po-supplier-phone" placeholder="e.g. 9848012345" style="width: 100%; padding: 8px 12px; font-size: 13px; border: 1.5px solid #cbd5e1; border-radius: 8px;">
+          </div>
+        </div>
+
+        <!-- Quick filter chips: All Low Stock / Out of Stock / All Products -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+          <span style="font-size: 12px; font-weight: 700; color: #0f172a;">Reorder Items List</span>
+          <div style="display: flex; gap: 6px;">
+            <button type="button" class="btn btn-xs btn-secondary" onclick="window.filterPoItems('low')" style="font-size: 11px;">Low Stock (≤10)</button>
+            <button type="button" class="btn btn-xs btn-secondary" onclick="window.filterPoItems('out')" style="font-size: 11px;">Out of Stock (0)</button>
+            <button type="button" class="btn btn-xs btn-secondary" onclick="window.filterPoItems('all')" style="font-size: 11px;">All Catalog</button>
+          </div>
+        </div>
+
+        <!-- Items Table -->
+        <div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; max-height: 280px; overflow-y: auto;">
+          <table style="width: 100%; font-size: 12.5px; border-collapse: collapse; text-align: left;">
+            <thead style="background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 2;">
+              <tr>
+                <th style="padding: 8px 12px; width: 35px;"><input type="checkbox" id="po-select-all" checked onchange="window.toggleAllPoItems(this.checked)"></th>
+                <th style="padding: 8px 12px;">Product</th>
+                <th style="padding: 8px 12px; text-align: center;">Current Stock</th>
+                <th style="padding: 8px 12px; text-align: center; width: 110px;">Order Qty</th>
+                <th style="padding: 8px 12px; text-align: right;">Est. Rate</th>
+              </tr>
+            </thead>
+            <tbody id="po-items-tbody">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- PO Notes & Delivery Info -->
+        <div class="form-group" style="margin-top: 14px; margin-bottom: 0;">
+          <label style="font-size: 11.5px; font-weight: 700; color: #475569;">Special Instructions / Delivery Notes</label>
+          <input type="text" id="po-special-notes" placeholder="e.g. Please deliver by tomorrow morning to Repalle warehouse" value="Please dispatch urgently to Repalle warehouse." style="width: 100%; padding: 8px 12px; font-size: 12.5px; border: 1.5px solid #cbd5e1; border-radius: 8px;">
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding: 14px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <div>
+          <span style="font-size: 12px; color: #64748b;">Selected: <strong id="po-selected-count" style="color: #0284c7;">0 items</strong></span>
+          <span style="margin-left: 12px; font-size: 12px; color: #64748b;">Est. Value: <strong id="po-selected-val" style="color: #16a34a;">₹ 0.00</strong></span>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="window.copyPoToClipboard()" style="display: inline-flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-copy"></i> Copy PO Text
+          </button>
+          <button type="button" class="btn btn-whatsapp btn-sm" onclick="window.sendPoWhatsApp()" style="display: inline-flex; align-items: center; gap: 6px; background: #16a34a; color: white; border: none; font-weight: 700;">
+            <i class="fa-brands fa-whatsapp"></i> Send via WhatsApp
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <script src="supabase-adapter.js?v=live_v65_complete_sync_and_purge"></script>
 
 <script src="initial_db.js?v=live_v65_complete_sync_and_purge"></script>
 
-<script src="customer-timeline.js?v=live_v65_complete_sync_and_purge"></script>
+<script src="customer-timeline.js?v=live_v68_advanced_features_and_fixes"></script>
 
-<script src="index_v5.js?v=live_v67_fix_authorized_admin_demo_override"></script>
+<script src="index_v5.js?v=live_v68_advanced_features_and_fixes"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->

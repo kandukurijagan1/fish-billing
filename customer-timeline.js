@@ -1441,6 +1441,205 @@
     }
   };
 
+  // --- OFFICIAL PRINTABLE CUSTOMER STATEMENT OF ACCOUNT ---
+  window.printCustomerStatement = function (targetCustName) {
+    let s = currentActiveCustomerStatement;
+    if (targetCustName && (!s || s.name.toLowerCase() !== String(targetCustName).toLowerCase())) {
+      if (window._allCustomersDirectoryCache) {
+        const found = window._allCustomersDirectoryCache.find(c => c && c.name.toLowerCase() === String(targetCustName).toLowerCase());
+        if (found) {
+          window.openCustomerDetailsModal(found.name);
+          s = currentActiveCustomerStatement;
+        }
+      }
+    }
+    if (!s) {
+      if (typeof showFloatingToast === 'function') showFloatingToast("⚠️ No customer selected to print statement.", "warning");
+      return;
+    }
+
+    const company = window.globalSettings?.company || {};
+    const bank = window.globalSettings?.bank || {};
+    const compName = company.name || "AARYAN AQUA NEEDS";
+    const compTagline = company.tagline || "QUALITY PRODUCTS FOR BETTER AQUACULTURE";
+    const compAddr = company.address || "Door No: 10-13-94/42A REVENUE WARD 7, AP HOUSING BOARD COLONY, REPALLE";
+    const compPhone = company.phone || "7386262139 | 7403727272";
+    const compEmail = company.email || "aaryanaquaneeds@gmail.com";
+    const bankName = bank.name || "State Bank of India";
+    const bankAcc = bank.accountNo || "45413424177";
+    const bankIfsc = bank.ifsc || "SBIN0000911";
+    const bankBranch = bank.branch || "Repalle";
+    const upiId = (window.globalSettings?.upiId || bank.upi || "7386262139@upi").trim();
+    const todayStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+    let printContainer = document.getElementById("customer-statement-print-container");
+    if (!printContainer) {
+      printContainer = document.createElement("div");
+      printContainer.id = "customer-statement-print-container";
+      document.body.appendChild(printContainer);
+    }
+
+    const invRows = (s.invoices || []).map((inv, idx) => {
+      const invDate = inv.invoiceDate || inv.date || "-";
+      const invNo = inv.invoiceNo || "-";
+      const total = Number(inv.total || 0);
+      const paid = Number(inv.paidAmount || 0);
+      const bal = Number(inv.balanceDue || 0);
+      return `
+        <tr>
+          <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: center;">${idx + 1}</td>
+          <td style="padding: 8px 10px; border: 1px solid #cbd5e1; font-weight: 700; color: #0284c7;">#${invNo}</td>
+          <td style="padding: 8px 10px; border: 1px solid #cbd5e1;">${invDate}</td>
+          <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: right; font-weight: 600;">₹ ${formatMoney(total)}</td>
+          <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: right; color: #16a34a; font-weight: 600;">₹ ${formatMoney(paid)}</td>
+          <td style="padding: 8px 10px; border: 1px solid #cbd5e1; text-align: right; font-weight: 700; color: ${bal > 0.01 ? '#dc2626' : '#16a34a'};">₹ ${formatMoney(bal)}</td>
+        </tr>
+      `;
+    }).join("");
+
+    const payRows = (s.payments || []).map((p, idx) => {
+      return `
+        <tr>
+          <td style="padding: 6px 10px; border: 1px solid #cbd5e1; text-align: center;">${idx + 1}</td>
+          <td style="padding: 6px 10px; border: 1px solid #cbd5e1;">${formatDateTime(p.date || p.timestamp)}</td>
+          <td style="padding: 6px 10px; border: 1px solid #cbd5e1; font-weight: 600;">#${p.invoiceNo || "-"}</td>
+          <td style="padding: 6px 10px; border: 1px solid #cbd5e1; text-transform: uppercase;">${p.mode || "CASH"}</td>
+          <td style="padding: 6px 10px; border: 1px solid #cbd5e1; text-align: right; font-weight: 700; color: #16a34a;">₹ ${formatMoney(p.amount)}</td>
+        </tr>
+      `;
+    }).join("");
+
+    printContainer.innerHTML = `
+      <style>
+        @media screen {
+          #customer-statement-print-container { display: none; }
+        }
+        @media print {
+          body * { visibility: hidden !important; }
+          #customer-statement-print-container, #customer-statement-print-container * { visibility: visible !important; }
+          #customer-statement-print-container {
+            display: block !important;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            background: white !important;
+            color: #0f172a !important;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif !important;
+            padding: 24px !important;
+            box-sizing: border-box !important;
+          }
+        }
+      </style>
+      <div style="max-width: 800px; margin: 0 auto; font-size: 13px; line-height: 1.4; color: #0f172a;">
+        <div style="border-bottom: 2.5px solid #0284c7; padding-bottom: 14px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <h1 style="margin: 0; font-size: 22px; font-weight: 900; color: #0369a1; text-transform: uppercase; letter-spacing: 0.5px;">${compName}</h1>
+            <div style="font-size: 11px; font-weight: 700; color: #0284c7; text-transform: uppercase; margin-top: 2px;">${compTagline}</div>
+            <div style="font-size: 12px; color: #475569; margin-top: 4px; max-width: 440px;">${compAddr}</div>
+            <div style="font-size: 12px; color: #475569; margin-top: 2px;">📞 Phone: <strong>${compPhone}</strong> | ✉️ ${compEmail}</div>
+          </div>
+          <div style="text-align: right;">
+            <div style="display: inline-block; background: #0284c7; color: white; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Customer Statement</div>
+            <div style="font-size: 12px; color: #64748b; margin-top: 6px;">Date: <strong>${todayStr}</strong></div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; gap: 16px; margin-bottom: 20px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 18px;">
+          <div>
+            <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Statement For</div>
+            <div style="font-size: 18px; font-weight: 800; color: #0f172a; margin-top: 2px;">${s.name}</div>
+            <div style="font-size: 12px; color: #475569; margin-top: 3px;">📞 ${s.phone || "—"}</div>
+            <div style="font-size: 12px; color: #475569;">📍 ${s.address || "—"}</div>
+            ${s.gstin ? `<div style="font-size: 12px; color: #475569;">GSTIN: <strong>${s.gstin}</strong></div>` : ''}
+          </div>
+          <div style="display: flex; gap: 16px; text-align: right;">
+            <div>
+              <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Total Billed</div>
+              <div style="font-size: 17px; font-weight: 800; color: #0284c7; margin-top: 3px;">₹ ${formatMoney(s.totalBilled)}</div>
+              <div style="font-size: 11px; color: #64748b;">${(s.invoices || []).length} Invoices</div>
+            </div>
+            <div>
+              <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Total Paid</div>
+              <div style="font-size: 17px; font-weight: 800; color: #16a34a; margin-top: 3px;">₹ ${formatMoney(s.totalPaid)}</div>
+              <div style="font-size: 11px; color: #16a34a;">Received</div>
+            </div>
+            <div style="background: ${s.totalBalance > 0.01 ? '#fef2f2' : '#f0fdf4'}; border: 1px solid ${s.totalBalance > 0.01 ? '#fecaca' : '#bbf7d0'}; border-radius: 8px; padding: 6px 14px;">
+              <div style="font-size: 11px; font-weight: 700; color: ${s.totalBalance > 0.01 ? '#991b1b' : '#166534'}; text-transform: uppercase;">Balance Due</div>
+              <div style="font-size: 18px; font-weight: 900; color: ${s.totalBalance > 0.01 ? '#dc2626' : '#16a34a'}; margin-top: 2px;">₹ ${formatMoney(s.totalBalance)}</div>
+              <div style="font-size: 11px; font-weight: 700; color: ${s.totalBalance > 0.01 ? '#dc2626' : '#16a34a'};">${s.totalBalance > 0.01 ? 'PENDING' : 'CLEARED'}</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 20px;">
+          <h3 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">1. Invoices & Billing Ledger</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <thead>
+              <tr style="background: #0284c7; color: white;">
+                <th style="padding: 8px 10px; width: 35px; text-align: center;">#</th>
+                <th style="padding: 8px 10px; text-align: left;">Invoice #</th>
+                <th style="padding: 8px 10px; text-align: left;">Date</th>
+                <th style="padding: 8px 10px; text-align: right;">Billed Amount</th>
+                <th style="padding: 8px 10px; text-align: right;">Paid Amount</th>
+                <th style="padding: 8px 10px; text-align: right;">Balance Due</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${invRows || '<tr><td colspan="6" style="padding: 12px; text-align: center; color: #64748b;">No invoices on record.</td></tr>'}
+            </tbody>
+            <tfoot>
+              <tr style="background: #f1f5f9; font-weight: 800;">
+                <td colspan="3" style="padding: 8px 10px; text-align: right;">TOTALS:</td>
+                <td style="padding: 8px 10px; text-align: right; color: #0284c7;">₹ ${formatMoney(s.totalBilled)}</td>
+                <td style="padding: 8px 10px; text-align: right; color: #16a34a;">₹ ${formatMoney(s.totalPaid)}</td>
+                <td style="padding: 8px 10px; text-align: right; color: ${s.totalBalance > 0.01 ? '#dc2626' : '#16a34a'};">₹ ${formatMoney(s.totalBalance)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        ${payRows ? `
+        <div style="margin-bottom: 20px;">
+          <h3 style="margin: 0 0 8px 0; font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">2. Payment Settlement Receipts</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <thead>
+              <tr style="background: #059669; color: white;">
+                <th style="padding: 7px 10px; width: 35px; text-align: center;">#</th>
+                <th style="padding: 7px 10px; text-align: left;">Date & Time</th>
+                <th style="padding: 7px 10px; text-align: left;">Applied Against</th>
+                <th style="padding: 7px 10px; text-align: left;">Payment Mode</th>
+                <th style="padding: 7px 10px; text-align: right;">Amount Paid</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${payRows}
+            </tbody>
+          </table>
+        </div>
+        ` : ''}
+
+        <div style="border-top: 2px dashed #cbd5e1; padding-top: 14px; margin-top: 24px; display: flex; justify-content: space-between; align-items: flex-end; font-size: 11.5px; color: #475569;">
+          <div>
+            <div style="font-weight: 800; color: #0f172a; text-transform: uppercase; margin-bottom: 4px;">Bank Settlement Details:</div>
+            <div>Bank: <strong>${bankName}</strong> | Branch: <strong>${bankBranch}</strong></div>
+            <div>Account Name: <strong>${compName}</strong></div>
+            <div>Account No: <strong>${bankAcc}</strong> | IFSC: <strong>${bankIfsc}</strong></div>
+            <div>UPI ID: <strong>${upiId}</strong></div>
+          </div>
+          <div style="text-align: right;">
+            <div style="margin-bottom: 30px; font-weight: 700; color: #64748b;">For ${compName}</div>
+            <div style="border-top: 1px solid #94a3b8; padding-top: 4px; font-weight: 800; color: #0f172a;">Authorized Signatory</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    setTimeout(() => {
+      window.print();
+    }, 150);
+  };
+
   window.closeCustomerDetailsModal = function () {
     const modal = document.getElementById("customer-details-modal");
     if (modal) {
@@ -1524,6 +1723,9 @@
           
           <div style="display: flex; align-items: center; gap: 10px; flex-shrink: 0;">
             <div id="cust-header-due-badge"></div>
+            <button id="cust-header-stmt-btn" type="button" class="btn btn-xs btn-secondary" onclick="window.printCustomerStatement()" title="Print or Download Complete Account Statement (PDF)" style="display: inline-flex; align-items: center; gap: 6px; background: rgba(255, 255, 255, 0.12); color: white; border: 1px solid rgba(255, 255, 255, 0.25); padding: 7px 13px; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer;">
+              <i class="fa-solid fa-print"></i> Statement
+            </button>
             <button id="cust-header-add-inst-btn" type="button" class="btn btn-xs btn-primary" onclick="window.settleCustomerTopDueBill()" title="Record Payment Installment" style="display: none; align-items: center; gap: 6px; background: #0284c7; color: white; border: none; padding: 7px 13px; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer;">
               <i class="fa-solid fa-plus"></i> Record Installment
             </button>
@@ -1982,7 +2184,11 @@
         <tr>
           <td colspan="7" class="text-center text-muted" style="padding: 36px;">
             <i class="fa-solid fa-users-slash" style="font-size: 24px; color: #cbd5e1; display: block; margin-bottom: 8px;"></i>
-            No customers found matching your search.
+            <div style="font-size: 14px; font-weight: 700; color: #475569; margin-bottom: 4px;">No customers found matching your search</div>
+            <div style="font-size: 12px; color: #94a3b8; margin-bottom: 14px;">Register customers directly to start tracking invoices, transactions, and payments.</div>
+            <button type="button" class="btn btn-primary btn-sm" onclick="window.openPartyModal('receiver')" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 8px;">
+              <i class="fa-solid fa-user-plus"></i> + Add First Customer
+            </button>
           </td>
         </tr>
       `;
@@ -2066,7 +2272,10 @@
         <div style="grid-column: 1 / -1; text-align: center; padding: 48px; color: #64748b;">
           <i class="fa-solid fa-users-slash" style="font-size: 32px; color: #cbd5e1; display: block; margin-bottom: 12px;"></i>
           <div style="font-size: 15px; font-weight: 700; color: #334155;">No customers found</div>
-          <div style="font-size: 13px; color: #94a3b8; margin-top: 4px;">Try searching with a different name or phone number.</div>
+          <div style="font-size: 13px; color: #94a3b8; margin-top: 4px; margin-bottom: 14px;">Try searching with a different name or phone number, or register a customer now.</div>
+          <button type="button" class="btn btn-primary btn-sm" onclick="window.openPartyModal('receiver')" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 8px;">
+            <i class="fa-solid fa-user-plus"></i> + Add First Customer
+          </button>
         </div>
       `;
       return;

@@ -8308,9 +8308,34 @@ function bindBillingFormInputs() {
         return;
       }
 
-      if (e.altKey && e.key === "/") {
+      // Alt+1 to Alt+8 Fast Tab Jumping
+      if (e.altKey && e.key >= '1' && e.key <= '8') {
         e.preventDefault();
-        window.openKeyboardShortcutsModal();
+        const tabMap = {
+          '1': 'dashboard',
+          '2': 'billing',
+          '3': 'history',
+          '4': 'products',
+          '5': 'parties',
+          '6': 'customers',
+          '7': 'reports',
+          '8': 'settings'
+        };
+        const targetTab = tabMap[e.key];
+        if (targetTab && typeof switchTab === 'function') {
+          switchTab(targetTab);
+        }
+        return;
+      }
+
+      if (e.key === "F1" || (e.key === "?" && !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) || (e.altKey && e.key === "/")) {
+        e.preventDefault();
+        const scModal = document.getElementById("keyboard-shortcuts-modal");
+        if (scModal && !scModal.classList.contains("hidden")) {
+          window.closeKeyboardShortcutsModal();
+        } else {
+          window.openKeyboardShortcutsModal();
+        }
         return;
       }
 
@@ -15097,6 +15122,364 @@ window.exportProductsToCSV = function() {
   downloadCSVFile(`Products_Inventory_${new Date().toISOString().split('T')[0]}.csv`, csv);
 };
 
+// --- BULK PRODUCT CSV IMPORT ENGINE & TEMPLATE GENERATOR ---
+window.downloadSampleProductsCSV = function() {
+  const sample = "Product Name,HSN Code,Pack Size,Unit,Rate,Cost Price,Discount %,Opening Stock,Barcode\n" +
+    "\"RALLIMIN ADV +\",\"23099090\",\"15 KG\",\"Bucket\",3599.00,2800.00,0,50,\"890123456701\"\n" +
+    "\"PROTOSAC\",\"23099090\",\"5 KG\",\"Bag\",2100.00,1650.00,5,30,\"890123456702\"\n" +
+    "\"MINERAL MIXTURE\",\"23099090\",\"10 KG\",\"Bag\",1250.00,950.00,0,100,\"890123456703\"\n";
+  downloadCSVFile("Sample_Products_Template.csv", sample);
+  showFloatingToast("📥 Sample Products Template downloaded!", "info");
+};
+
+window.importProductsFromCSV = function(event) {
+  if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) {
+    showFloatingToast("⛔ Access Denied: Product importing is restricted in demo mode.", "error");
+    if (event.target) event.target.value = "";
+    return;
+  }
+  const file = event.target?.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const text = e.target.result;
+      const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+      if (lines.length < 2) {
+        throw new Error("CSV file must contain a header row and at least one product row.");
+      }
+
+      const parseCsvLine = (line) => {
+        const result = [];
+        let cur = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          if (char === '"' || char === "'") {
+            inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+            result.push(cur.trim().replace(/^["']|["']$/g, ''));
+            cur = '';
+          } else {
+            cur += char;
+          }
+        }
+        result.push(cur.trim().replace(/^["']|["']$/g, ''));
+        return result;
+      };
+
+      const rawHeaders = parseCsvLine(lines[0]).map(h => h.toLowerCase().trim());
+      
+      const getColIndex = (aliases) => {
+        for (let i = 0; i < rawHeaders.length; i++) {
+          const h = rawHeaders[i].replace(/[^a-z0-9]/g, '');
+          if (aliases.some(a => h.includes(a.replace(/[^a-z0-9]/g, '')))) return i;
+        }
+        return -1;
+      };
+
+      const idxDesc = getColIndex(['name', 'product', 'description', 'desc', 'item']);
+      const idxHsn = getColIndex(['hsn', 'hsncode']);
+      const idxPack = getColIndex(['pack', 'packsize', 'packaging', 'size']);
+      const idxUnit = getColIndex(['unit', 'uom']);
+      const idxRate = getColIndex(['rate', 'price', 'mrp', 'sellingprice']);
+      const idxCost = getColIndex(['cost', 'costprice', 'purchaseprice']);
+      const idxDisc = getColIndex(['discount', 'disc']);
+      const idxStock = getColIndex(['stock', 'quantity', 'qty']);
+      const idxBarcode = getColIndex(['barcode', 'code']);
+
+      if (idxDesc === -1 && idxRate === -1) {
+        throw new Error("CSV headers must include at least 'Product Name' and 'Rate'.");
+      }
+
+      loadAllDatabases();
+      let importedCount = 0;
+      let updatedCount = 0;
+
+      for (let r = 1; r < lines.length; r++) {
+        const row = parseCsvLine(lines[r]);
+        if (!row || row.length === 0 || !row[idxDesc !== -1 ? idxDesc : 0]) continue;
+
+        const desc = (idxDesc !== -1 && row[idxDesc]) ? String(row[idxDesc]).trim() : `Product ${r}`;
+        if (!desc) continue;
+
+        const hsn = (idxHsn !== -1 && row[idxHsn]) ? String(row[idxHsn]).trim() : "23099090";
+        const packSize = (idxPack !== -1 && row[idxPack]) ? String(row[idxPack]).trim() : "Standard";
+        const unit = (idxUnit !== -1 && row[idxUnit]) ? String(row[idxUnit]).trim() : "Units";
+        const rate = (idxRate !== -1 && row[idxRate]) ? (parseFloat(row[idxRate].replace(/[^0-9.]/g, '')) || 0) : 0;
+        const costPrice = (idxCost !== -1 && row[idxCost]) ? (parseFloat(row[idxCost].replace(/[^0-9.]/g, '')) || 0) : Math.round(rate * 0.8);
+        const discount = (idxDisc !== -1 && row[idxDisc]) ? (parseFloat(row[idxDisc].replace(/[^0-9.]/g, '')) || 0) : 0;
+        const stock = (idxStock !== -1 && row[idxStock]) ? (parseInt(row[idxStock].replace(/[^0-9]/g, '')) || 0) : 0;
+        const barcode = (idxBarcode !== -1 && row[idxBarcode]) ? String(row[idxBarcode]).trim() : "";
+
+        const existingIdx = (productsDb || []).findIndex(p => {
+          if (!p) return false;
+          if (barcode && p.barcode && String(p.barcode).trim() === barcode) return true;
+          return String(p.description || '').trim().toLowerCase() === desc.toLowerCase();
+        });
+
+        if (existingIdx !== -1) {
+          const ex = productsDb[existingIdx];
+          ex.rate = rate || ex.rate;
+          ex.costPrice = costPrice || ex.costPrice;
+          ex.stock = (stock !== undefined && stock !== 0) ? stock : ex.stock;
+          ex.hsn = hsn || ex.hsn;
+          ex.packSize = packSize || ex.packSize;
+          ex.unit = unit || ex.unit;
+          if (discount !== undefined) ex.discount = discount;
+          if (barcode) ex.barcode = barcode;
+          updatedCount++;
+        } else {
+          const newProd = {
+            id: "prod_" + Date.now() + "_" + Math.random().toString(36).substr(2, 6),
+            description: desc,
+            hsn: hsn,
+            packSize: packSize,
+            unit: unit,
+            rate: rate,
+            costPrice: costPrice,
+            discount: discount,
+            stock: stock,
+            barcode: barcode,
+            createdAt: new Date().toISOString()
+          };
+          productsDb.push(newProd);
+          importedCount++;
+        }
+      }
+
+      window.productsDb = productsDb;
+      try {
+        localStorage.removeItem("products_cleared");
+        localStorage.setItem("products", JSON.stringify(productsDb));
+      } catch(err) {}
+
+      if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllProducts === 'function') {
+        window.TurboIndexedDB.saveAllProducts(productsDb);
+      }
+      if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+        window.SupabaseDB.bulkUpsertProducts(productsDb).catch(err => console.warn("[Supabase] Bulk import note:", err));
+      }
+
+      if (typeof renderProductsList === 'function') renderProductsList(productsDb);
+      if (typeof updateProductsKpiSummary === 'function') updateProductsKpiSummary();
+      if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+
+      showFloatingToast(`✅ Bulk Import Finished! Added: ${importedCount}, Updated: ${updatedCount} products.`, "success", 5000);
+    } catch(err) {
+      showFloatingToast("⚠️ CSV Import Error: " + err.message, "warning", 5000);
+    } finally {
+      if (event.target) event.target.value = "";
+    }
+  };
+  reader.readAsText(file);
+};
+
+// --- SMART SUPPLIER REORDER & PURCHASE ORDER (PO) GENERATOR ---
+window._currentPoFilter = 'low';
+
+window.openSupplierPoModal = function() {
+  const modal = document.getElementById("supplier-po-modal");
+  if (!modal) return;
+  loadAllDatabases();
+
+  const supSelect = document.getElementById("po-supplier-select");
+  if (supSelect) {
+    supSelect.innerHTML = `<option value="">-- Choose Supplier from Parties --</option>`;
+    (partiesDb || []).forEach(p => {
+      if (!p || !p.name) return;
+      const opt = document.createElement("option");
+      opt.value = p.name;
+      opt.textContent = `${p.name} ${p.phone ? `(${p.phone})` : ''} [${p.type === 'consignee' ? 'Supplier' : 'Party'}]`;
+      opt.dataset.phone = p.phone || "";
+      supSelect.appendChild(opt);
+    });
+  }
+
+  window.filterPoItems('low');
+
+  modal.classList.remove("hidden");
+  modal.style.display = "flex";
+};
+
+window.closeSupplierPoModal = function() {
+  const modal = document.getElementById("supplier-po-modal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+  }
+};
+
+window.handlePoSupplierSelectChange = function() {
+  const supSelect = document.getElementById("po-supplier-select");
+  const phoneInput = document.getElementById("po-supplier-phone");
+  if (!supSelect || !phoneInput) return;
+  const selOpt = supSelect.options[supSelect.selectedIndex];
+  if (selOpt && selOpt.dataset && selOpt.dataset.phone) {
+    phoneInput.value = selOpt.dataset.phone;
+  }
+};
+
+window.filterPoItems = function(filterType) {
+  window._currentPoFilter = filterType;
+  const tbody = document.getElementById("po-items-tbody");
+  if (!tbody) return;
+
+  loadAllDatabases();
+  let list = productsDb || [];
+
+  if (filterType === 'low') {
+    list = list.filter(p => (parseInt(p.stock) || 0) <= 10);
+    if (list.length === 0) list = productsDb || [];
+  } else if (filterType === 'out') {
+    list = list.filter(p => (parseInt(p.stock) || 0) === 0);
+    if (list.length === 0) list = productsDb || [];
+  }
+
+  if (list.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 20px; color: #64748b;">No products in catalog.</td></tr>`;
+    window.updatePoTotals();
+    return;
+  }
+
+  tbody.innerHTML = list.map((p, idx) => {
+    const curStock = parseInt(p.stock) || 0;
+    const isOut = curStock === 0;
+    const isLow = curStock > 0 && curStock <= 10;
+    let recQty = isOut ? 25 : (isLow ? (20 - curStock) : 10);
+    if (recQty < 5) recQty = 10;
+
+    const rate = parseFloat(p.costPrice || p.rate || 0) || 0;
+
+    return `
+      <tr style="border-bottom: 1px solid #f1f5f9;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+        <td style="padding: 8px 12px; text-align: center;">
+          <input type="checkbox" class="po-item-check" data-id="${p.id}" data-desc="${(p.description || '').replace(/"/g, '&quot;')}" data-unit="${p.unit || 'Units'}" data-rate="${rate}" checked onchange="window.updatePoTotals()">
+        </td>
+        <td style="padding: 8px 12px; font-weight: 700; color: #0f172a;">
+          ${p.description || 'Item'}
+          ${p.packSize ? `<span style="font-size: 11px; color: #64748b; font-weight: 400; margin-left: 4px;">(${p.packSize})</span>` : ''}
+        </td>
+        <td style="padding: 8px 12px; text-align: center;">
+          <span style="padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 800; ${isOut ? 'background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;' : (isLow ? 'background: #fffbeb; color: #d97706; border: 1px solid #fde68a;' : 'background: #f0fdf4; color: #16a34a;')}">
+            ${curStock} ${p.unit || 'Units'}
+          </span>
+        </td>
+        <td style="padding: 8px 12px; text-align: center;">
+          <input type="number" class="po-item-qty" min="1" value="${recQty}" style="width: 75px; padding: 4px 8px; border: 1.5px solid #cbd5e1; border-radius: 6px; font-size: 12.5px; font-weight: 700; text-align: center;" oninput="window.updatePoTotals()">
+        </td>
+        <td style="padding: 8px 12px; text-align: right; font-weight: 600; color: #475569;">
+          ₹ ${formatCurrency(rate)}
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  window.updatePoTotals();
+};
+
+window.toggleAllPoItems = function(isChecked) {
+  document.querySelectorAll(".po-item-check").forEach(cb => {
+    cb.checked = isChecked;
+  });
+  window.updatePoTotals();
+};
+
+window.updatePoTotals = function() {
+  const checks = document.querySelectorAll(".po-item-check:checked");
+  let totalVal = 0;
+  checks.forEach(cb => {
+    const row = cb.closest("tr");
+    const qtyInput = row ? row.querySelector(".po-item-qty") : null;
+    const qty = qtyInput ? (parseFloat(qtyInput.value) || 0) : 0;
+    const rate = parseFloat(cb.dataset.rate) || 0;
+    totalVal += (qty * rate);
+  });
+
+  const countEl = document.getElementById("po-selected-count");
+  const valEl = document.getElementById("po-selected-val");
+  if (countEl) countEl.textContent = `${checks.length} items`;
+  if (valEl) valEl.textContent = `₹ ${formatCurrency(totalVal)}`;
+};
+
+window.formatPoOrderText = function() {
+  const supplierName = document.getElementById("po-supplier-select")?.value || "Valued Supplier";
+  const notes = document.getElementById("po-special-notes")?.value || "";
+  const company = globalSettings?.company || {};
+  const compName = company.name || "AARYAN AQUA NEEDS";
+  const compAddr = company.address || "Repalle, Andhra Pradesh";
+  const compPhone = company.phone || "7386262139";
+  const todayStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  const checks = document.querySelectorAll(".po-item-check:checked");
+  if (checks.length === 0) return null;
+
+  let lines = [];
+  lines.push(`📋 *PURCHASE ORDER (PO)*`);
+  lines.push(`🏢 *${compName}*`);
+  lines.push(`📍 ${compAddr}`);
+  lines.push(`📞 Phone: ${compPhone}`);
+  lines.push(`📅 Date: ${todayStr}`);
+  lines.push(`👤 Supplier: *${supplierName}*`);
+  lines.push(`-----------------------------------------`);
+  lines.push(`*ORDERED REORDER ITEMS:*`);
+
+  let grandEst = 0;
+  let idx = 1;
+  checks.forEach(cb => {
+    const row = cb.closest("tr");
+    const qtyInput = row ? row.querySelector(".po-item-qty") : null;
+    const qty = qtyInput ? (parseFloat(qtyInput.value) || 0) : 0;
+    const desc = cb.dataset.desc || "Item";
+    const unit = cb.dataset.unit || "Units";
+    const rate = parseFloat(cb.dataset.rate) || 0;
+    const lineTotal = qty * rate;
+    grandEst += lineTotal;
+
+    lines.push(`${idx}. *${desc}*`);
+    lines.push(`   ↳ Order Qty: *${qty} ${unit}* ${rate > 0 ? `(@ ₹ ${formatCurrency(rate)})` : ''}`);
+    idx++;
+  });
+
+  lines.push(`-----------------------------------------`);
+  lines.push(`📦 Total Items: *${checks.length}*`);
+  if (grandEst > 0) lines.push(`💰 Estimated Order Value: *₹ ${formatCurrency(grandEst)}*`);
+  if (notes) lines.push(`📝 *Delivery Note:* ${notes}`);
+  lines.push(`-----------------------------------------`);
+  lines.push(`Kindly acknowledge this Purchase Order and confirm delivery schedule. 🙏✨`);
+
+  return lines.join("\n");
+};
+
+window.copyPoToClipboard = function() {
+  const text = window.formatPoOrderText();
+  if (!text) {
+    showFloatingToast("⚠️ Please select at least one item to order.", "warning");
+    return;
+  }
+  navigator.clipboard.writeText(text).then(() => {
+    showFloatingToast("📋 Purchase Order copied to clipboard!", "success");
+  }).catch(() => {
+    showFloatingToast("⚠️ Could not access clipboard.", "warning");
+  });
+};
+
+window.sendPoWhatsApp = function() {
+  const text = window.formatPoOrderText();
+  if (!text) {
+    showFloatingToast("⚠️ Please select at least one item to order.", "warning");
+    return;
+  }
+  const phone = (document.getElementById("po-supplier-phone")?.value || "").replace(/[^0-9]/g, "");
+  const targetUrl = phone.length >= 10 
+    ? `https://wa.me/91${phone}?text=${encodeURIComponent(text)}`
+    : `https://wa.me/?text=${encodeURIComponent(text)}`;
+
+  window.open(targetUrl, "_blank");
+  showFloatingToast("📲 Opened WhatsApp Purchase Order!", "success");
+};
+
 window.exportPartiesToCSV = function() {
   if (!partiesDb || partiesDb.length === 0) {
     showFloatingToast("⚠️ No party profiles available to export.", "warning");
@@ -17522,9 +17905,45 @@ function resetReportsView() {
 let salesTrendChartInstance = null;
 let productSalesChartInstance = null;
 
+// --- ADVANCED REPORT DATE RANGE PRESETS ---
+window.setReportDatePreset = function(preset) {
+  const pad = (n) => String(n).padStart(2, '0');
+  const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const now = new Date();
+  let start = "";
+  let end = fmt(now);
+
+  if (preset === 'today') {
+    start = fmt(now);
+  } else if (preset === 'week') {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    start = fmt(d);
+  } else if (preset === 'month') {
+    start = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`;
+  } else if (preset === 'last_month') {
+    const prevMonthLast = new Date(now.getFullYear(), now.getMonth(), 0);
+    const prevMonthFirst = new Date(prevMonthLast.getFullYear(), prevMonthLast.getMonth(), 1);
+    start = fmt(prevMonthFirst);
+    end = fmt(prevMonthLast);
+  } else if (preset === 'fy') {
+    // Indian Financial Year: April 1 to March 31
+    const curYear = now.getFullYear();
+    const fyStartYear = (now.getMonth() >= 3) ? curYear : (curYear - 1);
+    start = `${fyStartYear}-04-01`;
+    end = `${fyStartYear + 1}-03-31`;
+  } else if (preset === 'all') {
+    start = '2020-01-01';
+  }
+
+  if (elements.reportStartDate) elements.reportStartDate.value = start;
+  if (elements.reportEndDate) elements.reportEndDate.value = end;
+  window.runSalesReport();
+};
+
 window.runSalesReport = function() {
-  const start = elements.reportStartDate.value;
-  const end = elements.reportEndDate.value;
+  const start = elements.reportStartDate ? elements.reportStartDate.value : "";
+  const end = elements.reportEndDate ? elements.reportEndDate.value : "";
 
   if (!start || !end) {
     showFloatingToast("⚠️ Please select both Start and End Dates!", "warning");
@@ -17533,13 +17952,34 @@ window.runSalesReport = function() {
 
   loadAllDatabases();
 
+  // Robust date parser: Handles YYYY-MM-DD, DD-MM-YYYY, DD-Mon-YYYY, and timestamps
+  const parseToIso = (dateStr) => {
+    if (!dateStr) return "";
+    const s = String(dateStr).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      const yr = d.getFullYear();
+      const mo = String(d.getMonth() + 1).padStart(2, '0');
+      const da = String(d.getDate()).padStart(2, '0');
+      return `${yr}-${mo}-${da}`;
+    }
+    const parts = s.split(/[-/]/);
+    if (parts.length === 3 && parts[2].length === 4) {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    return s;
+  };
+
   const filtered = invoicesDb.filter(inv => {
-    return (inv.invoiceDate >= start && inv.invoiceDate <= end);
+    const rawDate = inv.invoiceDate || inv.date || (inv.details && (inv.details.date || inv.details.invoiceDate)) || "";
+    const isoDate = parseToIso(rawDate);
+    return (isoDate >= start && isoDate <= end);
   });
 
   if (filtered.length === 0) {
     elements.reportResultsPlaceholder.classList.remove("hidden");
-    elements.reportResultsPlaceholder.innerHTML = `<i class="fa-solid fa-chart-line"></i><p>No invoices found in selected date range.</p>`;
+    elements.reportResultsPlaceholder.innerHTML = `<i class="fa-solid fa-chart-line"></i><p>No invoices found in selected date range (${start} to ${end}).</p>`;
     elements.reportResultsContent.classList.add("hidden");
     return;
   }
@@ -17551,6 +17991,7 @@ window.runSalesReport = function() {
   let totalTaxable = 0;
   let totalTax = 0;
   let totalGrand = 0;
+  let totalCogs = 0;
 
   filtered.forEach(inv => {
     const details = inv.details || {};
@@ -17559,13 +18000,21 @@ window.runSalesReport = function() {
 
     totalTaxable += invoiceTaxable;
     totalTax += invoiceTax;
-    totalGrand += inv.total;
+    totalGrand += (Number(inv.total) || 0);
+
+    // Calculate COGS
+    const items = (details && details.items) || inv.items || [];
+    items.forEach(it => {
+      const prod = (productsDb || []).find(p => (it.productId && p.id === it.productId) || ((p.description || '').trim().toLowerCase() === (it.description || '').trim().toLowerCase()));
+      const cost = parseFloat(it.costPrice !== undefined ? it.costPrice : (prod?.costPrice || 0)) || 0;
+      totalCogs += cost * (parseFloat(it.quantity) || 0);
+    });
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td style="font-weight: 700; color: var(--primary-teal);">#${inv.invoiceNo}</td>
-      <td>${formatInputDateString(inv.invoiceDate)}</td>
-      <td style="font-weight: 600;">${inv.customerName}</td>
+      <td>${formatInputDateString(inv.invoiceDate || inv.date)}</td>
+      <td style="font-weight: 600;">${inv.customerName || (details.buyer && details.buyer.name) || "Customer"}</td>
       <td style="text-align: right;">₹ ${formatCurrency(invoiceTaxable)}</td>
       <td style="text-align: right;">₹ ${formatCurrency(invoiceTax)}</td>
       <td style="text-align: right; font-weight: 700; color: var(--primary-teal);">₹ ${formatCurrency(inv.total)}</td>
@@ -17576,6 +18025,24 @@ window.runSalesReport = function() {
   elements.reportTotalTaxable.textContent = `₹ ${formatCurrency(totalTaxable)}`;
   elements.reportTotalTax.textContent = `₹ ${formatCurrency(totalTax)}`;
   elements.reportTotalGrand.textContent = `₹ ${formatCurrency(totalGrand)}`;
+
+  // Update Executive Profitability KPI Cards
+  const grossProfit = Math.max(0, totalGrand - totalCogs);
+  const marginPct = totalGrand > 0 ? ((grossProfit / totalGrand) * 100).toFixed(1) : "0.0";
+
+  const elRev = document.getElementById("report-kpi-revenue");
+  const elCount = document.getElementById("report-kpi-inv-count");
+  const elCogs = document.getElementById("report-kpi-cogs");
+  const elProfit = document.getElementById("report-kpi-profit");
+  const elMargin = document.getElementById("report-kpi-margin");
+  const elTax = document.getElementById("report-kpi-tax");
+
+  if (elRev) elRev.textContent = `₹ ${formatCurrency(totalGrand)}`;
+  if (elCount) elCount.textContent = `${filtered.length} Invoices`;
+  if (elCogs) elCogs.textContent = `₹ ${formatCurrency(totalCogs)}`;
+  if (elProfit) elProfit.textContent = `₹ ${formatCurrency(grossProfit)}`;
+  if (elMargin) elMargin.textContent = `Gross Margin: ${marginPct}%`;
+  if (elTax) elTax.textContent = `₹ ${formatCurrency(totalTax)}`;
 
   // --- RENDER DYNAMIC CHARTS ---
   try {
@@ -21243,11 +21710,24 @@ window.resetBillingDatabaseTo0001 = async function() {
 
 window.exportDataBackupJSON = function() {
   loadAllDatabases();
+  const authUsers = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
+  const sanitizedUsers = (authUsers || []).map(u => ({
+    email: u.email,
+    name: u.name,
+    role: u.role,
+    status: u.status,
+    lastLogin: u.lastLogin
+  }));
+
   const backupObj = {
-    invoices: invoicesDb,
-    products: productsDb,
-    parties: partiesDb,
-    settings: globalSettings
+    app: "Aaryan Aqua GST Billing & Store Management",
+    version: "5.28.0",
+    exportDate: new Date().toISOString(),
+    invoices: invoicesDb || [],
+    products: productsDb || [],
+    parties: partiesDb || [],
+    settings: globalSettings || {},
+    authorized_users: sanitizedUsers
   };
   const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupObj, null, 2));
   const downloadAnchor = document.createElement('a');
@@ -21257,6 +21737,7 @@ window.exportDataBackupJSON = function() {
   document.body.appendChild(downloadAnchor);
   downloadAnchor.click();
   downloadAnchor.remove();
+  showFloatingToast(`✅ Complete Store Backup exported successfully (${(backupObj.invoices||[]).length} Invoices, ${(backupObj.products||[]).length} Products, ${(backupObj.parties||[]).length} Parties)`, "success", 4000);
 };
 
 window.importDataBackupJSON = function(event) {
@@ -21268,20 +21749,57 @@ window.importDataBackupJSON = function(event) {
     try {
       const data = JSON.parse(e.target.result);
       if (!data || typeof data !== 'object') {
-        throw new Error("Invalid backup format.");
+        throw new Error("Invalid backup JSON format.");
       }
 
-      if (confirm("Are you sure you want to restore this backup? This will overwrite all your current invoices, products, parties, and settings!")) {
-        const importedInvoices = data.invoices || [];
-        const importedProducts = data.products || [];
-        const importedParties = data.parties || [];
-        const importedSettings = data.settings || null;
+      const importedInvoices = Array.isArray(data.invoices) ? data.invoices : [];
+      const importedProducts = Array.isArray(data.products) ? data.products : [];
+      const importedParties = Array.isArray(data.parties) ? data.parties : [];
+      const importedSettings = data.settings || null;
+      const importedUsers = Array.isArray(data.authorized_users) ? data.authorized_users : [];
+
+      const confirmMsg = `📦 RESTORE COMPLETE STORE BACKUP?\n\n` +
+        `• Invoices to restore: ${importedInvoices.length}\n` +
+        `• Products to restore: ${importedProducts.length}\n` +
+        `• Parties / Customers to restore: ${importedParties.length}\n` +
+        `• Store Configuration: ${importedSettings ? 'Yes' : 'No'}\n\n` +
+        `Click OK to overwrite local data and synchronize with Supabase Cloud.`;
+
+      if (confirm(confirmMsg)) {
+        // Clear any previous deletion flags so imported data loads clean
+        try {
+          localStorage.removeItem("products_cleared");
+          localStorage.removeItem("database_history_cleared");
+          localStorage.removeItem("database_history_cleared_at");
+        } catch(err) {}
 
         localStorage.setItem("invoices", JSON.stringify(importedInvoices));
         localStorage.setItem("products", JSON.stringify(importedProducts));
         localStorage.setItem("parties", JSON.stringify(importedParties));
         if (importedSettings) {
           localStorage.setItem("settings", JSON.stringify(importedSettings));
+          window.globalSettings = importedSettings;
+        }
+
+        // Restore to IndexedDB
+        if (window.TurboIndexedDB) {
+          if (typeof window.TurboIndexedDB.saveAllInvoices === 'function') window.TurboIndexedDB.saveAllInvoices(importedInvoices);
+          if (typeof window.TurboIndexedDB.saveAllProducts === 'function') window.TurboIndexedDB.saveAllProducts(importedProducts);
+          if (typeof window.TurboIndexedDB.saveAllParties === 'function') window.TurboIndexedDB.saveAllParties(importedParties);
+        }
+
+        // Push to Supabase Cloud
+        if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+          try {
+            if (importedProducts.length > 0) window.SupabaseDB.bulkUpsertProducts(importedProducts);
+            if (importedParties.length > 0) {
+              for (const p of importedParties) {
+                window.SupabaseDB.upsertCustomer(p).catch(() => {});
+              }
+            }
+          } catch(err) {
+            console.warn("[Restore] Supabase sync notice:", err);
+          }
         }
 
         if (typeof syncDatabaseToServer === 'function') {
@@ -21290,16 +21808,18 @@ window.importDataBackupJSON = function(event) {
           }
           syncDatabaseToServer("products", importedProducts);
           syncDatabaseToServer("parties", importedParties);
-          if (importedSettings) {
-            syncDatabaseToServer("settings", importedSettings);
-          }
+          if (importedSettings) syncDatabaseToServer("settings", importedSettings);
         }
 
-        showFloatingToast("✅ Database successfully restored! Reloading...", 4000);
-        window.location.reload();
+        showFloatingToast(`✅ Restored ${importedInvoices.length} Invoices, ${importedProducts.length} Products, ${importedParties.length} Parties! Reloading...`, "success", 4000);
+        setTimeout(() => {
+          window.location.reload();
+        }, 1200);
       }
     } catch (err) {
       showFloatingToast("⚠️ Failed to parse backup file: " + err.message, "warning");
+    } finally {
+      event.target.value = "";
     }
   };
   reader.readAsText(file);
