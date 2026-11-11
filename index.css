@@ -2994,17 +2994,12 @@ body.counter-privacy-active.strict-privacy-enabled .maskable-financial:hover {
   left: 0 !important;
   width: 100vw !important;
   height: 100vh !important;
-  background: radial-gradient(circle at 15% 50%, rgba(14, 165, 233, 0.15), transparent 25%),
-              radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.15), transparent 25%),
-              rgba(15, 23, 42, 0.96) !important;
-  background-size: 200% 200% !important;
-  animation: bg-drift 15s ease infinite !important;
-  backdrop-filter: blur(24px) saturate(200%) !important;
+  background: #090d16 !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
   z-index: 2147483647 !important; /* STRICT MAXIMUM 32-BIT INTEGER - CANNOT BE OVERRIDDEN */
-  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
   opacity: 1 !important;
   visibility: visible !important;
   pointer-events: auto !important;
@@ -3023,6 +3018,14 @@ body.counter-privacy-active.strict-privacy-enabled .maskable-financial:hover {
   visibility: hidden !important;
   pointer-events: none !important;
   z-index: -1 !important;
+}
+
+/* When application is locked, strictly hide dashboard contents to prevent visual data leakage */
+body.app-is-locked .dashboard-wrapper {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 /* When application is locked, strictly hide interactive mobile bars and banners */

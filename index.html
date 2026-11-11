@@ -459,7 +459,7 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=live_v66_access_grant_and_demo_scanner_lock">
+  <link rel="stylesheet" href="index.css?v=live_v76_lock_hardened">
 
   <script src="invoice_utils_v5.js?v=live_v62_google_script_endpoint_updated"></script>
 
@@ -504,99 +504,92 @@
 
 
   <!-- HIGH-END LOGIN / LOCK SCREEN OVERLAY (Enforced strictly on boot for Zero-Trust security) -->
-
-  <!-- CLEAN & MINIMALIST LOGIN OVERLAY -->
-
   <div id="lock-screen-overlay" class="lock-overlay no-print">
-
-    <div class="login-card" style="max-width: 380px; padding: 36px 28px;">
-
-      <div class="login-header" style="margin-bottom: 20px;">
-
-        <div class="login-logo-wrapper" style="margin: 0 auto 14px auto;">
-
+    <div class="login-card" style="max-width: 390px; padding: 32px 26px;">
+      <div class="login-header" style="margin-bottom: 16px;">
+        <div class="login-logo-wrapper" style="margin: 0 auto 12px auto;">
           <div class="login-brand-emblem">
-
             <img src="rallis_logo.png" alt="Aaryan Aqua Needs" class="login-brand-img">
-
           </div>
-
         </div>
-
-        <h2 style="font-size: 19px; font-weight: 800; letter-spacing: 0.5px; margin: 0 0 6px 0; color: #ffffff;">AARYAN AQUA NEEDS</h2>
-
-        <p style="font-size: 12.5px; color: #94a3b8; margin: 0;">GST Billing &amp; Aquaculture Management</p>
-
+        <h2 style="font-size: 19px; font-weight: 800; letter-spacing: 0.5px; margin: 0 0 4px 0; color: #ffffff;">AARYAN AQUA NEEDS</h2>
+        <p style="font-size: 12px; color: #94a3b8; margin: 0;">GST Billing &amp; Aquaculture Management</p>
       </div>
-
-      
 
       <!-- REAL-TIME SESSION LOCK CONTEXT BANNER -->
-
-      <div id="login-session-status-banner" style="display: none; margin: 0 0 14px 0; padding: 10px 14px; border-radius: 10px; font-size: 12px; font-weight: 600; text-align: center; transition: all 0.25s ease;">
-
+      <div id="login-session-status-banner" style="display: none; margin: 0 0 12px 0; padding: 10px 14px; border-radius: 10px; font-size: 12px; font-weight: 600; text-align: center; transition: all 0.25s ease;">
         <span id="login-session-status-text"></span>
-
       </div>
 
-
-
-      <div id="login-error-message" class="login-error hidden">
-
+      <div id="login-error-message" class="login-error hidden" style="margin-bottom: 12px;">
         <i class="fa-solid fa-triangle-exclamation"></i> Invalid credentials!
-
       </div>
 
-      
-
-      <!-- EXCLUSIVE OFFICIAL GOOGLE SIGN-IN -->
-
-      <div style="margin-top: 18px; display: flex; flex-direction: column; gap: 12px; align-items: center; width: 100%;">
-
-        <!-- Native Google Rendered Button Slot (Official Single Sign-in Button) -->
-
-        <div id="google-signin-btn-container" style="display: flex; justify-content: center; width: 100%; min-height: 44px;"></div>
-
-
-
-        <!-- Direct Google OAuth Prompt Button (Hidden fallback only used if GIS fails to load) -->
-
-        <button type="button" id="btn-google-direct" onclick="window.triggerDirectGoogleAuth()" style="display: none; width: 100%; max-width: 320px; padding: 13px 18px; border-radius: 8px; background: #ffffff; color: #1f2937; border: 1.5px solid #e5e7eb; font-weight: 700; font-size: 14.5px; cursor: pointer; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); transition: all 0.2s ease;">
-
-          <svg style="width: 20px; height: 20px;" viewBox="0 0 24 24">
-
-            <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
-
-            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
-
-            <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.17 0 9.99 0 12s.45 3.83 1.25 5.42l4.03-3.15z"/>
-
-            <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
-
-          </svg>
-
-          <span id="google-btn-label">Sign in with Google</span>
-
-        </button>
-
-      </div>
-
-
-
-
-
-      <div class="login-footer" style="margin-top: 22px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 11.5px; color: #64748b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
-
-        <div style="display: flex; align-items: center; gap: 6px;">
-
-          <i class="fa-solid fa-shield-halved" style="color: #0ea5e9;"></i>
-
-          <span style="font-weight: 700; color: #94a3b8;">Direct Google Authentication</span>
-
+      <!-- MASTER PIN / PASSWORD UNLOCK FORM -->
+      <form id="lock-screen-login-form" onsubmit="window.handleTraditionalLoginSubmit(event)" style="display: flex; flex-direction: column; gap: 12px; width: 100%; text-align: left;">
+        
+        <!-- Optional Staff / Cashier Email Toggle -->
+        <div id="login-alt-email-container" style="display: none;">
+          <label for="login-email" style="font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; display: block; letter-spacing: 0.5px;">Staff / Cashier Email</label>
+          <div class="input-icon-wrapper">
+            <i class="fa-solid fa-envelope input-icon"></i>
+            <input type="email" id="login-email" value="kandukurijagan99@gmail.com" placeholder="authorized@example.com" autocomplete="username">
+          </div>
         </div>
 
-        <span style="font-size: 10.5px; color: #64748b; text-align: center;">One-click secure email sign in via Google Identity</span>
+        <!-- Security PIN / Password Field -->
+        <div class="login-input-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <label for="login-password" style="font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">Security PIN or Password</label>
+            <button type="button" id="btn-toggle-alt-email" onclick="window.toggleAlternateEmailInput()" style="background: none; border: none; color: #38bdf8; font-size: 11px; font-weight: 600; cursor: pointer; padding: 0;">
+              <i class="fa-solid fa-users"></i> Staff Sign-in
+            </button>
+          </div>
+          <div class="input-icon-wrapper">
+            <i class="fa-solid fa-lock input-icon"></i>
+            <input type="password" id="login-password" autocomplete="current-password" placeholder="Enter Security PIN (e.g. 2024)" autofocus>
+            <button type="button" class="btn-toggle-pwd" onclick="window.toggleLoginPasswordVisibility()" title="Show/Hide PIN">
+              <i id="toggle-login-pass-icon" class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
 
+        <button type="submit" class="btn-login-submit" style="width: 100%; margin-top: 4px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <span id="login-btn-spinner" class="hidden"><i class="fa-solid fa-spinner fa-spin"></i></span>
+          <span id="login-btn-text"><i class="fa-solid fa-key"></i> Unlock System</span>
+        </button>
+      </form>
+
+      <!-- DIVIDER -->
+      <div style="display: flex; align-items: center; width: 100%; margin: 6px 0; gap: 10px;">
+        <div style="flex: 1; height: 1px; background: rgba(255, 255, 255, 0.12);"></div>
+        <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">or</span>
+        <div style="flex: 1; height: 1px; background: rgba(255, 255, 255, 0.12);"></div>
+      </div>
+
+      <!-- EXCLUSIVE OFFICIAL GOOGLE SIGN-IN -->
+      <div style="display: flex; flex-direction: column; gap: 10px; align-items: center; width: 100%;">
+        <!-- Native Google Rendered Button Slot (Official Single Sign-in Button) -->
+        <div id="google-signin-btn-container" style="display: flex; justify-content: center; width: 100%; min-height: 44px;"></div>
+
+        <!-- Direct Google OAuth Prompt Button (Hidden fallback only used if GIS fails to load) -->
+        <button type="button" id="btn-google-direct" onclick="window.triggerDirectGoogleAuth()" style="display: none; width: 100%; max-width: 320px; padding: 12px 18px; border-radius: 8px; background: #ffffff; color: #1f2937; border: 1.5px solid #e5e7eb; font-weight: 700; font-size: 14px; cursor: pointer; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); transition: all 0.2s ease;">
+          <svg style="width: 18px; height: 18px;" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+            <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.17 0 9.99 0 12s.45 3.83 1.25 5.42l4.03-3.15z"/>
+            <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+          </svg>
+          <span id="google-btn-label">Sign in with Google</span>
+        </button>
+      </div>
+
+      <div class="login-footer" style="margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 11px; color: #64748b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-shield-halved" style="color: #0ea5e9;"></i>
+          <span style="font-weight: 700; color: #94a3b8;">Zero-Trust Protected</span>
+        </div>
+        <span style="font-size: 10px; color: #64748b; text-align: center;">Master PIN or Google Authentication required to access billing data</span>
       </div>
 
     </div>
@@ -11273,13 +11266,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v75_security_hardened"></script>
+<script src="supabase-adapter.js?v=live_v76_lock_hardened"></script>
 
-<script src="initial_db.js?v=live_v75_security_hardened"></script>
+<script src="initial_db.js?v=live_v76_lock_hardened"></script>
 
-<script src="customer-timeline.js?v=live_v75_security_hardened"></script>
+<script src="customer-timeline.js?v=live_v76_lock_hardened"></script>
 
-<script src="index_v5.js?v=live_v75_security_hardened"></script>
+<script src="index_v5.js?v=live_v76_lock_hardened"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->
