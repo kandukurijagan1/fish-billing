@@ -12484,7 +12484,16 @@ function populateA4PrintOverlay(invoice) {
   if (bankBranchEl) bankBranchEl.textContent = bank.branch || "Repalle";
 
   // Payment QR Code (Strict Privacy: NO website links, NO customer details, NO plain text data)
-  const isPaidInvoice = Boolean(invoice.balanceDue <= 0 || (invoice.paymentStatus && invoice.paymentStatus.toLowerCase() === 'paid'));
+  const payInfoA4 = (typeof getInvoicePaidAndBalance === "function") 
+    ? getInvoicePaidAndBalance(invoice) 
+    : { isPaid: true, balance: 0 };
+  const rawStatusA4 = String(invoice.paymentStatus || invoice.status || (invoice.details && invoice.details.paymentStatus) || payInfoA4.status || 'Paid').toLowerCase().trim();
+  const rawBalanceA4 = (invoice.balanceDue !== undefined && !isNaN(parseFloat(invoice.balanceDue)))
+    ? parseFloat(invoice.balanceDue)
+    : ((invoice.details && invoice.details.balanceDue !== undefined && !isNaN(parseFloat(invoice.details.balanceDue)))
+        ? parseFloat(invoice.details.balanceDue)
+        : payInfoA4.balance);
+  const isPaidInvoice = Boolean(payInfoA4.isPaid || rawStatusA4 === 'paid' || rawBalanceA4 <= 0);
   const qrPaidContainer = document.getElementById("p-print-qr-paid-container");
   const qrUnpaidContainer = document.getElementById("p-print-qr-unpaid-container");
   const qrHeaderTitle = document.getElementById("p-print-qr-header-title");
@@ -12593,7 +12602,16 @@ function populateThermalPrintOverlay(invoice) {
 
   // Dynamic UPI Payment QR code for physical thermal slip (Strict Privacy)
   const thUpiContainer = document.getElementById("th-upi-qr-container");
-  const isPaidThermal = Boolean(invoice.balanceDue <= 0 || (invoice.paymentStatus && invoice.paymentStatus.toLowerCase() === 'paid'));
+  const payInfoTh = (typeof getInvoicePaidAndBalance === "function") 
+    ? getInvoicePaidAndBalance(invoice) 
+    : { isPaid: true, balance: 0 };
+  const rawStatusTh = String(invoice.paymentStatus || invoice.status || (invoice.details && invoice.details.paymentStatus) || payInfoTh.status || 'Paid').toLowerCase().trim();
+  const rawBalanceTh = (invoice.balanceDue !== undefined && !isNaN(parseFloat(invoice.balanceDue)))
+    ? parseFloat(invoice.balanceDue)
+    : ((invoice.details && invoice.details.balanceDue !== undefined && !isNaN(parseFloat(invoice.details.balanceDue)))
+        ? parseFloat(invoice.details.balanceDue)
+        : payInfoTh.balance);
+  const isPaidThermal = Boolean(payInfoTh.isPaid || rawStatusTh === 'paid' || rawBalanceTh <= 0);
   const qrImg = document.getElementById("th-upi-qr-img");
 
   if (isPaidThermal) {
@@ -16399,8 +16417,19 @@ window.openInvoicePrintPreview = function(identifier, mode = 'a4') {
   }
 
   // 2. Populate A4 print overlay DOM & Clone into preview container
+  const fullInvPreviewData = {
+    ...(inv || {}),
+    ...(inv.details || {}),
+    id: inv.id || (inv.details && inv.details.id),
+    invoiceNo: inv.invoiceNo || (inv.details && inv.details.invoiceNo),
+    paymentStatus: inv.paymentStatus || (inv.details && inv.details.paymentStatus) || (payInfo.isPaid ? 'Paid' : 'Unpaid'),
+    balanceDue: payInfo.balance,
+    paidAmount: payInfo.paid,
+    total: payInfo.total
+  };
+
   try {
-    populateA4PrintOverlay(inv.details || inv);
+    populateA4PrintOverlay(fullInvPreviewData);
     const a4Source = document.getElementById("print-invoice-wrapper");
     const a4Target = document.getElementById("preview-a4-sheet-container");
     if (a4Source && a4Target) {
@@ -16412,7 +16441,7 @@ window.openInvoicePrintPreview = function(identifier, mode = 'a4') {
 
   // 3. Populate Thermal print overlay DOM & Clone into thermal container
   try {
-    populateThermalPrintOverlay(inv.details || inv);
+    populateThermalPrintOverlay(fullInvPreviewData);
     const thSource = document.getElementById("print-thermal-wrapper");
     const thTarget = document.getElementById("preview-thermal-sheet-container");
     if (thSource && thTarget) {
