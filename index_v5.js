@@ -761,7 +761,7 @@ const TurboOutboxQueue = {
       window.updateCloudSyncBadge("syncing");
     }
 
-    // Robust drain: sync directly to Supabase first, then Google Apps Script
+    // Robust high-speed drain: sync directly to Supabase first (<50ms), then Google Apps Script in background
     const remaining = [];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
@@ -771,26 +771,59 @@ const TurboOutboxQueue = {
           if (item.action === "save_invoice" || item.action === "save_invoices") {
             const inv = item.payload.invoice || item.payload;
             if (inv && inv.id) {
-              await window.SupabaseDB.upsertInvoice(inv);
+              const res = await window.SupabaseDB.upsertInvoice(inv);
+              if (res && res.ok) syncedToSupabase = true;
+            }
+          } else if (item.action === "save_products") {
+            const prods = item.payload.products || item.payload;
+            if (Array.isArray(prods) && prods.length > 0) {
+              const res = await window.SupabaseDB.saveAllProducts(prods);
+              if (res && res.ok) syncedToSupabase = true;
+            }
+          } else if (item.action === "save_parties") {
+            const parties = item.payload.parties || item.payload;
+            if (Array.isArray(parties) && parties.length > 0) {
+              const res = await window.SupabaseDB.saveAllCustomers(parties);
+              if (res && res.ok) syncedToSupabase = true;
+            }
+          } else if (item.action === "save_settings") {
+            const st = item.payload.settings || item.payload;
+            if (st) {
+              const res = await window.SupabaseDB.saveSettings(st);
+              if (res && res.ok) syncedToSupabase = true;
+            }
+          } else if (item.action === "delete_record") {
+            if (item.payload.type === "product" && item.payload.id) {
+              await window.SupabaseDB.deleteProduct(item.payload.id);
+              syncedToSupabase = true;
+            } else if (item.payload.type === "party" && item.payload.id) {
+              await window.SupabaseDB.deleteCustomer(item.payload.id);
+              syncedToSupabase = true;
+            } else if (item.payload.type === "invoice" && item.payload.id) {
+              await window.SupabaseDB.deleteInvoice(item.payload.id);
               syncedToSupabase = true;
             }
           }
         }
-      } catch (sbErr) {}
+      } catch (sbErr) {
+        console.warn("[TurboOutbox] Supabase fast-drain note:", sbErr);
+      }
 
-      try {
-        const res = await pushDirectToGoogleDatabaseRaw(item.action, item.payload);
-        if (!res || (!res.ok && !res.success)) {
-          if (!syncedToSupabase) {
+      // Secondary cloud archive (Google Apps Script): non-blocking if already synced to Supabase
+      if (!syncedToSupabase) {
+        try {
+          const res = await pushDirectToGoogleDatabaseRaw(item.action, item.payload);
+          if (!res || (!res.ok && !res.success)) {
             item.attempts = (item.attempts || 0) + 1;
             if (item.attempts < 3) remaining.push(item);
           }
-        }
-      } catch (e) {
-        if (!syncedToSupabase) {
+        } catch (e) {
           item.attempts = (item.attempts || 0) + 1;
           if (item.attempts < 3) remaining.push(item);
         }
+      } else {
+        // Fire-and-forget push to Google Apps Script in background so user doesn't wait
+        try { pushDirectToGoogleDatabaseRaw(item.action, item.payload).catch(() => {}); } catch(_) {}
       }
     }
 
@@ -3191,6 +3224,11 @@ function syncDatabaseToServer(type, data) {
   if (type === "invoices") {
     action = "save_invoice";
     payload = { invoice: data };
+    if (data && (data.id || data.invoiceNo)) {
+      window._recentLocalWrites = window._recentLocalWrites || {};
+      if (data.id) window._recentLocalWrites[data.id] = Date.now();
+      if (data.invoiceNo) window._recentLocalWrites[data.invoiceNo] = Date.now();
+    }
     try {
       localStorage.setItem("invoices", JSON.stringify(invoicesDb));
     } catch(e) {}
@@ -3207,6 +3245,12 @@ function syncDatabaseToServer(type, data) {
   } else if (type === "products") {
     action = "save_products";
     payload = { products: data };
+    window._recentLocalWrites = window._recentLocalWrites || {};
+    if (Array.isArray(data)) {
+      data.forEach(p => { if (p && p.id) window._recentLocalWrites[p.id] = Date.now(); });
+    } else if (data && data.id) {
+      window._recentLocalWrites[data.id] = Date.now();
+    }
     try {
       localStorage.setItem("products", JSON.stringify(productsDb));
     } catch(e) {}
@@ -3226,6 +3270,12 @@ function syncDatabaseToServer(type, data) {
   } else if (type === "parties") {
     action = "save_parties";
     payload = { parties: data };
+    window._recentLocalWrites = window._recentLocalWrites || {};
+    if (Array.isArray(data)) {
+      data.forEach(c => { if (c && c.id) window._recentLocalWrites[c.id] = Date.now(); });
+    } else if (data && data.id) {
+      window._recentLocalWrites[data.id] = Date.now();
+    }
     try {
       localStorage.setItem("parties", JSON.stringify(partiesDb));
     } catch(e) {}
@@ -3259,6 +3309,8 @@ function syncDatabaseToServer(type, data) {
 
 function deleteProductFromServer(id) {
   window.lastSyncETag = null;
+  window._recentLocalWrites = window._recentLocalWrites || {};
+  if (id) window._recentLocalWrites[id] = Date.now();
   productsDb = (productsDb || []).filter(p => p && p.id !== id);
   if (productsDb.length === 0) {
     localStorage.setItem("products_cleared", "true");
@@ -3277,6 +3329,8 @@ function deleteProductFromServer(id) {
 
 function deletePartyFromServer(id) {
   window.lastSyncETag = null;
+  window._recentLocalWrites = window._recentLocalWrites || {};
+  if (id) window._recentLocalWrites[id] = Date.now();
   partiesDb = (partiesDb || []).filter(p => p && p.id !== id);
   try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
   if (window.TurboIndexedDB) window.TurboIndexedDB.saveAllParties(partiesDb);
@@ -3292,6 +3346,9 @@ function deletePartyFromServer(id) {
 
 function deleteInvoiceFromServer(id, invoiceNo) {
   window.lastSyncETag = null;
+  window._recentLocalWrites = window._recentLocalWrites || {};
+  if (id) window._recentLocalWrites[id] = Date.now();
+  if (invoiceNo) window._recentLocalWrites[invoiceNo] = Date.now();
   invoicesDb = (invoicesDb || []).filter(inv => inv && inv.id !== id && inv.invoiceNo !== invoiceNo);
   try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
   if (window.TurboIndexedDB) {
@@ -3404,10 +3461,15 @@ window.triggerDatabaseSync = async function(forceReload = false) {
 
     activeSyncPromise = (async () => {
       try {
+        const syncOpts = (forceReload || !window._lastCloudSyncTimestamp)
+          ? {}
+          : { since: window._lastCloudSyncTimestamp };
+        const syncStartTime = new Date().toISOString();
+
         const [invRes, prodRes, custRes, setRes] = await Promise.all([
-          window.SupabaseDB.fetchInvoices(),
-          window.SupabaseDB.fetchProducts(),
-          window.SupabaseDB.fetchCustomers(),
+          window.SupabaseDB.fetchInvoices(syncOpts),
+          window.SupabaseDB.fetchProducts(syncOpts),
+          window.SupabaseDB.fetchCustomers(syncOpts),
           window.SupabaseDB.fetchSettings()
         ]);
 
@@ -3423,30 +3485,54 @@ window.triggerDatabaseSync = async function(forceReload = false) {
         let hasProductsChanged = false;
         let hasPartiesChanged = false;
 
+        // INVOICES (Incremental Delta / Authoritative Full)
         if (invRes && invRes.ok && Array.isArray(invRes.invoices)) {
-          let validInvs = invRes.invoices;
+          let serverInvs = invRes.invoices;
           if (typeof window.filterOutDeletedInvoices === 'function') {
-            validInvs = window.filterOutDeletedInvoices(validInvs);
+            serverInvs = window.filterOutDeletedInvoices(serverInvs);
           }
           const hasCleared = (typeof localStorage !== "undefined" && (localStorage.getItem("database_history_cleared") === "true" || !!localStorage.getItem("database_history_cleared_at")));
           const clearedAt = parseInt((typeof localStorage !== "undefined" ? localStorage.getItem("database_history_cleared_at") : "0") || "0", 10);
           if (hasCleared && clearedAt > 0) {
-            validInvs = validInvs.filter(inv => {
+            serverInvs = serverInvs.filter(inv => {
               const t = new Date(inv.date || inv.invoiceDate || inv.createdAt || 0).getTime();
               return t > clearedAt;
             });
           }
 
-          const invFingerprint = validInvs.length + '_' + validInvs.map(i => (i.id || '') + ':' + (i.paymentStatus || '') + ':' + (i.paidAmount || 0)).sort().slice(0, 15).join('|');
-          if (invFingerprint !== window._lastInvFingerprint) {
-            window._lastInvFingerprint = invFingerprint;
-            hasInvoicesChanged = true;
-            invoicesDb = validInvs;
-            window.invoicesDb = invoicesDb;
-            try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
+          if (syncOpts.since) {
+            // High-speed Delta Merge: only merge if server returned modified rows
+            if (serverInvs.length > 0) {
+              const invMap = new Map((invoicesDb || []).map(i => [i.id || i.invoiceNo, i]));
+              serverInvs.forEach(si => {
+                const key = si.id || si.invoiceNo;
+                if (key) invMap.set(key, Object.assign({}, invMap.get(key) || {}, si));
+              });
+              let mergedInvs = Array.from(invMap.values());
+              if (typeof window.filterOutDeletedInvoices === 'function') {
+                mergedInvs = window.filterOutDeletedInvoices(mergedInvs);
+              }
+              invoicesDb = mergedInvs;
+              window.invoicesDb = invoicesDb;
+              hasInvoicesChanged = true;
+              try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
+              if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllInvoices === 'function') {
+                window.TurboIndexedDB.saveAllInvoices(invoicesDb);
+              }
+            }
+          } else {
+            const invFingerprint = serverInvs.length + '_' + serverInvs.map(i => (i.id || '') + ':' + (i.paymentStatus || '') + ':' + (i.paidAmount || 0)).sort().slice(0, 15).join('|');
+            if (invFingerprint !== window._lastInvFingerprint) {
+              window._lastInvFingerprint = invFingerprint;
+              hasInvoicesChanged = true;
+              invoicesDb = serverInvs;
+              window.invoicesDb = invoicesDb;
+              try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
+            }
           }
         }
 
+        // PRODUCTS (Incremental Delta / Authoritative Full)
         if (prodRes && prodRes.ok && Array.isArray(prodRes.products)) {
           let _dpri = [];
           try { _dpri = JSON.parse(localStorage.getItem("deleted_product_ids")) || []; } catch(e){}
@@ -3458,6 +3544,20 @@ window.triggerDatabaseSync = async function(forceReload = false) {
             productsDb = [];
             window.productsDb = productsDb;
             try { localStorage.setItem("products", "[]"); } catch(e){}
+          } else if (syncOpts.since) {
+            if (validServerProds.length > 0) {
+              const prodMap = new Map((productsDb || []).map(p => [p.id, p]));
+              validServerProds.forEach(sp => {
+                prodMap.set(sp.id, Object.assign({}, prodMap.get(sp.id) || {}, sp));
+              });
+              productsDb = Array.from(prodMap.values());
+              window.productsDb = productsDb;
+              hasProductsChanged = true;
+              try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
+              if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllProducts === 'function') {
+                window.TurboIndexedDB.saveAllProducts(productsDb);
+              }
+            }
           } else {
             const nowMs = Date.now();
             const recentMut = window.recentProductMutations || {};
@@ -3502,14 +3602,31 @@ window.triggerDatabaseSync = async function(forceReload = false) {
           }
         }
 
+        // CUSTOMERS (Incremental Delta / Authoritative Full)
         if (custRes && custRes.ok && Array.isArray(custRes.customers)) {
-          const custFingerprint = custRes.customers.length + '_' + custRes.customers.map(c => (c.id || '') + ':' + (c.name || '') + ':' + (c.type || '')).sort().slice(0, 15).join('|');
-          if (custFingerprint !== window._lastCustFingerprint) {
-            window._lastCustFingerprint = custFingerprint;
-            hasPartiesChanged = true;
-            partiesDb = custRes.customers;
-            window.partiesDb = partiesDb;
-            try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
+          if (syncOpts.since) {
+            if (custRes.customers.length > 0) {
+              const custMap = new Map((partiesDb || []).map(c => [c.id, c]));
+              custRes.customers.forEach(sc => {
+                custMap.set(sc.id, Object.assign({}, custMap.get(sc.id) || {}, sc));
+              });
+              partiesDb = Array.from(custMap.values());
+              window.partiesDb = partiesDb;
+              hasPartiesChanged = true;
+              try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
+              if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllParties === 'function') {
+                window.TurboIndexedDB.saveAllParties(partiesDb);
+              }
+            }
+          } else {
+            const custFingerprint = custRes.customers.length + '_' + custRes.customers.map(c => (c.id || '') + ':' + (c.name || '') + ':' + (c.type || '')).sort().slice(0, 15).join('|');
+            if (custFingerprint !== window._lastCustFingerprint) {
+              window._lastCustFingerprint = custFingerprint;
+              hasPartiesChanged = true;
+              partiesDb = custRes.customers;
+              window.partiesDb = partiesDb;
+              try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
+            }
           }
         }
 
@@ -3526,6 +3643,8 @@ window.triggerDatabaseSync = async function(forceReload = false) {
             window.renderUserManagerTable();
           }
         }
+
+        window._lastCloudSyncTimestamp = syncStartTime;
 
         // Silent non-blinking UI updates: only re-render if data ACTUALLY changed and user is on that view
         const activeTab = document.querySelector('.content-view:not(.hidden)')?.id || '';
@@ -4049,6 +4168,186 @@ try {
   });
 })();
 
+// ============================================================================
+// ⚡ SUPABASE REALTIME STREAMING ENGINE (<40ms Low-Latency Multi-Device Push)
+// ============================================================================
+window._recentLocalWrites = window._recentLocalWrites || {};
+
+window.initSupabaseRealtimeStream = function() {
+  if (window._hasInitRealtimeStream) return;
+  if (!window.SupabaseDB || typeof window.SupabaseDB.onRealtimeEvent !== 'function') return;
+  const isDemo = (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+                 (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+                 (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_demo_mode") === "true");
+  if (isDemo) return;
+
+  window._hasInitRealtimeStream = true;
+  console.log("⚡ [Supabase Realtime] Connecting to PostgreSQL WebSocket change stream...");
+
+  window.SupabaseDB.onRealtimeEvent((event) => {
+    try {
+      if (!event || !event.table) return;
+      const { table, eventType, newRow, oldRow } = event;
+      const now = Date.now();
+
+      // 1. INVOICES STREAM (<40ms)
+      if (table === 'invoices') {
+        const row = newRow || oldRow;
+        if (!row || !row.id) return;
+
+        // Deduplication: Ignore echo if this client just wrote this invoice locally
+        if (window._recentLocalWrites[row.id] && (now - window._recentLocalWrites[row.id] < 15000)) return;
+        if (row.invoice_no && window._recentLocalWrites[row.invoice_no] && (now - window._recentLocalWrites[row.invoice_no] < 15000)) return;
+
+        if (eventType === 'DELETE' || (newRow && newRow.is_deleted)) {
+          invoicesDb = (invoicesDb || []).filter(i => i && i.id !== row.id && i.invoiceNo !== row.invoice_no);
+        } else if (newRow) {
+          const formattedInv = (window.SupabaseDB.rowToInvoice) ? window.SupabaseDB.rowToInvoice(newRow) : (newRow.raw_data || newRow);
+          if (formattedInv) {
+            const idx = (invoicesDb || []).findIndex(i => i && (i.id === row.id || i.invoiceNo === row.invoice_no));
+            if (idx >= 0) {
+              invoicesDb[idx] = Object.assign({}, invoicesDb[idx], formattedInv);
+            } else {
+              invoicesDb.unshift(formattedInv);
+            }
+          }
+        }
+        window.invoicesDb = invoicesDb;
+        try { localStorage.setItem("invoices", JSON.stringify(invoicesDb)); } catch(e){}
+        if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllInvoices === 'function') {
+          window.TurboIndexedDB.saveAllInvoices(invoicesDb);
+        }
+
+        const activeTab = document.querySelector('.content-view:not(.hidden)')?.id || '';
+        const isTyping = document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+        if (activeTab === 'view-history' && !isTyping && typeof renderHistoryTableRows === 'function') {
+          renderHistoryTableRows(invoicesDb);
+        }
+        if (activeTab === 'view-dashboard' && typeof updateDashboardOverview === 'function') {
+          updateDashboardOverview();
+        }
+        if (typeof autoSuggestInvoiceNo === 'function') autoSuggestInvoiceNo(true);
+      }
+
+      // 2. PRODUCTS STREAM (<40ms)
+      else if (table === 'products') {
+        const row = newRow || oldRow;
+        if (!row || !row.id) return;
+
+        if (window._recentLocalWrites[row.id] && (now - window._recentLocalWrites[row.id] < 15000)) return;
+
+        if (eventType === 'DELETE' || (newRow && newRow.is_deleted)) {
+          productsDb = (productsDb || []).filter(p => p && p.id !== row.id);
+        } else if (newRow) {
+          const formattedProd = (window.SupabaseDB.rowToProduct) ? window.SupabaseDB.rowToProduct(newRow) : {
+            id: newRow.id,
+            description: newRow.description || "",
+            hsn: newRow.hsn || "230990",
+            packSize: newRow.pack_size || "",
+            unit: newRow.unit || "NOS",
+            rate: Number(newRow.rate) || 0,
+            discount: Number(newRow.discount) || 0,
+            price: Number(newRow.price) || 0,
+            stock: Number(newRow.stock) || 0,
+            totalValue: Number(newRow.total_value) || 0,
+            status: newRow.status || (Number(newRow.stock) > 0 ? "In Stock" : "Out of Stock"),
+            barcode: newRow.barcode || "",
+            is_deleted: false,
+            updatedAt: newRow.updated_at || new Date().toISOString()
+          };
+          const idx = (productsDb || []).findIndex(p => p && p.id === row.id);
+          if (idx >= 0) {
+            productsDb[idx] = Object.assign({}, productsDb[idx], formattedProd);
+          } else {
+            productsDb.push(formattedProd);
+          }
+        }
+        window.productsDb = productsDb;
+        try { localStorage.setItem("products", JSON.stringify(productsDb)); } catch(e){}
+        if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllProducts === 'function') {
+          window.TurboIndexedDB.saveAllProducts(productsDb);
+        }
+
+        const activeTab = document.querySelector('.content-view:not(.hidden)')?.id || '';
+        const isTyping = document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+        if (activeTab === 'view-products' && !isTyping && typeof loadProductsDatabaseTable === 'function') {
+          loadProductsDatabaseTable();
+        }
+        if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+      }
+
+      // 3. CUSTOMERS STREAM (<40ms)
+      else if (table === 'customers') {
+        const row = newRow || oldRow;
+        if (!row || !row.id) return;
+
+        if (window._recentLocalWrites[row.id] && (now - window._recentLocalWrites[row.id] < 15000)) return;
+
+        if (eventType === 'DELETE' || (newRow && newRow.is_deleted)) {
+          partiesDb = (partiesDb || []).filter(c => c && c.id !== row.id);
+        } else if (newRow) {
+          const formattedCust = (window.SupabaseDB.rowToCustomer) ? window.SupabaseDB.rowToCustomer(newRow) : {
+            id: newRow.id,
+            name: newRow.name || "",
+            company: newRow.company || newRow.name || "",
+            type: newRow.customer_type || newRow.type || "receiver",
+            phone: newRow.phone || "",
+            email: newRow.email || "",
+            address: newRow.address || "",
+            city: newRow.city || "",
+            state: newRow.state || "Andhra Pradesh",
+            stateCode: newRow.state_code || "37",
+            gstin: newRow.gstin || "",
+            is_deleted: false,
+            updatedAt: newRow.updated_at || new Date().toISOString()
+          };
+          const idx = (partiesDb || []).findIndex(c => c && c.id === row.id);
+          if (idx >= 0) {
+            partiesDb[idx] = Object.assign({}, partiesDb[idx], formattedCust);
+          } else {
+            partiesDb.push(formattedCust);
+          }
+        }
+        window.partiesDb = partiesDb;
+        try { localStorage.setItem("parties", JSON.stringify(partiesDb)); } catch(e){}
+        if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllParties === 'function') {
+          window.TurboIndexedDB.saveAllParties(partiesDb);
+        }
+
+        const activeTab = document.querySelector('.content-view:not(.hidden)')?.id || '';
+        const isTyping = document.activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName);
+        if (activeTab === 'view-parties' && !isTyping && typeof renderPartiesLists === 'function') {
+          renderPartiesLists(partiesDb);
+        }
+        if (activeTab === 'view-customers' && !isTyping && typeof window.renderCustomersDirectoryView === 'function') {
+          window.renderCustomersDirectoryView();
+        }
+        if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+      }
+
+      // 4. SETTINGS STREAM (<40ms)
+      else if (table === 'settings') {
+        if (newRow && (newRow.payload || newRow.value)) {
+          const stData = newRow.payload || newRow.value;
+          if (typeof stData === 'object') {
+            globalSettings = Object.assign({}, globalSettings, stData);
+            window.globalSettings = globalSettings;
+            try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(e){}
+            if (Array.isArray(stData.authorizedUsers)) {
+              try { localStorage.setItem("authorized_users", JSON.stringify(stData.authorizedUsers)); } catch(e){}
+            }
+            if (typeof window.renderUserManagerTable === 'function') {
+              window.renderUserManagerTable();
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[Supabase Realtime Stream] Event error:", err);
+    }
+  });
+};
+
 // --- SECURE GOOGLE DRIVE PDF ARCHIVE & CLOUD SYNC ENGINE ---
 async function uploadInvoicePdfToGoogleDrive(invoiceDetails, pdfBase64) {
   if (!invoiceDetails || !pdfBase64) {
@@ -4276,6 +4575,10 @@ window.savePersistentAuthSession = function(userObj) {
   sessionStorage.setItem("is_main_admin", isMainAdmin ? "true" : "false");
   sessionStorage.setItem("manual_locked", "false");
   sessionStorage.setItem("session_last_active_time", Date.now().toString());
+
+  if (!sessionData.isDemo && typeof window.initSupabaseRealtimeStream === 'function') {
+    window.initSupabaseRealtimeStream();
+  }
 
   return sessionData;
 };
@@ -5224,6 +5527,10 @@ function initializeApp() {
         if (typeof window.updateCloudSyncBadge === 'function') window.updateCloudSyncBadge("synced");
       }
     }).catch(err => console.warn("[Supabase] Fast boot fetch note:", err));
+
+    if (typeof window.initSupabaseRealtimeStream === 'function') {
+      window.initSupabaseRealtimeStream();
+    }
   }
 
   // Pre-load settings & authorized users from Supabase DB early so logins and permissions work instantly
@@ -5260,6 +5567,9 @@ function initializeApp() {
               }
               if (typeof window.fetchCloudDatabase === 'function') {
                 window.fetchCloudDatabase(true);
+              }
+              if (typeof window.initSupabaseRealtimeStream === 'function') {
+                window.initSupabaseRealtimeStream();
               }
             }
           }

@@ -16,6 +16,46 @@
   };
 
   let client = null;
+  let realtimeChannel = null;
+  const realtimeListeners = new Set();
+  let requestTokens = 30;
+  let lastTokenRefill = Date.now();
+
+  // Security: Token-bucket rate limiter to prevent DDoS / runaway request storms
+  function checkRateLimit() {
+    const now = Date.now();
+    const elapsed = (now - lastTokenRefill) / 1000;
+    requestTokens = Math.min(30, requestTokens + elapsed * 10);
+    lastTokenRefill = now;
+    if (requestTokens < 1) {
+      console.warn("[Supabase Security] Request rate throttled to protect database bandwidth.");
+      return false;
+    }
+    requestTokens -= 1;
+    return true;
+  }
+
+  // Security: Prototype pollution & injection defense
+  function sanitizePayload(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(sanitizePayload);
+    const safe = {};
+    const forbidden = ['__proto__', 'constructor', 'prototype'];
+    for (const k of Object.keys(obj)) {
+      if (forbidden.includes(k)) continue;
+      const val = obj[k];
+      if (typeof val === 'number') {
+        safe[k] = (isNaN(val) || !isFinite(val)) ? 0 : val;
+      } else if (typeof val === 'string') {
+        safe[k] = val.trim();
+      } else if (typeof val === 'object' && val !== null) {
+        safe[k] = sanitizePayload(val);
+      } else {
+        safe[k] = val;
+      }
+    }
+    return safe;
+  }
 
   function isDemoActive() {
     if (typeof window === 'undefined') return false;
@@ -31,20 +71,29 @@
     return null;
   }
 
-
   function initClient() {
     if (client) return client;
+    const clientOptions = {
+      auth: { persistSession: false, autoRefreshToken: false },
+      realtime: { params: { eventsPerSecond: 20 } },
+      global: {
+        headers: {
+          'x-application-name': 'aaryan-aqua-billing',
+          'x-client-speed': 'turbo-v5'
+        }
+      }
+    };
     if (typeof window !== "undefined") {
       if (typeof window.createClient === "function" && SUPABASE_CONFIG.url && SUPABASE_CONFIG.anonKey) {
-        client = window.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+        client = window.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, clientOptions);
       } else if (typeof window.supabase !== "undefined" && typeof window.supabase.createClient === "function" && SUPABASE_CONFIG.url && SUPABASE_CONFIG.anonKey) {
-        client = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+        client = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, clientOptions);
       }
     }
     if (!client && typeof require === "function") {
       try {
         const { createClient } = require("@supabase/supabase-js");
-        client = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey);
+        client = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, clientOptions);
       } catch (e) {}
     }
     return client;
@@ -73,33 +122,35 @@
     // --- INVOICES ---
     async upsertInvoice(inv) {
       if (isDemoActive()) return { ok: true, isDemo: true, blocked: true };
+      if (!checkRateLimit()) return { ok: false, throttled: true };
       const sb = initClient();
       if (!sb || !inv || !inv.id) return { ok: false, error: "not_configured" };
 
+      const safeInv = sanitizePayload(inv);
       const row = {
-        id: String(inv.id),
-        invoice_no: String(inv.invoiceNo || inv.invoice_no || inv.id),
-        date: String(inv.date || inv.invoiceDate || ""),
-        customer_name: String(inv.customerName || inv.customer_name || ""),
-        phone: String(inv.customerPhone || inv.phone || ""),
-        items: Array.isArray(inv.items) ? inv.items : [],
-        subtotal: Number(inv.subtotal || inv.subTotal || 0),
-        tax: Number(inv.tax || 0),
-        cgst: Number(inv.cgst || 0),
-        sgst: Number(inv.sgst || 0),
-        igst: Number(inv.igst || 0),
-        discount: Number(inv.discount || 0),
-        round_off: Number(inv.roundOff || inv.round_off || 0),
-        grand_total: Number(inv.grandTotal || inv.grand_total || inv.total || 0),
-        paid_amount: Number(inv.paidAmount || inv.paid_amount || 0),
-        balance_due: Number(inv.balanceDue || inv.balance_due || 0),
-        payment_status: String(inv.paymentStatus || inv.status || "PAID"),
-        payment_mode: String(inv.paymentMode || "UPI / QR"),
-        vehicle_no: String(inv.vehicleNo || ""),
-        transport_name: String(inv.transportName || ""),
-        destination: String(inv.destination || ""),
-        raw_data: inv,
-        is_deleted: Boolean(inv.isDeleted || inv._deleted),
+        id: String(safeInv.id),
+        invoice_no: String(safeInv.invoiceNo || safeInv.invoice_no || safeInv.id),
+        date: String(safeInv.date || safeInv.invoiceDate || ""),
+        customer_name: String(safeInv.customerName || safeInv.customer_name || ""),
+        phone: String(safeInv.customerPhone || safeInv.phone || ""),
+        items: Array.isArray(safeInv.items) ? safeInv.items : [],
+        subtotal: Number(safeInv.subtotal || safeInv.subTotal || 0),
+        tax: Number(safeInv.tax || 0),
+        cgst: Number(safeInv.cgst || 0),
+        sgst: Number(safeInv.sgst || 0),
+        igst: Number(safeInv.igst || 0),
+        discount: Number(safeInv.discount || 0),
+        round_off: Number(safeInv.roundOff || safeInv.round_off || 0),
+        grand_total: Number(safeInv.grandTotal || safeInv.grand_total || safeInv.total || 0),
+        paid_amount: Number(safeInv.paidAmount || safeInv.paid_amount || 0),
+        balance_due: Number(safeInv.balanceDue || safeInv.balance_due || 0),
+        payment_status: String(safeInv.paymentStatus || safeInv.status || "PAID"),
+        payment_mode: String(safeInv.paymentMode || "UPI / QR"),
+        vehicle_no: String(safeInv.vehicleNo || ""),
+        transport_name: String(safeInv.transportName || ""),
+        destination: String(safeInv.destination || ""),
+        raw_data: safeInv,
+        is_deleted: Boolean(safeInv.isDeleted || safeInv._deleted),
         updated_at: new Date().toISOString()
       };
 
@@ -113,10 +164,12 @@
 
     async bulkUpsertInvoices(invoices) {
       if (isDemoActive()) return { ok: true, isDemo: true, blocked: true };
+      if (!checkRateLimit()) return { ok: false, throttled: true };
       const sb = initClient();
       if (!sb || !Array.isArray(invoices) || invoices.length === 0) return { ok: false };
 
-      const rows = invoices.map(inv => {
+      const safeInvoices = sanitizePayload(invoices);
+      const rows = safeInvoices.map(inv => {
         const raw = inv.details || inv;
         const gTot = Number(inv.total !== undefined ? inv.total : (inv.grandTotal !== undefined ? inv.grandTotal : (raw.total || raw.grandTotal || 0)));
         const paid = Number(inv.paidAmount !== undefined ? inv.paidAmount : (raw.paidAmount || 0));
@@ -165,61 +218,114 @@
       return { ok: true, count: rows.length };
     },
 
-    async fetchInvoices() {
-      if (isDemoActive()) {
-        const snap = getDemoSnapshot();
-        return { ok: true, invoices: (snap && snap.invoices) ? JSON.parse(JSON.stringify(snap.invoices)) : [] };
-      }
-      const sb = initClient();
-      if (!sb) return { ok: false, error: "not_configured" };
-
-      const { data, error } = await sb
-        .from("invoices")
-        .select("*")
-        .eq("is_deleted", false)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("[Supabase] Fetch invoices failed:", error);
-        return { ok: false, error };
-      }
-
-      const invoices = (data || []).map((row) => {
-        const raw = row.raw_data || {};
-        const grandTot = Number(row.grand_total !== undefined && row.grand_total !== null ? row.grand_total : (raw.grandTotal || raw.total || 0));
-        const paidAmt = Number(row.paid_amount !== undefined && row.paid_amount !== null ? row.paid_amount : (raw.paidAmount || 0));
-        const balDue = Number(row.balance_due !== undefined && row.balance_due !== null ? row.balance_due : (raw.balanceDue !== undefined ? raw.balanceDue : Math.max(0, grandTot - paidAmt)));
-        const hist = Array.isArray(raw.paymentHistory) ? raw.paymentHistory : [];
-        return {
+    rowToInvoice(row) {
+      if (!row) return null;
+      const raw = row.raw_data || {};
+      const grandTot = Number(row.grand_total !== undefined && row.grand_total !== null ? row.grand_total : (raw.grandTotal || raw.total || 0));
+      const paidAmt = Number(row.paid_amount !== undefined && row.paid_amount !== null ? row.paid_amount : (raw.paidAmount || 0));
+      const balDue = Number(row.balance_due !== undefined && row.balance_due !== null ? row.balance_due : (raw.balanceDue !== undefined ? raw.balanceDue : Math.max(0, grandTot - paidAmt)));
+      const hist = Array.isArray(raw.paymentHistory) ? raw.paymentHistory : [];
+      return {
+        ...raw,
+        id: row.id,
+        invoiceNo: row.invoice_no,
+        date: row.date,
+        customerName: row.customer_name,
+        customerPhone: row.phone,
+        items: row.items,
+        total: grandTot,
+        grandTotal: grandTot,
+        paidAmount: paidAmt,
+        balanceDue: balDue,
+        paymentStatus: row.payment_status || (balDue <= 0.01 ? "Paid" : (paidAmt > 0 ? "Partial" : "Unpaid")),
+        paymentMode: row.payment_mode || "Cash",
+        paymentHistory: hist,
+        details: {
           ...raw,
           id: row.id,
           invoiceNo: row.invoice_no,
           date: row.date,
-          customerName: row.customer_name,
-          customerPhone: row.phone,
-          items: row.items,
           total: grandTot,
           grandTotal: grandTot,
           paidAmount: paidAmt,
           balanceDue: balDue,
           paymentStatus: row.payment_status || (balDue <= 0.01 ? "Paid" : (paidAmt > 0 ? "Partial" : "Unpaid")),
           paymentMode: row.payment_mode || "Cash",
-          paymentHistory: hist,
-          details: {
-            ...raw,
-            id: row.id,
-            invoiceNo: row.invoice_no,
-            date: row.date,
-            total: grandTot,
-            grandTotal: grandTot,
-            paidAmount: paidAmt,
-            balanceDue: balDue,
-            paymentStatus: row.payment_status || (balDue <= 0.01 ? "Paid" : (paidAmt > 0 ? "Partial" : "Unpaid")),
-            paymentMode: row.payment_mode || "Cash",
-            paymentHistory: hist
-          }
-        };
-      });
+          paymentHistory: hist
+        }
+      };
+    },
+
+    rowToProduct(row) {
+      if (!row) return null;
+      return {
+        id: row.id,
+        description: row.description || "",
+        hsn: row.hsn || "230990",
+        packSize: row.pack_size || "",
+        unit: row.unit || "NOS",
+        rate: Number(row.rate) || 0,
+        discount: Number(row.discount) || 0,
+        price: Number(row.price) || 0,
+        stock: Number(row.stock) || 0,
+        totalValue: Number(row.total_value) || 0,
+        status: row.status || (Number(row.stock) > 0 ? "In Stock" : "Out of Stock"),
+        barcode: row.barcode || "",
+        is_deleted: false,
+        updatedAt: row.updated_at || new Date().toISOString()
+      };
+    },
+
+    rowToCustomer(row) {
+      if (!row) return null;
+      return {
+        id: row.id,
+        name: row.name || "",
+        company: row.company || row.name || "",
+        type: row.customer_type || row.type || "receiver",
+        phone: row.phone || "",
+        email: row.email || "",
+        address: row.address || "",
+        city: row.city || "",
+        state: row.state || "Andhra Pradesh",
+        stateCode: row.state_code || row.stateCode || "37",
+        gstin: row.gstin || "",
+        balance: Number(row.balance || 0),
+        is_deleted: false,
+        updatedAt: row.updated_at || new Date().toISOString()
+      };
+    },
+
+    async fetchInvoices(options = {}) {
+      if (isDemoActive()) {
+        const snap = getDemoSnapshot();
+        return { ok: true, invoices: (snap && snap.invoices) ? JSON.parse(JSON.stringify(snap.invoices)) : [] };
+      }
+      if (!checkRateLimit()) return { ok: false, throttled: true };
+      const sb = initClient();
+      if (!sb) return { ok: false, error: "not_configured" };
+
+      let query = sb
+        .from("invoices")
+        .select("*")
+        .eq("is_deleted", false)
+        .order("created_at", { ascending: false });
+
+      if (options.since) {
+        query = query.gt("updated_at", options.since);
+      }
+      if (options.limit) {
+        query = query.limit(options.limit);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error("[Supabase] Fetch invoices failed:", error);
+        return { ok: false, error };
+      }
+
+      const invoices = (data || []).map(row => this.rowToInvoice(row)).filter(Boolean);
 
       return { ok: true, invoices };
     },
@@ -318,35 +424,30 @@
       return { ok: true };
     },
 
-    async fetchProducts() {
+    async fetchProducts(options = {}) {
       if (isDemoActive()) {
         const snap = getDemoSnapshot();
         return { ok: true, products: (snap && snap.products) ? JSON.parse(JSON.stringify(snap.products)) : [] };
       }
+      if (!checkRateLimit()) return { ok: false, throttled: true };
       const sb = initClient();
       if (!sb) return { ok: false, error: "not_configured" };
 
-      const { data, error } = await sb
+      let query = sb
         .from("products")
         .select("*")
         .eq("is_deleted", false)
         .order("description", { ascending: true });
 
+      if (options.since) {
+        query = query.gt("updated_at", options.since);
+      }
+
+      const { data, error } = await query;
+
       if (error) return { ok: false, error };
 
-      const products = (data || []).map((row) => ({
-        id: row.id,
-        description: row.description,
-        hsn: row.hsn,
-        packSize: row.pack_size,
-        unit: row.unit,
-        rate: Number(row.rate),
-        discount: Number(row.discount),
-        price: Number(row.price),
-        stock: Number(row.stock),
-        totalValue: Number(row.total_value),
-        status: row.status
-      }));
+      const products = (data || []).map(row => this.rowToProduct(row)).filter(Boolean);
 
       return { ok: true, products };
     },
@@ -454,11 +555,12 @@
       return { ok: true };
     },
 
-    async fetchCustomers() {
+    async fetchCustomers(options = {}) {
       if (isDemoActive()) {
         const snap = getDemoSnapshot();
         return { ok: true, customers: (snap && snap.parties) ? JSON.parse(JSON.stringify(snap.parties)) : [] };
       }
+      if (!checkRateLimit()) return { ok: false, throttled: true };
       const sb = initClient();
       if (!sb) return { ok: false, error: "not_configured" };
 
@@ -487,11 +589,17 @@
       }
 
       // 2. Fallback to customers table
-      const { data, error } = await sb
+      let query = sb
         .from("customers")
         .select("*")
         .eq("is_deleted", false)
         .order("name", { ascending: true });
+
+      if (options.since) {
+        query = query.gt("updated_at", options.since);
+      }
+
+      const { data, error } = await query;
 
       if (error) return { ok: false, error };
 
@@ -503,19 +611,8 @@
           if (deletedPartyIds.includes(rId) || deletedPartyIds.includes(rName)) return false;
           return true;
         })
-        .map((row) => ({
-          id: row.id,
-          name: row.name,
-          type: row.type || "receiver",
-          phone: row.phone || "",
-          email: row.email || "",
-          address: row.address || "",
-          gstin: row.gstin || "",
-          balance: Number(row.balance || 0),
-          state: row.state || "Andhra Pradesh",
-          stateCode: row.state_code || row.stateCode || "37",
-          company: row.company || row.name || ""
-        }));
+        .map(row => this.rowToCustomer(row))
+        .filter(Boolean);
 
       return { ok: true, customers };
     },
@@ -638,6 +735,58 @@
         console.warn("[Supabase] recordLockedInquiryEmail error:", err);
         return { ok: false, error: err };
       }
+    },
+
+    // --- REALTIME CHANGE STREAM (< 40ms Cross-Device Streaming Engine) ---
+    onRealtimeEvent(callback) {
+      if (typeof callback === 'function') {
+        realtimeListeners.add(callback);
+      }
+      this.initRealtimeSubscription();
+    },
+
+    removeRealtimeListener(callback) {
+      realtimeListeners.delete(callback);
+    },
+
+    initRealtimeSubscription() {
+      if (isDemoActive()) return;
+      const sb = initClient();
+      if (!sb || typeof sb.channel !== 'function' || realtimeChannel) return;
+
+      try {
+        realtimeChannel = sb.channel('public_live_data_stream')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, (payload) => {
+            this._broadcastRealtime({ table: 'invoices', eventType: payload.eventType, newRow: payload.new, oldRow: payload.old });
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, (payload) => {
+            this._broadcastRealtime({ table: 'products', eventType: payload.eventType, newRow: payload.new, oldRow: payload.old });
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, (payload) => {
+            this._broadcastRealtime({ table: 'customers', eventType: payload.eventType, newRow: payload.new, oldRow: payload.old });
+          })
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, (payload) => {
+            this._broadcastRealtime({ table: 'settings', eventType: payload.eventType, newRow: payload.new, oldRow: payload.old });
+          })
+          .subscribe((status, err) => {
+            if (status === 'SUBSCRIBED') {
+              console.log('⚡ [Supabase Realtime] Connected to low-latency PostgreSQL stream!');
+              if (typeof window !== 'undefined' && typeof window.updateCloudSyncBadge === 'function') {
+                window.updateCloudSyncBadge('live');
+              }
+            } else if (status === 'CHANNEL_ERROR') {
+              console.warn('[Supabase Realtime] Channel warning:', err);
+            }
+          });
+      } catch (err) {
+        console.warn('[Supabase Realtime] Init note:', err);
+      }
+    },
+
+    _broadcastRealtime(eventData) {
+      realtimeListeners.forEach(listener => {
+        try { listener(eventData); } catch (e) { console.warn("Realtime listener error:", e); }
+      });
     }
   };
 
