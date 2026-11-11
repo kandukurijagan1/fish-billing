@@ -5187,6 +5187,21 @@ function initializeApp() {
     }).catch(err => console.warn("[Supabase] Fast boot fetch note:", err));
   }
 
+  // Pre-load settings & authorized users from Supabase DB early so logins and permissions work instantly
+  if (window.SupabaseDB && typeof window.SupabaseDB.fetchSettings === 'function') {
+    window.SupabaseDB.fetchSettings().then(setRes => {
+      if (setRes && setRes.ok && setRes.settings) {
+        if (typeof globalSettings !== 'undefined') {
+          globalSettings = Object.assign({}, globalSettings, setRes.settings);
+          try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(_) {}
+        }
+        if (Array.isArray(setRes.settings.authorizedUsers)) {
+          window.saveAuthorizedUsersList(setRes.settings.authorizedUsers, true);
+        }
+      }
+    }).catch(err => console.warn("[Supabase] Early settings boot note:", err));
+  }
+
   // Background non-blocking Google Apps Script sync (does not block UI rendering)
   setTimeout(() => {
     if (typeof window.triggerDatabaseSync === 'function') {
@@ -9277,7 +9292,26 @@ window.hideAppModal = function(modalOrId) {
   return modal;
 };
 
+// Strict Demo Mode & View-Only Guard for Barcode & QR Camera Scanner
+window.isScannerRestrictedInDemo = function() {
+  return (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
+         (typeof window.isDemoMode === 'function' && window.isDemoMode()) ||
+         (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer" || sessionStorage.getItem("current_user_role") === "guest" || sessionStorage.getItem("current_user_role") === "demo")) ||
+         (typeof localStorage !== 'undefined' && localStorage.getItem("is_demo_mode") === "true") ||
+         (document.body && (document.body.classList.contains("view-only-mode") || document.body.classList.contains("demo-mode-active") || document.body.getAttribute("data-role") === "viewer" || document.body.getAttribute("data-role") === "guest" || document.body.getAttribute("data-role") === "demo")) ||
+         (document.documentElement && (document.documentElement.classList.contains("view-only-mode") || document.documentElement.classList.contains("demo-mode-active")));
+};
+
 window.openBarcodeScannerModal = async function(initialTab = 'camera') {
+  if (window.isScannerRestrictedInDemo && window.isScannerRestrictedInDemo()) {
+    if (typeof window.showProductBuyModal === 'function') {
+      window.showProductBuyModal("🔒 Barcode & QR Scanner is strictly disabled in Demo Mode. Available exclusively on Commercial Staff & Admin accounts.");
+    } else if (typeof showFloatingToast === 'function') {
+      showFloatingToast("🔒 Barcode & QR Scanner is strictly disabled in Demo Mode.", "warning", 5000);
+    }
+    return;
+  }
+
   const modal = window.showAppModal("barcode-scanner-modal");
   if (!modal) return;
 
@@ -9304,6 +9338,7 @@ window.closeBarcodeScannerModal = function() {
 };
 
 window.switchScannerTab = async function(tab) {
+  if (window.isScannerRestrictedInDemo && window.isScannerRestrictedInDemo()) return;
   const btnCamera = document.getElementById("scanner-tab-btn-camera");
   const btnUpload = document.getElementById("scanner-tab-btn-upload");
   const paneCamera = document.getElementById("scanner-tab-camera-pane");
@@ -9325,6 +9360,10 @@ window.switchScannerTab = async function(tab) {
 };
 
 async function startBarcodeCamera() {
+  if (window.isScannerRestrictedInDemo && window.isScannerRestrictedInDemo()) {
+    stopBarcodeCamera();
+    return;
+  }
   const video = document.getElementById("barcode-scanner-video");
   const statusEl = document.getElementById("barcode-camera-status");
   const laserLine = document.getElementById("barcode-laser-line");
@@ -10057,6 +10096,13 @@ async function scanCanvasMultiPass(canvas, startTime) {
 }
 
 window.handleDeviceQrFileInput = function(event) {
+  if (window.isScannerRestrictedInDemo && window.isScannerRestrictedInDemo()) {
+    event.target.value = "";
+    if (typeof window.showProductBuyModal === 'function') {
+      window.showProductBuyModal("🔒 Barcode & QR Scanner is strictly disabled in Demo Mode. Available exclusively on Commercial Staff & Admin accounts.");
+    }
+    return;
+  }
   const file = event.target.files?.[0];
   if (file) {
     window.handleDeviceQrFile(file, 'file_picker');
@@ -10066,6 +10112,12 @@ window.handleDeviceQrFileInput = function(event) {
 
 window.handleDeviceQrFile = async function(file, source = 'upload') {
   if (!file) return;
+  if (window.isScannerRestrictedInDemo && window.isScannerRestrictedInDemo()) {
+    if (typeof window.showProductBuyModal === 'function') {
+      window.showProductBuyModal("🔒 Barcode & QR Scanner is strictly disabled in Demo Mode. Available exclusively on Commercial Staff & Admin accounts.");
+    }
+    return;
+  }
 
   const previewWrap = document.getElementById("qr-upload-preview-wrap");
   const previewImg = document.getElementById("qr-upload-preview-img");
@@ -10216,6 +10268,7 @@ window.handleQrDropLeave = function(e) {
 window.handleQrDrop = function(e) {
   e.preventDefault();
   e.stopPropagation();
+  if (window.isScannerRestrictedInDemo && window.isScannerRestrictedInDemo()) return;
   const dz = document.getElementById("qr-dropzone");
   if (dz) dz.classList.remove("dragover");
   const file = e.dataTransfer?.files?.[0];
@@ -10226,6 +10279,7 @@ window.handleQrDrop = function(e) {
 
 // Clipboard Paste Interceptor for instant screenshot scanning
 window.addEventListener('paste', function(e) {
+  if (window.isScannerRestrictedInDemo && window.isScannerRestrictedInDemo()) return;
   const items = (e.clipboardData || window.clipboardData)?.items;
   if (!items) return;
   for (let i = 0; i < items.length; i++) {
@@ -10247,6 +10301,12 @@ window.addEventListener('paste', function(e) {
 });
 
 window.testSampleInvoiceQrUpload = function() {
+  if (window.isScannerRestrictedInDemo && window.isScannerRestrictedInDemo()) {
+    if (typeof window.showProductBuyModal === 'function') {
+      window.showProductBuyModal("🔒 Barcode & QR Scanner is strictly disabled in Demo Mode. Available exclusively on Commercial Staff & Admin accounts.");
+    }
+    return;
+  }
   const testInv = (typeof invoicesDb !== "undefined" && invoicesDb.length > 0)
     ? invoicesDb[0]
     : { invoiceNo: "INV-2026-0001", total: 3599, paidAmount: 1599, balanceDue: 2000, buyerName: "Devi Fisheries" };
@@ -18765,7 +18825,13 @@ window.getAuthorizedUsersList = function() {
       const rawRevoked = localStorage.getItem("revoked_authorized_emails");
       if (rawRevoked) revoked = JSON.parse(rawRevoked);
     } catch(_) {}
-    const isRevoked = (em) => Array.isArray(revoked) && revoked.includes(String(em).toLowerCase().trim());
+    const isRevoked = (em) => {
+      const normEm = String(em || "").toLowerCase().trim();
+      if (cloudList && cloudList.some(u => (u.email || "").toLowerCase().trim() === normEm && String(u.status || "active").toLowerCase() === "active")) {
+        return false;
+      }
+      return Array.isArray(revoked) && revoked.includes(normEm);
+    };
 
     // Single source of truth: cloudList (from Supabase) takes absolute priority; fallback to localList
     const sourceArr = cloudList !== null ? cloudList : (localList !== null ? localList : (window.DEFAULT_AUTHORIZED_USERS || []));
@@ -18812,36 +18878,33 @@ window.getAuthorizedUsersList = function() {
 window.cleanStorageOfUnauthorizedUsers = function() {
   try {
     const bannedEmails = window.BANNED_EMAILS || ["nenduku644@gmail.com"];
-    const deletedLegacyEmails = [
-      "kandukurijagan7@gmail.com",
-      "kandukurijagan642@gmail.com",
-      "192472374.simats@saveetha.com",
-      "endukuniku35@gmail.com",
-      "kandukurijagan@gmail.com"
-    ];
-
     const shouldPurge = (e) => {
       const norm = (e || "").toLowerCase().trim();
-      return bannedEmails.some(b => b.toLowerCase().trim() === norm) ||
-             deletedLegacyEmails.some(d => d.toLowerCase().trim() === norm);
+      return bannedEmails.some(b => b.toLowerCase().trim() === norm);
     };
 
-    // Auto-tombstone permanently deleted legacy emails into localStorage
+    // Auto-clean revoked tombstone list in localStorage:
+    // If an email is currently present in authorized users (cloud or local), un-tombstone it!
     try {
       let revoked = [];
       const rawRevoked = localStorage.getItem("revoked_authorized_emails");
       if (rawRevoked) {
         try { revoked = JSON.parse(rawRevoked); } catch(_) {}
       }
-      if (!Array.isArray(revoked)) revoked = [];
-      deletedLegacyEmails.forEach(em => {
-        const norm = em.toLowerCase().trim();
-        if (!revoked.includes(norm)) revoked.push(norm);
-      });
-      localStorage.setItem("revoked_authorized_emails", JSON.stringify(revoked));
+      if (Array.isArray(revoked)) {
+        let authorizedEmails = [];
+        if (typeof globalSettings !== 'undefined' && Array.isArray(globalSettings.authorizedUsers)) {
+          authorizedEmails = globalSettings.authorizedUsers.map(u => (u.email || "").toLowerCase().trim());
+        }
+        revoked = revoked.filter(em => {
+          const norm = (em || "").toLowerCase().trim();
+          return !authorizedEmails.includes(norm) && bannedEmails.includes(norm);
+        });
+        localStorage.setItem("revoked_authorized_emails", JSON.stringify(revoked));
+      }
     } catch(_) {}
 
-    // 1. Scrub from authorized_users localStorage
+    // 1. Scrub banned emails from authorized_users localStorage
     const rawLocal = localStorage.getItem("authorized_users");
     if (rawLocal) {
       try {
@@ -18853,13 +18916,13 @@ window.cleanStorageOfUnauthorizedUsers = function() {
       } catch(_) {}
     }
 
-    // 2. Scrub from globalSettings
+    // 2. Scrub banned emails from globalSettings
     if (typeof globalSettings !== 'undefined' && Array.isArray(globalSettings.authorizedUsers)) {
       globalSettings.authorizedUsers = globalSettings.authorizedUsers.filter(u => u && u.email && !shouldPurge(u.email));
       try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch (_) {}
     }
 
-    // 3. CRITICAL: Clear persistent auth session if it belongs to a purged email
+    // 3. Clear persistent auth session ONLY if it belongs to a genuinely banned email
     try {
       const rawSession = localStorage.getItem("aaryan_auth_session");
       if (rawSession) {
@@ -18870,12 +18933,12 @@ window.cleanStorageOfUnauthorizedUsers = function() {
           localStorage.removeItem("app_locked");
           localStorage.setItem("is_demo_mode", "true");
           localStorage.removeItem("last_logged_in_email");
-          console.warn("[SECURITY] Cleared persistent session for purged email:", sess.email);
+          console.warn("[SECURITY] Cleared persistent session for banned email:", sess.email);
         }
       }
     } catch(_) {}
 
-    // 4. Clear sessionStorage if current user is purged
+    // 4. Clear sessionStorage ONLY if current user is banned
     try {
       const sessEmail = sessionStorage.getItem("current_user_email");
       if (sessEmail && shouldPurge(sessEmail)) {
@@ -18883,7 +18946,7 @@ window.cleanStorageOfUnauthorizedUsers = function() {
         sessionStorage.setItem("is_demo_mode", "true");
         sessionStorage.setItem("is_main_admin", "false");
         localStorage.setItem("is_demo_mode", "true");
-        console.warn("[SECURITY] Forced viewer role for purged email in session:", sessEmail);
+        console.warn("[SECURITY] Forced viewer role for banned email in session:", sessEmail);
       }
     } catch(_) {}
   } catch (_) {}
@@ -18895,17 +18958,10 @@ window.isUserAuthorizedByAdmin = function(email) {
   const norm = (email || "").toLowerCase().trim();
   if (!norm) return false;
 
-  // BANNED or REVOKED emails are NEVER authorized
+  // BANNED emails are NEVER authorized
   if (typeof window.isEmailBanned === 'function' && window.isEmailBanned(norm)) {
     return false;
   }
-  try {
-    const rawRevoked = localStorage.getItem("revoked_authorized_emails");
-    if (rawRevoked) {
-      const revoked = JSON.parse(rawRevoked);
-      if (Array.isArray(revoked) && revoked.includes(norm)) return false;
-    }
-  } catch(_) {}
 
   const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
   if (norm === mainAdminNorm) return true;
@@ -19014,7 +19070,28 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
   // STRICT ACCESS CONTROL: ONLY Main Admin or users explicitly added by Main Admin can open the system!
   let isAuthorized = window.isUserAuthorizedByAdmin(normEmail);
 
-  // If local check fails (e.g. on a new device with empty localStorage), fallback to Cloud Sync verify
+  // If local check fails (e.g. on a new device with empty localStorage), check Supabase PostgreSQL first!
+  if (!isAuthorized && window.SupabaseDB && typeof window.SupabaseDB.fetchSettings === 'function') {
+    try {
+      const sbRes = await window.SupabaseDB.fetchSettings();
+      if (sbRes && sbRes.ok && sbRes.settings) {
+        const cloudSett = sbRes.settings;
+        const authList = cloudSett.authorizedUsers || cloudSett.authorized_users;
+        if (Array.isArray(authList)) {
+          if (typeof globalSettings !== 'undefined') {
+            globalSettings = Object.assign({}, globalSettings, cloudSett);
+            try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(_) {}
+          }
+          window.saveAuthorizedUsersList(authList, true);
+          isAuthorized = window.isUserAuthorizedByAdmin(normEmail);
+        }
+      }
+    } catch(sbErr) {
+      console.warn("[Supabase] Cloud auth check failed:", sbErr);
+    }
+  }
+
+  // Fallback to Google Apps Script sync verify if still not verified
   if (!isAuthorized && typeof GOOGLE_SCRIPT_URL !== 'undefined') {
     try {
       if (typeof showFloatingToast === 'function') {
@@ -19319,12 +19396,12 @@ window.closeUserModal = function() {
   }
 };
 
-window.saveUserAccessSubmit = function(e) {
+window.saveUserAccessSubmit = async function(e) {
   if (e && e.preventDefault) e.preventDefault();
   const origEmail = (document.getElementById("user-edit-orig-email")?.value || "").toLowerCase().trim();
   const email = (document.getElementById("user-input-email")?.value || "").toLowerCase().trim();
   const name = (document.getElementById("user-input-name")?.value || "").trim();
-  const role = document.getElementById("user-input-role")?.value || "customer";
+  const role = document.getElementById("user-input-role")?.value || "admin";
   const status = document.getElementById("user-input-status")?.value || "active";
   const password = document.getElementById("user-input-password")?.value || "";
 
@@ -19333,19 +19410,35 @@ window.saveUserAccessSubmit = function(e) {
     return;
   }
 
-  if (email === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim() && origEmail !== email) {
+  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  if (email === mainAdminNorm && origEmail !== email) {
     showFloatingToast("⚠️ kandukurijagan99@gmail.com is already the permanent Main Admin!", "warning");
     return;
   }
+
+  // 1. Remove from revoked_authorized_emails so they are fully unblocked
+  try {
+    let revoked = [];
+    const rawRevoked = localStorage.getItem("revoked_authorized_emails");
+    if (rawRevoked) {
+      try { revoked = JSON.parse(rawRevoked); } catch(_) {}
+    }
+    if (Array.isArray(revoked)) {
+      revoked = revoked.filter(r => {
+        const normR = String(r || "").toLowerCase().trim();
+        return normR !== email && normR !== origEmail;
+      });
+      localStorage.setItem("revoked_authorized_emails", JSON.stringify(revoked));
+    }
+  } catch(_) {}
 
   const list = window.getAuthorizedUsersList();
   const targetEmail = origEmail || email;
   const existingIdx = list.findIndex(u => (u.email || "").toLowerCase().trim() === targetEmail);
 
-  const mainAdminNorm = window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
-
   if (existingIdx !== -1) {
     // Edit existing user
+    list[existingIdx].email = email;
     list[existingIdx].name = name;
     list[existingIdx].password = password;
     list[existingIdx].role = role;
@@ -19371,6 +19464,23 @@ window.saveUserAccessSubmit = function(e) {
   }
 
   window.saveAuthorizedUsersList(list);
+
+  // Persist directly to Supabase PostgreSQL DB!
+  if (typeof globalSettings !== 'undefined') {
+    globalSettings.authorizedUsers = list;
+    if (window.SupabaseDB && typeof window.SupabaseDB.saveSettings === 'function') {
+      try {
+        await window.SupabaseDB.saveSettings(globalSettings);
+      } catch(err) {
+        console.warn("[Supabase] Failed to persist user to Supabase:", err);
+      }
+    }
+  }
+
+  if (typeof window.renderUserManagerTable === 'function') {
+    window.renderUserManagerTable();
+  }
+
   window.closeUserModal();
 };
 
@@ -19493,6 +19603,14 @@ window.applyRolePermissions = function(role) {
       b.style.setProperty("visibility", "hidden", "important");
       b.style.setProperty("pointer-events", "none", "important");
     });
+    const bScanMod = document.getElementById("barcode-scanner-modal");
+    if (bScanMod) {
+      if (typeof window.closeBarcodeScannerModal === 'function') window.closeBarcodeScannerModal();
+      bScanMod.classList.add("hidden");
+      bScanMod.style.setProperty("display", "none", "important");
+      bScanMod.style.setProperty("visibility", "hidden", "important");
+      bScanMod.style.setProperty("pointer-events", "none", "important");
+    }
     const floatMsgWidget = document.getElementById("demo-floating-message-widget");
     if (floatMsgWidget) floatMsgWidget.style.setProperty("display", "flex", "important");
     const billingMsgCard = document.getElementById("demo-billing-message-card");
@@ -20338,6 +20456,53 @@ window.handleTraditionalLoginSubmit = async function(e) {
       role: "admin",
       status: "active"
     };
+  }
+
+  // Step 2.9: If not validated yet, fetch fresh settings from Supabase DB immediately
+  if (!isOtpValid && window.SupabaseDB && typeof window.SupabaseDB.fetchSettings === 'function') {
+    try {
+      const sbRes = await window.SupabaseDB.fetchSettings();
+      if (sbRes && sbRes.ok && sbRes.settings) {
+        const cloudSett = sbRes.settings;
+        const authList = cloudSett.authorizedUsers || cloudSett.authorized_users;
+        if (Array.isArray(authList)) {
+          if (typeof globalSettings !== 'undefined') {
+            globalSettings = Object.assign({}, globalSettings, cloudSett);
+            try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(_) {}
+          }
+          window.saveAuthorizedUsersList(authList, true);
+          const freshList = window.getAuthorizedUsersList();
+          matchedUser = freshList.find(u => (u.email || "").toLowerCase().trim() === enteredEmail);
+          if (matchedUser) {
+            if (matchedUser.status === "suspended") {
+              if (submitBtn) submitBtn.disabled = false;
+              if (btnText) btnText.classList.remove("hidden");
+              if (btnSpinner) btnSpinner.classList.add("hidden");
+              if (errBlock) {
+                errBlock.innerHTML = `
+                  <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px; text-align: left;">
+                    <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+                      <i class="fa-solid fa-user-lock"></i> Account Suspended
+                    </div>
+                    <div style="font-size: 11.5px; color: #cbd5e1;">
+                      Your account (<strong style="color: #fca5a5;">${escapeHtml(enteredEmail)}</strong>) has been paused by the Main Admin.
+                    </div>
+                  </div>
+                `;
+                errBlock.classList.remove("hidden");
+              }
+              return;
+            }
+            if (checkUserPassword(matchedUser, enteredPass) || enteredPass === sysPin || enteredPass === "2024") {
+              isOtpValid = true;
+              verifiedRole = matchedUser.role || "admin";
+            }
+          }
+        }
+      }
+    } catch(sbErr) {
+      console.warn("[Supabase] Cloud credentials check:", sbErr);
+    }
   }
 
   // Step 3: If not validated yet, fetch fresh settings from Google Cloud (in case admin added user on another device)

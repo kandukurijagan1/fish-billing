@@ -11963,7 +11963,14 @@ body[data-role="guest"] #customer-details-modal,
 body.app-is-locked #customer-details-modal,
 body.view-only-mode #balance-qr-modal,
 body[data-role="viewer"] #balance-qr-modal,
-body[data-role="demo"] #balance-qr-modal {
+body[data-role="demo"] #balance-qr-modal,
+body.view-only-mode #barcode-scanner-modal,
+body[data-role="viewer"] #barcode-scanner-modal,
+body[data-role="demo"] #barcode-scanner-modal,
+body[data-role="guest"] #barcode-scanner-modal,
+body.demo-mode-active #barcode-scanner-modal,
+html.view-only-mode #barcode-scanner-modal,
+html.demo-mode-active #barcode-scanner-modal {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
