@@ -303,14 +303,13 @@ window.isDemoMode = function() {
 
   // Check if active user is an authorized staff/admin
   if (typeof window.isUserAuthorizedByAdmin === 'function' && currentEmail && window.isUserAuthorizedByAdmin(currentEmail)) {
-    const list = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
-    const u = list.find(x => (x.email || "").toLowerCase().trim() === currentEmail);
-    if (u && String(u.status || 'active').toLowerCase() === 'active') {
-      const uRole = String(u.role || '').toLowerCase();
-      if (['super_admin', 'admin', 'administrator', 'operator', 'billing operator', 'staff', 'cashier', 'editor', 'billing'].includes(uRole)) {
-        return false;
-      }
-    }
+    try {
+      localStorage.removeItem("is_demo_mode");
+      sessionStorage.removeItem("is_demo_mode");
+      sessionStorage.setItem("is_demo_mode", "false");
+      localStorage.setItem("is_demo_mode", "false");
+    } catch(e) {}
+    return false;
   }
 
   // Explicit demo session flags (Per-tab session scoped)
@@ -4371,7 +4370,19 @@ window.isViewOnlyUser = function() {
     return true;
   }
 
-  // 3. Explicit demo/viewer mode flag
+  // 3. PRIORITY CHECK: Is currentEmail an AUTHORIZED admin or staff in the database?
+  // If authorized by Main Admin, they are NEVER view-only! Stale demo flags MUST be cleared!
+  if (currentEmail && typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(currentEmail)) {
+    try {
+      localStorage.removeItem("is_demo_mode");
+      sessionStorage.removeItem("is_demo_mode");
+      sessionStorage.setItem("is_demo_mode", "false");
+      localStorage.setItem("is_demo_mode", "false");
+    } catch(e) {}
+    return false;
+  }
+
+  // 4. Explicit demo/viewer mode flag (ONLY applies to un-authorized users)
   if (sessionStorage.getItem("is_demo_mode") === "true" || localStorage.getItem("is_demo_mode") === "true") {
     return true;
   }
@@ -4443,6 +4454,34 @@ window.isCustomerAccount = function() {
 
 window.loginAsFreeViewer = function(customData = {}) {
   const email = (customData.email || "demo@viewer.com").toLowerCase().trim();
+  // CRITICAL: If this email is genuinely authorized by Main Admin, promote to Administrator immediately!
+  if (typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(email)) {
+    console.log("[AUTH] Bypassing loginAsFreeViewer for authorized admin/staff:", email);
+    const list = window.getAuthorizedUsersList ? window.getAuthorizedUsersList() : [];
+    const u = list.find(x => (x.email || "").toLowerCase().trim() === email);
+    const role = (u && u.role) ? u.role : "admin";
+    const name = (u && u.name) ? u.name : email.split("@")[0];
+    sessionStorage.removeItem("is_demo_mode");
+    localStorage.removeItem("is_demo_mode");
+    sessionStorage.setItem("is_demo_mode", "false");
+    localStorage.setItem("is_demo_mode", "false");
+    sessionStorage.setItem("session_authenticated", "true");
+    sessionStorage.setItem("current_user_email", email);
+    sessionStorage.setItem("current_user_name", name);
+    sessionStorage.setItem("current_user_role", role);
+    if (typeof window.savePersistentAuthSession === 'function') {
+      window.savePersistentAuthSession({
+        email: email,
+        name: name,
+        role: role,
+        isMainAdmin: false
+      });
+    }
+    if (typeof unlockSystemSilently === 'function') unlockSystemSilently(true);
+    if (typeof window.applyRolePermissions === 'function') window.applyRolePermissions(role);
+    return;
+  }
+
   const name = customData.name || (customData.email ? customData.email.split("@")[0] : "Prospective Buyer");
 
   sessionStorage.setItem("current_user_email", email);
@@ -5437,8 +5476,19 @@ function initializeApp() {
   let canStayUnlocked = false;
   let candidateEmail = (savedSession?.email || sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
 
-  // FREE VIEW MODE CHECK - If user is in Free View mode, DO NOT PURGE OR LOCK OUT!
-  const isDemoSession = (
+  // If candidate is an authorized admin/staff, CLEAR all demo flags!
+  const isCandidateAuthorized = candidateEmail && typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(candidateEmail);
+  if (isCandidateAuthorized) {
+    try {
+      localStorage.removeItem("is_demo_mode");
+      sessionStorage.removeItem("is_demo_mode");
+      sessionStorage.setItem("is_demo_mode", "false");
+      localStorage.setItem("is_demo_mode", "false");
+    } catch(e) {}
+  }
+
+  // FREE VIEW MODE CHECK - ONLY for non-authorized users!
+  const isDemoSession = !isCandidateAuthorized && (
     sessionStorage.getItem("is_demo_mode") === "true" || 
     localStorage.getItem("is_demo_mode") === "true" || 
     savedSession?.role === "viewer" ||
@@ -18491,6 +18541,9 @@ window.triggerUserLogout = function(shouldBroadcast = true) {
   sessionStorage.clear();
   localStorage.setItem("app_locked", "true");
   localStorage.removeItem("app_authenticated");
+  localStorage.removeItem("is_demo_mode");
+  sessionStorage.removeItem("is_demo_mode");
+  localStorage.removeItem("aaryan_auth_session");
   isLocked = true;
   document.body.classList.add("app-is-locked");
 
