@@ -1,3 +1,57 @@
+// ============================================================================
+// IMMEDIATE GOOGLE OAUTH REDIRECT PARSER (#access_token=)
+// ============================================================================
+(function checkGoogleOAuthHashRedirect() {
+  try {
+    if (typeof window === 'undefined' || !window.location) return;
+    const hash = window.location.hash || '';
+    if (hash.includes('access_token=')) {
+      const hashParams = new URLSearchParams(hash.startsWith('#') ? hash.substring(1) : hash);
+      const accessToken = hashParams.get('access_token');
+      if (accessToken) {
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, document.title, window.location.pathname + window.location.search);
+        }
+        if (window.opener) {
+          try {
+            if (typeof window.opener.handleGoogleOAuthAccessToken === 'function') {
+              window.opener.handleGoogleOAuthAccessToken(accessToken);
+            } else {
+              window.opener.postMessage({ type: 'GOOGLE_OAUTH_TOKEN', accessToken: accessToken }, '*');
+            }
+          } catch (e) {
+            window.opener.postMessage({ type: 'GOOGLE_OAUTH_TOKEN', accessToken: accessToken }, '*');
+          }
+          window.close();
+          return;
+        }
+        const runAuth = () => {
+          if (typeof window.handleGoogleOAuthAccessToken === 'function') {
+            window.handleGoogleOAuthAccessToken(accessToken);
+          }
+        };
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', runAuth);
+        } else {
+          runAuth();
+        }
+      }
+    }
+  } catch (err) {
+    console.error("OAuth hash check error:", err);
+  }
+})();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'GOOGLE_OAUTH_TOKEN' && event.data.accessToken) {
+      if (typeof window.handleGoogleOAuthAccessToken === 'function') {
+        window.handleGoogleOAuthAccessToken(event.data.accessToken);
+      }
+    }
+  });
+}
+
 // Authoritative Initial Snapshot Fallback (<0.1ms Instant Local Seeding)
 var _dbExport = ((function() { try { return require('./initial_db.js'); } catch(e) { return {}; } })());
 var INITIAL_BOOTSTRAP_SNAPSHOT = (typeof window !== 'undefined' && window.INITIAL_BOOTSTRAP_SNAPSHOT)
@@ -20821,16 +20875,20 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
   }
 
   if (!isAuthorized) {
-    console.log("Commercial product tier: unknown user granted Limited Read-Only View Access:", normEmail);
-    window.loginAsFreeViewer({
-      email: normEmail,
-      name: displayName || normEmail.split("@")[0],
-      isGuest: true
-    });
-    if (typeof showFloatingToast === 'function') {
-      showFloatingToast(`👁️ Logged in with Limited Read-Only Access. You can view GST Billing, Invoices & Products. Editing/actions are restricted.`, "info", 6500);
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+            <i class="fa-solid fa-lock"></i> Access Denied
+          </div>
+          <div style="font-size: 11.5px; color: #cbd5e1;">
+            Google account <strong style="color: #fca5a5;">${escapeHtml(normEmail)}</strong> is not authorized. Access is strictly restricted to <strong style="color: #38bdf8;">${escapeHtml(window.AUTHORIZED_LOGIN_EMAIL)}</strong>.
+          </div>
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
     }
-    return true;
+    return false;
   }
 
   const usersList = window.getAuthorizedUsersList();
@@ -20839,12 +20897,20 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
     : usersList.find(u => (u.email || "").toLowerCase().trim() === normEmail && u.status === "active");
 
   if (!matchedUser) {
-    window.loginAsFreeViewer({
-      email: normEmail,
-      name: displayName || normEmail.split("@")[0],
-      isGuest: true
-    });
-    return true;
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+            <i class="fa-solid fa-lock"></i> User Record Not Found
+          </div>
+          <div style="font-size: 11.5px; color: #cbd5e1;">
+            Account <strong style="color: #fca5a5;">${escapeHtml(normEmail)}</strong> is not registered.
+          </div>
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+    return false;
   }
 
   if (matchedUser.status === "suspended") {
@@ -20898,6 +20964,42 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
   return true;
 };
 
+window.handleGoogleOAuthAccessToken = async function(token) {
+  if (!token) return;
+  const errBlock = document.getElementById("login-error-message");
+  if (errBlock) errBlock.classList.add("hidden");
+
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error("Google userinfo HTTP " + res.status);
+    const userInfo = await res.json();
+    const authedEmail = (userInfo?.email || "").toLowerCase().trim();
+    const displayName = userInfo?.name || userInfo?.given_name || "";
+    if (authedEmail) {
+      window.verifyAndAuthorizeUser(authedEmail, displayName);
+    } else {
+      throw new Error("No verified email returned by Google account");
+    }
+  } catch (err) {
+    console.error("Failed fetching userinfo from Google:", err);
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+            <i class="fa-solid fa-triangle-exclamation"></i> Google Sign-In Error
+          </div>
+          <div style="font-size: 11.5px; color: #cbd5e1;">
+            Could not verify Google account: ${escapeHtml(err.message || "Network error")}. Please try again.
+          </div>
+        </div>
+      `;
+      errBlock.classList.remove("hidden");
+    }
+  }
+};
+
 window.handleGoogleCredentialResponse = function(response) {
   if (!response || !response.credential) return;
   const payload = parseGoogleJwt(response.credential);
@@ -20906,11 +21008,38 @@ window.handleGoogleCredentialResponse = function(response) {
   window.verifyAndAuthorizeUser(email, name);
 };
 
-window.triggerDirectGoogleAuth = function() {
+window.triggerDirectGoogleAuth = async function() {
   const errBlock = document.getElementById("login-error-message");
   if (errBlock) errBlock.classList.add("hidden");
 
-  // 1. Google Identity Services One-Tap / Account prompt
+  // 1. Electron Desktop App native Google OAuth via IPC
+  if (window.electronAPI && typeof window.electronAPI.startGoogleOAuth === 'function') {
+    try {
+      const res = await window.electronAPI.startGoogleOAuth();
+      if (res && res.accessToken) {
+        window.handleGoogleOAuthAccessToken(res.accessToken);
+        return;
+      } else if (res && res.error) {
+        if (errBlock) {
+          errBlock.innerHTML = `
+            <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+              <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+                <i class="fa-solid fa-triangle-exclamation"></i> Desktop Google Auth
+              </div>
+              <div style="font-size: 11.5px; color: #cbd5e1;">${escapeHtml(res.error)}</div>
+            </div>`;
+          errBlock.classList.remove("hidden");
+        }
+        return;
+      } else if (res && res.cancelled) {
+        return;
+      }
+    } catch (e) {
+      console.warn("Electron Google OAuth invocation error:", e);
+    }
+  }
+
+  // 2. Google Identity Services One-Tap / Account prompt
   if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
     try {
       google.accounts.id.prompt((notification) => {
@@ -20921,7 +21050,7 @@ window.triggerDirectGoogleAuth = function() {
     } catch (_) {}
   }
 
-  // 2. Google OAuth2 Token Client (Opens official Google Accounts Chooser popup directly from accounts.google.com)
+  // 3. Google OAuth2 Token Client (Opens official Google Accounts Chooser popup)
   if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
     try {
       const tokenClient = google.accounts.oauth2.initTokenClient({
@@ -20929,20 +21058,7 @@ window.triggerDirectGoogleAuth = function() {
         scope: 'email profile openid',
         callback: async (tokenResponse) => {
           if (tokenResponse && tokenResponse.access_token) {
-            try {
-              const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
-              });
-              const userInfo = await res.json();
-              const authedEmail = (userInfo?.email || "").toLowerCase().trim();
-              const displayName = userInfo?.name || userInfo?.given_name || "";
-              if (authedEmail) {
-                window.verifyAndAuthorizeUser(authedEmail, displayName);
-                return;
-              }
-            } catch (err) {
-              console.warn("Failed fetching userinfo from Google:", err);
-            }
+            window.handleGoogleOAuthAccessToken(tokenResponse.access_token);
           }
         }
       });
@@ -20953,10 +21069,13 @@ window.triggerDirectGoogleAuth = function() {
     }
   }
 
-  // 3. Fallback direct OAuth popup to accounts.google.com
-  const redirectUri = window.location.origin;
+  // 4. Fallback direct OAuth popup to accounts.google.com
+  const redirectUri = (typeof window !== 'undefined' && window.location.origin && window.location.origin.startsWith('http'))
+    ? window.location.origin + window.location.pathname
+    : 'https://kandukurijagan1.github.io/fish-billing/';
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(window.GOOGLE_OAUTH_CLIENT_ID)}&response_type=token&scope=${encodeURIComponent('email profile openid')}&redirect_uri=${encodeURIComponent(redirectUri)}&prompt=select_account`;
-  window.open(authUrl, "GoogleSignIn", "width=500,height=600,menubar=no,status=no");
+  const popup = window.open(authUrl, "GoogleSignIn", "width=520,height=650,menubar=no,status=no");
+  if (popup && popup.focus) popup.focus();
 };
 
 // 5. Render User Management Table in Settings
@@ -21933,290 +22052,22 @@ window.toggleAlternateEmailInput = function() {
   }
 };
 
-window.handleTraditionalLoginSubmit = async function(e) {
+window.handleTraditionalLoginSubmit = function(e) {
   if (e && e.preventDefault) e.preventDefault();
-  
-  const userField = document.getElementById("login-email");
-  const rawEmail = (userField?.value || "").trim();
-  const enteredEmail = rawEmail.toLowerCase();
-  
-  const passField = document.getElementById("login-password");
-  const enteredPass = (passField?.value || "").trim();
-
-  const btnText = document.getElementById("login-btn-text");
-  const btnSpinner = document.getElementById("login-btn-spinner");
-  const submitBtn = document.querySelector(".btn-login-submit");
   const errBlock = document.getElementById("login-error-message");
-
-  // Check rate limit lockout first
-  const currentLock = AppSecurity.isLockedOut();
-  if (currentLock.locked) {
-    AppSecurity.startLockoutCountdown(submitBtn, errBlock);
-    return;
-  }
-
-  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-  const isMainAdmin = (enteredEmail === mainAdminNorm);
-
-  // STRICT BLOCK FOR SUSPENDED ACCOUNTS
-  if (!isMainAdmin && enteredEmail && typeof window.isUserSuspendedByAdmin === 'function' && window.isUserSuspendedByAdmin(enteredEmail)) {
-    if (submitBtn) submitBtn.disabled = false;
-    if (btnText) btnText.classList.remove("hidden");
-    if (btnSpinner) btnSpinner.classList.add("hidden");
-    if (errBlock) {
-      errBlock.innerHTML = `
-        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
-          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
-            <i class="fa-solid fa-user-lock"></i> Account Suspended
-          </div>
-          <div style="font-size: 11.5px; color: #cbd5e1;">
-            Your account (<strong style="color: #fca5a5;">${escapeHtml(enteredEmail)}</strong>) has been paused by the Main Administrator. Access is blocked.
-          </div>
-        </div>
-      `;
-      errBlock.classList.remove("hidden");
-    }
-    showFloatingToast(`⛔ Account ${enteredEmail} is suspended by Main Admin.`, "error", 6000);
-    return;
-  }
-
-  // STRICT ZERO-TRUST BLOCK: Static passwords & PINs ("2024", "Aaryan@2024", etc.) are permanently disabled
-  if (enteredEmail === "2024" || enteredPass === "2024" || enteredPass === "aaryan@2024" || enteredPass.toLowerCase() === "aaryan@2024" || enteredEmail === "1234" || enteredPass === "1234") {
-    if (submitBtn) submitBtn.disabled = false;
-    if (btnText) btnText.classList.remove("hidden");
-    if (btnSpinner) btnSpinner.classList.add("hidden");
-    if (errBlock) {
-      errBlock.innerHTML = `
-        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
-          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
-            <i class="fa-solid fa-lock"></i> Direct Mail Access Only
-          </div>
-          <div style="font-size: 11.5px; color: #cbd5e1; line-height: 1.4;">
-            Static PINs and passwords are completely disabled. Please click <strong>"Sign in with Google"</strong> or enter the 6-digit verification code sent to your email.
-          </div>
-        </div>
-      `;
-      errBlock.classList.remove("hidden");
-    }
-    if (passField) {
-      passField.value = "";
-      passField.focus();
-    }
-    const card = document.querySelector(".login-card");
-    if (card) {
-      card.classList.remove("shake-animation");
-      void card.offsetWidth;
-      card.classList.add("shake-animation");
-    }
-    return;
-  }
-
-  // 1. Email is required
-  if (!enteredEmail) {
-    if (errBlock) {
-      errBlock.innerHTML = `
-        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
-          <i class="fa-solid fa-envelope"></i> Email Address Required!
-        </div>
-        <div style="font-size: 11.5px; color: #cbd5e1;">
-          Please enter your authorized email address.
-        </div>
-      `;
-      errBlock.classList.remove("hidden");
-    }
-    const card = document.querySelector(".login-card");
-    if (card) {
-      card.classList.remove("shake-animation");
-      void card.offsetWidth;
-      card.classList.add("shake-animation");
-    }
-    if (userField) userField.focus();
-    return;
-  }
-
-  // 2. 6-Digit Email Code is required
-  if (!enteredPass) {
-    if (errBlock) {
-      errBlock.innerHTML = `
-        <div style="font-weight: 700; color: #f59e0b; margin-bottom: 2px;">
-          <i class="fa-solid fa-shield-halved"></i> 6-Digit Email Code Required!
+  if (errBlock) {
+    errBlock.innerHTML = `
+      <div style="background: rgba(14, 165, 233, 0.15); border: 1.5px solid #0284c7; border-radius: 10px; padding: 12px 14px; text-align: left;">
+        <div style="font-weight: 800; color: #38bdf8; margin-bottom: 4px; font-size: 13px;">
+          <i class="fa-solid fa-shield-halved"></i> Google Authentication Enforced
         </div>
         <div style="font-size: 11.5px; color: #cbd5e1; line-height: 1.4;">
-          Please click "Send 6-Digit Code to Email" or enter the code received in your email inbox.
+          Traditional passwords and PINs are permanently disabled. Please click <strong>"Continue with Google"</strong> to authenticate as <strong>kandukurijagan99@gmail.com</strong>.
         </div>
-      `;
-      errBlock.classList.remove("hidden");
-    }
-    const card = document.querySelector(".login-card");
-    if (card) {
-      card.classList.remove("shake-animation");
-      void card.offsetWidth;
-      card.classList.add("shake-animation");
-    }
-    if (passField) passField.focus();
-    return;
+      </div>
+    `;
+    errBlock.classList.remove("hidden");
   }
-
-  if (submitBtn) submitBtn.disabled = true;
-  if (btnText) btnText.classList.add("hidden");
-  if (btnSpinner) btnSpinner.classList.remove("hidden");
-
-  let isOtpValid = false;
-  let verifiedRole = "admin";
-  let matchedUser = null;
-
-  // Step 1: Check Pending Session Mail OTP Code
-  const pendingOtp = sessionStorage.getItem("pending_login_otp");
-  const pendingEmail = (sessionStorage.getItem("pending_login_email") || "").toLowerCase().trim();
-
-  if (pendingOtp && enteredPass === pendingOtp && (!pendingEmail || pendingEmail === enteredEmail)) {
-    if (!isMainAdmin && typeof window.isUserSuspendedByAdmin === 'function' && window.isUserSuspendedByAdmin(enteredEmail)) {
-      if (submitBtn) submitBtn.disabled = false;
-      if (btnText) btnText.classList.remove("hidden");
-      if (btnSpinner) btnSpinner.classList.add("hidden");
-      if (errBlock) {
-        errBlock.innerHTML = `
-          <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
-            <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
-              <i class="fa-solid fa-user-lock"></i> Account Suspended
-            </div>
-            <div style="font-size: 11.5px; color: #cbd5e1;">
-              Your account (<strong style="color: #fca5a5;">${escapeHtml(enteredEmail)}</strong>) has been paused by the Main Administrator. Access is blocked.
-            </div>
-          </div>
-        `;
-        errBlock.classList.remove("hidden");
-      }
-      return;
-    }
-    isOtpValid = true;
-    sessionStorage.removeItem("pending_login_otp");
-    sessionStorage.removeItem("pending_login_email");
-    if (isMainAdmin) {
-      verifiedRole = "super_admin";
-      matchedUser = { email: window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com", name: "Jagan Kandukuri (Main Admin)", role: "super_admin", status: "active", isMainAdmin: true };
-    } else {
-      let uRec = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList().find(u => (u.email || "").toLowerCase().trim() === enteredEmail) : null;
-      verifiedRole = uRec?.role || "admin";
-      matchedUser = {
-        email: enteredEmail,
-        name: uRec?.name || enteredEmail.split("@")[0],
-        role: verifiedRole,
-        status: "active"
-      };
-    }
-  }
-
-  // Step 2: Fallback to Google Apps Script verify_login_otp if email OTP code was requested
-  if (!isOtpValid && typeof GOOGLE_SCRIPT_URL !== 'undefined') {
-    try {
-      const res = await fetch(GOOGLE_SCRIPT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({
-          action: "verify_login_otp",
-          email: enteredEmail,
-          otp: enteredPass,
-          token: (typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : '')
-        })
-      });
-      const data = await res.json();
-      if (data && (data.ok || data.verified)) {
-        isOtpValid = true;
-        verifiedRole = data.role || (isMainAdmin ? "super_admin" : "admin");
-        matchedUser = {
-          email: enteredEmail,
-          name: isMainAdmin ? "Jagan Kandukuri (Main Admin)" : (data.name || enteredEmail.split("@")[0]),
-          role: verifiedRole,
-          status: "active",
-          isMainAdmin: isMainAdmin
-        };
-      }
-    } catch (_) {}
-  }
-
-  // If still not valid: REJECT STRICTLY
-  if (!isOtpValid) {
-    if (submitBtn) submitBtn.disabled = false;
-    if (btnText) btnText.classList.remove("hidden");
-    if (btnSpinner) btnSpinner.classList.add("hidden");
-
-    if (errBlock) {
-      errBlock.innerHTML = `
-        <div style="font-weight: 700; color: #f43f5e; margin-bottom: 2px;">
-          <i class="fa-solid fa-triangle-exclamation"></i> Invalid Verification Code!
-        </div>
-        <div style="font-size: 11.5px; color: #cbd5e1;">
-          The code entered does not match the 6-digit code sent to your email. Please check your inbox or sign in with Google.
-        </div>
-      `;
-      errBlock.classList.remove("hidden");
-    }
-    if (passField) {
-      passField.value = "";
-      passField.focus();
-    }
-    const card = document.querySelector(".login-card");
-    if (card) {
-      card.classList.remove("shake-animation");
-      void card.offsetWidth;
-      card.classList.add("shake-animation");
-    }
-    return;
-  }
-
-  // VERIFIED! UNLOCK SYSTEM WITH ASSIGNED ROLE
-  if (errBlock) errBlock.classList.add("hidden");
-
-  const effectiveEmail = (matchedUser && matchedUser.email) ? matchedUser.email : (isMainAdmin ? window.AUTHORIZED_LOGIN_EMAIL : (enteredEmail || window.AUTHORIZED_LOGIN_EMAIL));
-  AppSecurity.recordSuccessfulLogin(effectiveEmail, "Password/PIN Authentication");
-
-  const finalRole = matchedUser ? matchedUser.role : (isMainAdmin ? "super_admin" : verifiedRole);
-  const finalName = matchedUser ? matchedUser.name : (isMainAdmin ? "Jagan Kandukuri (Main Admin)" : effectiveEmail.split("@")[0]);
-
-  // Remove demo mode flags so full edit access is active!
-  sessionStorage.removeItem("is_demo_mode");
-  localStorage.removeItem("is_demo_mode");
-  sessionStorage.setItem("is_demo_mode", "false");
-  localStorage.setItem("is_demo_mode", "false");
-
-  sessionStorage.setItem("session_authenticated", "true");
-  sessionStorage.setItem("current_user_email", effectiveEmail);
-  sessionStorage.setItem("current_user_name", finalName);
-  sessionStorage.setItem("current_user_role", finalRole);
-  sessionStorage.setItem("is_main_admin", (isMainAdmin || finalRole === 'super_admin') ? "true" : "false");
-  sessionStorage.setItem("manual_locked", "false");
-  sessionStorage.setItem("session_last_active_time", Date.now().toString());
-
-  if (typeof window.savePersistentAuthSession === 'function') {
-    window.savePersistentAuthSession({
-      email: effectiveEmail,
-      name: finalName,
-      role: finalRole,
-      isMainAdmin: (isMainAdmin || finalRole === 'super_admin')
-    });
-  }
-
-  if (typeof window.updateUserLastLogin === 'function') {
-    window.updateUserLastLogin(effectiveEmail);
-  }
-
-  unlockSystemSilently(true);
-
-  if (typeof window.applyRolePermissions === 'function') {
-    window.applyRolePermissions(finalRole);
-  }
-
-  const demoTopBanner = document.getElementById("demo-mode-top-banner");
-  if (demoTopBanner) demoTopBanner.style.display = "none";
-
-  if (typeof showFloatingToast === 'function') {
-    showFloatingToast(`🔓 Welcome back, ${finalName}! Full Edit Access verified.`, "success", 4000);
-  }
-
-  if (submitBtn) submitBtn.disabled = false;
-  if (btnText) btnText.classList.remove("hidden");
-  if (btnSpinner) btnSpinner.classList.add("hidden");
 };
 
 window.submitUnlockLogin = window.handleTraditionalLoginSubmit;

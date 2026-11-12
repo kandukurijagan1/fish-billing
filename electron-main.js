@@ -90,8 +90,22 @@ function createWindow() {
     mainWindow.show();
   });
 
-  // Open external links safely in user's default browser
+  // Open external links safely in user's default browser (allow Google OAuth child window)
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.includes('accounts.google.com')) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 520,
+          height: 650,
+          autoHideMenuBar: true,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true
+          }
+        }
+      };
+    }
     if (url.startsWith('https://wa.me') || 
         url.startsWith('https://t.me') || 
         url.startsWith('https://web.whatsapp.com') ||
@@ -101,6 +115,27 @@ function createWindow() {
       return { action: 'deny' };
     }
     return { action: 'allow' };
+  });
+
+  mainWindow.webContents.on('did-create-window', (childWindow) => {
+    childWindow.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+    childWindow.webContents.on('will-redirect', (e, redirectUrl) => {
+      if (redirectUrl && redirectUrl.includes('access_token=')) {
+        try {
+          const hashPart = redirectUrl.split('#')[1] || '';
+          const params = new URLSearchParams(hashPart);
+          const token = params.get('access_token');
+          if (token && mainWindow) {
+            mainWindow.webContents.executeJavaScript(`
+              if (typeof window.handleGoogleOAuthAccessToken === 'function') {
+                window.handleGoogleOAuthAccessToken(${JSON.stringify(token)});
+              }
+            `).catch(() => {});
+            setTimeout(() => { try { childWindow.close(); } catch(_) {} }, 100);
+          }
+        } catch (err) {}
+      }
+    });
   });
 
   mainWindow.on('close', () => {
@@ -349,6 +384,73 @@ ipcMain.on('open-external', (event, url) => {
   if (url && (url.startsWith('https://') || url.startsWith('mailto:') || url.startsWith('tel:'))) {
     shell.openExternal(url);
   }
+});
+
+// Native Google OAuth Modal for Desktop App
+ipcMain.handle('start-google-oauth', async (event) => {
+  if (!validateIpcSender(event)) return { ok: false, error: 'Unauthorized IPC sender' };
+  return new Promise((resolve) => {
+    const clientId = '902168382803-6gof845v72ku6k4lp4mecsgr3l1uc3s0.apps.googleusercontent.com';
+    const redirectUri = 'https://kandukurijagan1.github.io/fish-billing/';
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&response_type=token&scope=${encodeURIComponent('email profile openid')}&redirect_uri=${encodeURIComponent(redirectUri)}&prompt=select_account`;
+
+    const authWin = new BrowserWindow({
+      width: 520,
+      height: 650,
+      parent: mainWindow || undefined,
+      modal: true,
+      show: true,
+      title: "Sign in with Google - Aaryan Aqua Needs",
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true
+      }
+    });
+
+    authWin.webContents.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+
+    let isResolved = false;
+
+    function handleRedirect(url) {
+      if (!isResolved && url && url.includes('access_token=')) {
+        isResolved = true;
+        try {
+          const hashPart = url.split('#')[1] || url.split('?')[1] || '';
+          const params = new URLSearchParams(hashPart);
+          const accessToken = params.get('access_token');
+          if (accessToken) {
+            authWin.destroy();
+            resolve({ accessToken });
+            return;
+          }
+        } catch (e) {
+          authWin.destroy();
+          resolve({ error: e.message });
+          return;
+        }
+      }
+    }
+
+    authWin.webContents.on('will-redirect', (event, url) => {
+      handleRedirect(url);
+    });
+
+    authWin.webContents.on('will-navigate', (event, url) => {
+      handleRedirect(url);
+    });
+
+    authWin.webContents.on('did-navigate', (event, url) => {
+      handleRedirect(url);
+    });
+
+    authWin.on('closed', () => {
+      if (!isResolved) {
+        resolve({ cancelled: true });
+      }
+    });
+
+    authWin.loadURL(authUrl);
+  });
 });
 
 app.on('second-instance', () => {

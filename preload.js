@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternal: (url) => ipcRenderer.send('open-external', url),
   saveFastCache: (key, data) => ipcRenderer.invoke('fast-save-cache', { key, data }),
   readFastCache: (key) => ipcRenderer.invoke('fast-read-cache', { key }),
-  loadInitialDb: () => ipcRenderer.invoke('load-initial-db')
+  loadInitialDb: () => ipcRenderer.invoke('load-initial-db'),
+  startGoogleOAuth: () => ipcRenderer.invoke('start-google-oauth')
 });

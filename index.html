@@ -525,66 +525,42 @@
         <i class="fa-solid fa-triangle-exclamation"></i> Invalid credentials!
       </div>
 
-      <!-- DIRECT GOOGLE MAIL SIGN-IN (OFFICIAL SINGLE SIGN-IN) -->
+      <!-- DIRECT GOOGLE MAIL SIGN-IN (OFFICIAL EXCLUSIVE SINGLE SIGN-IN) -->
       <div style="display: flex; flex-direction: column; gap: 12px; align-items: center; width: 100%;">
         <!-- Native Google Rendered Button Slot -->
         <div id="google-signin-btn-container" style="display: flex; justify-content: center; width: 100%; min-height: 44px;"></div>
 
-        <!-- Direct Google OAuth Prompt Button (Fallback if GIS button rendering is delayed) -->
-        <button type="button" id="btn-google-direct" onclick="window.triggerDirectGoogleAuth()" style="display: none; width: 100%; max-width: 320px; padding: 12px 18px; border-radius: 8px; background: #ffffff; color: #1f2937; border: 1.5px solid #e5e7eb; font-weight: 700; font-size: 14px; cursor: pointer; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); transition: all 0.2s ease;">
+        <!-- Direct Google OAuth Prompt Button (High-visibility, single-click instant Google Sign-in) -->
+        <button type="button" id="btn-google-direct" onclick="window.triggerDirectGoogleAuth()" style="display: flex; width: 100%; max-width: 320px; padding: 12px 18px; border-radius: 8px; background: #ffffff; color: #1f2937; border: 1.5px solid #e5e7eb; font-weight: 700; font-size: 14px; cursor: pointer; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); transition: all 0.2s ease;">
           <svg style="width: 18px; height: 18px;" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
             <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
             <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.17 0 9.99 0 12s.45 3.83 1.25 5.42l4.03-3.15z"/>
             <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
           </svg>
-          <span id="google-btn-label">Sign in with Google</span>
+          <span id="google-btn-label">Continue with Google</span>
         </button>
       </div>
 
-      <!-- DIVIDER -->
-      <div style="display: flex; align-items: center; width: 100%; margin: 10px 0; gap: 10px;">
-        <div style="flex: 1; height: 1px; background: rgba(255, 255, 255, 0.12);"></div>
-        <span style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">or email access</span>
-        <div style="flex: 1; height: 1px; background: rgba(255, 255, 255, 0.12);"></div>
+      <!-- EXCLUSIVE ACCESS NOTICE -->
+      <div style="margin-top: 18px; padding: 12px 14px; background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.25); border-radius: 10px; width: 100%; text-align: center; box-sizing: border-box;">
+        <div style="font-size: 11px; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
+          <i class="fa-solid fa-shield-halved"></i> Authorized Administrator
+        </div>
+        <div style="font-size: 12px; color: #e2e8f0; font-weight: 600;">
+          kandukurijagan99@gmail.com
+        </div>
+        <div style="font-size: 10.5px; color: #94a3b8; margin-top: 4px;">
+          Direct Google authentication required to unlock system
+        </div>
       </div>
-
-      <!-- DIRECT EMAIL MAGIC LINK / PASSCODE DISPATCH -->
-      <form id="lock-screen-mail-form" onsubmit="event.preventDefault(); window.sendLoginOtpCodeDirectly();" style="display: flex; flex-direction: column; gap: 10px; width: 100%; text-align: left;">
-        <div class="login-input-group">
-          <label for="login-email" style="font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;">Authorized Email</label>
-          <div class="input-icon-wrapper">
-            <i class="fa-solid fa-envelope input-icon"></i>
-            <input type="email" id="login-email" value="kandukurijagan99@gmail.com" placeholder="kandukurijagan99@gmail.com" required autocomplete="email">
-          </div>
-        </div>
-
-        <button type="submit" id="btn-request-mail-login" class="btn-login-submit" style="width: 100%; margin-top: 2px; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #0284c7, #0369a1);">
-          <span id="login-btn-spinner" class="hidden"><i class="fa-solid fa-spinner fa-spin"></i></span>
-          <span id="btn-request-mail-text"><i class="fa-solid fa-paper-plane"></i> Send 6-Digit Code to Email</span>
-        </button>
-
-        <!-- Mail Code Input (Only shown if user opts to enter code received in email) -->
-        <div id="otp-input-container" style="display: none; margin-top: 6px;">
-          <div class="login-input-group">
-            <label for="login-password" style="font-size: 11px; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px;">6-Digit Code Received in Email</label>
-            <div class="input-icon-wrapper">
-              <i class="fa-solid fa-shield-halved input-icon"></i>
-              <input type="text" id="login-password" maxlength="6" placeholder="Enter 6-digit code" autocomplete="one-time-code" style="letter-spacing: 3px; font-weight: 700;">
-            </div>
-          </div>
-          <button type="button" onclick="window.handleTraditionalLoginSubmit(event)" class="btn-login-submit" style="width: 100%; margin-top: 8px; background: #16a34a; display: flex; align-items: center; justify-content: center; gap: 8px;">
-            <i class="fa-solid fa-check"></i> Verify Email Code &amp; Unlock
-          </button>
-        </div>
-      </form>
 
       <div class="login-footer" style="margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 11px; color: #64748b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
         <div style="display: flex; align-items: center; gap: 6px;">
-          <i class="fa-solid fa-shield-halved" style="color: #0ea5e9;"></i>
-          <span style="font-weight: 700; color: #94a3b8;">Direct Mail Access Only</span>
+          <i class="fa-solid fa-lock" style="color: #0ea5e9;"></i>
+          <span style="font-weight: 700; color: #94a3b8;">Exclusive Google Authentication</span>
         </div>
-        <span style="font-size: 10px; color: #64748b; text-align: center;">Direct Google Sign-in or 1-Click Email Login Link required</span>
+        <span style="font-size: 10px; color: #64748b; text-align: center;">Standard passwords and PINs are disabled for security.</span>
       </div>
 
     </div>
@@ -7621,29 +7597,19 @@
 
 
           <div id="verify-admin-unlock-form" style="display: none; margin-top: 14px; padding: 14px; background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.1);">
-
             <div style="font-size: 12px; font-weight: 700; color: #166534; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;">
-
-              <span style="display: flex; align-items: center; gap: 6px;"><i class="fa-solid fa-shield-halved text-green"></i> Enter Admin Password or PIN:</span>
-
+              <span style="display: flex; align-items: center; gap: 6px;"><i class="fa-solid fa-shield-halved text-green"></i> Administrator Settlement Authentication</span>
               <button type="button" onclick="hideModalAdminUnlockForm()" style="background: none; border: none; font-size: 14px; color: #64748b; cursor: pointer; padding: 0 4px;">✕</button>
-
             </div>
-
-            <form onsubmit="event.preventDefault(); submitModalAdminUnlock();" style="display: flex; gap: 8px; align-items: center; margin: 0;">
-
-              <input type="password" id="modal-admin-pwd-input" class="form-control" placeholder="Enter admin password or PIN" style="font-size: 12.5px; padding: 8px 10px; border-radius: 8px; flex: 1; border: 1.5px solid #86efac; background: #ffffff;" autocomplete="current-password">
-
-              <button type="submit" class="btn btn-success" style="padding: 8px 14px; font-size: 12px; font-weight: 800; border-radius: 8px; white-space: nowrap; background: #16a34a; color: white; border: none; cursor: pointer; display: flex; align-items: center; gap: 5px;">
-
-                <i class="fa-solid fa-unlock"></i> Unlock &amp; Settle
-
+            <div style="display: flex; flex-direction: column; gap: 8px; align-items: center; margin: 0;">
+              <div style="font-size: 11.5px; color: #475569; text-align: center;">
+                Administrator actions require Google authentication as <strong style="color: #0369a1;">kandukurijagan99@gmail.com</strong>
+              </div>
+              <button type="button" onclick="window.triggerDirectGoogleAuth()" class="btn btn-primary" style="padding: 8px 16px; font-size: 12px; font-weight: 800; border-radius: 8px; background: #0284c7; color: white; border: none; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                <i class="fa-brands fa-google"></i> Sign in with Google to Settle
               </button>
-
-            </form>
-
+            </div>
             <div id="modal-admin-pwd-error" style="display: none; color: #dc2626; font-size: 11px; margin-top: 6px; font-weight: 600;"></div>
-
           </div>
 
 
@@ -11265,13 +11231,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v86_qr_always_on_invoices"></script>
+<script src="supabase-adapter.js?v=live_v87_google_auth_exclusive"></script>
 
-<script src="initial_db.js?v=live_v86_qr_always_on_invoices"></script>
+<script src="initial_db.js?v=live_v87_google_auth_exclusive"></script>
 
-<script src="customer-timeline.js?v=live_v86_qr_always_on_invoices"></script>
+<script src="customer-timeline.js?v=live_v87_google_auth_exclusive"></script>
 
-<script src="index_v5.js?v=live_v86_qr_always_on_invoices"></script>
+<script src="index_v5.js?v=live_v87_google_auth_exclusive"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->
