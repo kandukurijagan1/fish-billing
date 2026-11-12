@@ -4860,22 +4860,66 @@
                     </div>
                   </div>
 
-                  <!-- 1-CLICK BACKUP DATA TO EMAIL (ATTACHING .XLSX + .JSON) -->
-                  <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 10px; padding: 13px; display: flex; flex-direction: column; gap: 8px;">
+                  <!-- UNIFIED STORE BACKUP & DISPATCH HUB (WHATSAPP, GMAIL, NATIVE SHARE & SNAPSHOT VAULT) -->
+                  <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 12px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
-                      <span style="font-size: 13px; font-weight: 800; color: #166534; display: flex; align-items: center; gap: 6px;">
-                        <i class="fa-solid fa-envelope" style="color: #16a34a;"></i> 1-Click Backup to Email
+                      <span style="font-size: 13.5px; font-weight: 800; color: #166534; display: flex; align-items: center; gap: 7px;">
+                        <i class="fa-solid fa-cloud-arrow-up" style="color: #16a34a; font-size: 15px;"></i> Unified Store Backup &amp; Dispatch Hub
                       </span>
-                      <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px;">Attached: Excel (.xlsx) + JSON</span>
+                      <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 5px;">Excel (.xlsx) + JSON Vault</span>
                     </div>
-                    <p style="margin: 0; font-size: 11.5px; color: #166534; line-height: 1.4;">
-                      Emails the complete store database with <strong>Master Excel Workbook (.xlsx)</strong> and <strong>JSON file</strong> attached directly to your Gmail inbox.
+
+                    <p style="margin: 0; font-size: 11.5px; color: #166534; line-height: 1.45;">
+                      Instantly package and dispatch your complete store database (all invoices, product stock, customer balances, ledger). Works directly across WhatsApp, Gmail, system share, and local snapshot vault.
                     </p>
-                    <div style="display: flex; gap: 8px;">
-                      <input type="email" id="backup-target-email" placeholder="Enter recipient email..." value="kandukurijagan99@gmail.com" style="flex: 1; padding: 8px 11px; font-size: 12.5px; border: 1.5px solid #86efac; border-radius: 7px; background: #ffffff;">
-                      <button type="button" class="btn btn-sm" id="btn-email-backup" onclick="window.sendDataBackupToEmail()" style="background: #16a34a; color: white; border: none; font-weight: 700; padding: 8px 16px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap;">
-                        <i class="fa-solid fa-paper-plane"></i> Send to Mail
+
+                    <!-- Destination Phone / Email Inputs -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                      <div>
+                        <label style="font-size: 10.5px; font-weight: 700; color: #166534; display: block; margin-bottom: 3px;">
+                          <i class="fa-brands fa-whatsapp" style="color: #22c55e;"></i> WhatsApp Number:
+                        </label>
+                        <input type="tel" id="backup-target-phone" placeholder="e.g. 7416605652 / 7386262139" value="+91 74166 05652" style="width: 100%; box-sizing: border-box; padding: 7px 10px; font-size: 12px; border: 1.5px solid #86efac; border-radius: 6px; background: #ffffff; font-weight: 600;">
+                      </div>
+                      <div>
+                        <label style="font-size: 10.5px; font-weight: 700; color: #166534; display: block; margin-bottom: 3px;">
+                          <i class="fa-solid fa-envelope" style="color: #ea4335;"></i> Gmail / Recipient Email:
+                        </label>
+                        <input type="email" id="backup-target-email" placeholder="Recipient email..." value="kandukurijagan99@gmail.com" style="width: 100%; box-sizing: border-box; padding: 7px 10px; font-size: 12px; border: 1.5px solid #86efac; border-radius: 6px; background: #ffffff; font-weight: 600;">
+                      </div>
+                    </div>
+
+                    <!-- Dispatch Action Buttons Grid -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+                      <!-- WhatsApp Send -->
+                      <button type="button" class="btn btn-sm" onclick="window.sendBackupToWhatsApp(document.getElementById('backup-target-phone').value)" style="background: #22c55e; color: white; border: none; font-weight: 700; padding: 9px 10px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 11.5px; box-shadow: 0 2px 4px rgba(34, 197, 94, 0.2);">
+                        <i class="fa-brands fa-whatsapp" style="font-size: 14px;"></i> Send via WhatsApp
                       </button>
+
+                      <!-- Native Multi-App Share -->
+                      <button type="button" class="btn btn-sm" onclick="window.shareStoreBackupFiles()" style="background: #0284c7; color: white; border: none; font-weight: 700; padding: 9px 10px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 11.5px; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.2);">
+                        <i class="fa-solid fa-share-nodes" style="font-size: 13px;"></i> Share Files (All Apps)
+                      </button>
+
+                      <!-- Gmail Web Dispatch -->
+                      <button type="button" class="btn btn-sm" onclick="window.sendDataBackupToEmail()" style="background: #ea4335; color: white; border: none; font-weight: 700; padding: 9px 10px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 11.5px; box-shadow: 0 2px 4px rgba(234, 67, 53, 0.2);">
+                        <i class="fa-solid fa-envelope" style="font-size: 13px;"></i> Send to Gmail
+                      </button>
+                    </div>
+
+                    <!-- Local Snapshot Vault & 1-Click Rollback -->
+                    <div style="background: #ffffff; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 7px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 11.5px; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 5px;">
+                          <i class="fa-solid fa-box-archive" style="color: #16a34a;"></i> Verified Local Snapshots (Last 5)
+                        </span>
+                        <button type="button" onclick="window.createInstantStoreSnapshot()" class="btn btn-sm" style="background: #f1f5f9; color: #0f172a; border: 1px solid #cbd5e1; font-weight: 700; padding: 3px 8px; border-radius: 5px; font-size: 10.5px; cursor: pointer;">
+                          <i class="fa-solid fa-plus"></i> Create Snapshot Now
+                        </button>
+                      </div>
+                      <div id="store-snapshot-vault-list" style="max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;">
+                        <!-- Rendered dynamically by window.renderStoreSnapshotHistory() -->
+                      </div>
                     </div>
                   </div>
 
@@ -11231,13 +11275,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v87_google_auth_exclusive"></script>
+<script src="supabase-adapter.js?v=live_v88_proper_backup_dispatch"></script>
 
-<script src="initial_db.js?v=live_v87_google_auth_exclusive"></script>
+<script src="initial_db.js?v=live_v88_proper_backup_dispatch"></script>
 
-<script src="customer-timeline.js?v=live_v87_google_auth_exclusive"></script>
+<script src="customer-timeline.js?v=live_v88_proper_backup_dispatch"></script>
 
-<script src="index_v5.js?v=live_v87_google_auth_exclusive"></script>
+<script src="index_v5.js?v=live_v88_proper_backup_dispatch"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->

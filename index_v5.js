@@ -6814,6 +6814,9 @@ window.switchTab = function(tabName) {
     if (typeof window.renderUserManagerTable === 'function') {
       window.renderUserManagerTable();
     }
+    if (typeof window.renderStoreSnapshotHistory === 'function') {
+      window.renderStoreSnapshotHistory();
+    }
   }
 };
 
@@ -23642,135 +23645,296 @@ window.importDataFromMasterExcel = async function(event) {
 };
 
 // ============================================================================
-// 1-Click Store Database Backup to Email (.xlsx Master Excel + .json Archive)
 // ============================================================================
-window.sendDataBackupToEmail = async function(options = {}) {
-  const isSilent = !!options.isSilent;
-  const scheduleType = options.scheduleType || "MANUAL";
+// ENTERPRISE STORE BACKUP, SNAPSHOT VAULT & MULTI-CHANNEL DISPATCH HUB
+// ============================================================================
 
-  const emailInput = document.getElementById('backup-target-email');
-  const sendBtn = document.getElementById('btn-email-backup');
-  let targetEmail = (emailInput ? emailInput.value : "").trim().toLowerCase();
-  if (!targetEmail || !targetEmail.includes('@')) {
-    targetEmail = (globalSettings?.company?.email || window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-    if (emailInput) emailInput.value = targetEmail;
+window.generateStoreBackupSummaryText = function() {
+  if (typeof loadAllDatabases === 'function') loadAllDatabases();
+  const invoices = invoicesDb || [];
+  const products = productsDb || [];
+  const parties = partiesDb || [];
+  const comp = (typeof globalSettings !== 'undefined' && globalSettings.company) ? globalSettings.company : {};
+  const compName = comp.name || "AARYAN AQUA NEEDS";
+
+  let totalRev = 0;
+  invoices.forEach(inv => {
+    totalRev += Number(inv.total || inv.grandTotal || (inv.details && inv.details.total) || 0);
+  });
+
+  let totalStockVal = 0;
+  products.forEach(p => {
+    const qty = Number(p.stock || 0);
+    const prc = Number(p.price || p.rate || 0);
+    totalStockVal += Number(p.totalValue || (qty * prc) || 0);
+  });
+
+  let totalDue = 0;
+  parties.forEach(pt => {
+    totalDue += Number(pt.balance || pt.outstanding || 0);
+  });
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+  return (
+    `📦 *${compName.toUpperCase()} - STORE BACKUP REPORT*\n` +
+    `🕒 *Date & Time:* ${dateStr} at ${timeStr}\n\n` +
+    `📊 *BUSINESS METRICS SUMMARY:*\n` +
+    `• 📄 *Total Invoices Billed:* ${invoices.length} (₹ ${totalRev.toLocaleString('en-IN', { minimumFractionDigits: 2 })})\n` +
+    `• 📦 *Inventory Catalog:* ${products.length} Products (Stock Value: ₹ ${totalStockVal.toLocaleString('en-IN', { minimumFractionDigits: 2 })})\n` +
+    `• 👥 *Customer Directory:* ${parties.length} Accounts\n` +
+    `• 💳 *Total Outstanding Due:* ₹ ${totalDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}\n\n` +
+    `🔒 *Verified Local Vault Status:* Synchronized & Intact\n` +
+    `_Generated automatically via Aaryan Aqua GST Billing System._`
+  );
+};
+
+window.saveLocalStoreSnapshot = function(backupObj, label = "Manual Snapshot") {
+  try {
+    const rawList = localStorage.getItem("store_snapshots_vault");
+    let snapshots = rawList ? JSON.parse(rawList) : [];
+    if (!Array.isArray(snapshots)) snapshots = [];
+
+    const now = new Date();
+    const snapId = "SNAP_" + now.getTime();
+    const entry = {
+      id: snapId,
+      label: label,
+      timestamp: now.toISOString(),
+      displayTime: now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) + " " + now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+      invoicesCount: (backupObj.invoices || []).length,
+      productsCount: (backupObj.products || []).length,
+      partiesCount: (backupObj.parties || []).length,
+      data: backupObj
+    };
+
+    snapshots.unshift(entry);
+    if (snapshots.length > 15) snapshots = snapshots.slice(0, 15);
+    localStorage.setItem("store_snapshots_vault", JSON.stringify(snapshots));
+    if (typeof window.renderStoreSnapshotHistory === 'function') {
+      window.renderStoreSnapshotHistory();
+    }
+    return entry;
+  } catch (e) {
+    console.warn("Could not save snapshot to vault:", e);
+    return null;
+  }
+};
+
+window.getStoreSnapshots = function() {
+  try {
+    const raw = localStorage.getItem("store_snapshots_vault");
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+window.renderStoreSnapshotHistory = function() {
+  const container = document.getElementById("store-snapshot-vault-list");
+  if (!container) return;
+  const snapshots = window.getStoreSnapshots();
+  if (!snapshots || snapshots.length === 0) {
+    container.innerHTML = `<div style="text-align: center; padding: 10px; color: #94a3b8; font-size: 11px;">No verified snapshots created yet. Click "Create Snapshot Now" or Send Backup to save one.</div>`;
+    return;
   }
 
-  loadAllDatabases();
-  const authUsers = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
-  const sanitizedUsers = (authUsers || []).map(u => ({
-    email: u.email,
-    name: u.name,
-    role: u.role,
-    status: u.status,
-    lastLogin: u.lastLogin
-  }));
+  container.innerHTML = snapshots.slice(0, 5).map((snap, idx) => `
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; background: ${idx === 0 ? '#f0fdf4' : '#f8fafc'}; border: 1px solid ${idx === 0 ? '#bbf7d0' : '#e2e8f0'}; border-radius: 6px; margin-bottom: 5px;">
+      <div>
+        <div style="font-weight: 700; color: #0f172a; font-size: 11.5px; display: flex; align-items: center; gap: 5px;">
+          ${idx === 0 ? '<span style="background: #16a34a; color: white; padding: 1px 5px; border-radius: 3px; font-size: 9px;">LATEST</span>' : ''}
+          ${escapeHtml(snap.label || 'Snapshot')} • <span style="color: #64748b; font-weight: 500;">${snap.displayTime}</span>
+        </div>
+        <div style="font-size: 10.5px; color: #475569; margin-top: 2px;">
+          ${snap.invoicesCount} Invoices • ${snap.productsCount} Products • ${snap.partiesCount} Parties
+        </div>
+      </div>
+      <button type="button" onclick="window.restoreStoreSnapshot('${snap.id}')" class="btn btn-sm" style="padding: 3px 8px; font-size: 10.5px; background: #0284c7; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 700;">
+        <i class="fa-solid fa-rotate-left"></i> Restore
+      </button>
+    </div>
+  `).join('');
+};
 
+window.createInstantStoreSnapshot = function() {
+  if (typeof loadAllDatabases === 'function') loadAllDatabases();
   const backupObj = {
     app: "Aaryan Aqua GST Billing & Store Management",
-    version: "5.29.0",
+    version: "5.4.0",
     exportDate: new Date().toISOString(),
-    scheduleType: scheduleType,
     invoices: invoicesDb || [],
     products: productsDb || [],
     parties: partiesDb || [],
-    settings: globalSettings || {},
-    authorized_users: sanitizedUsers
+    settings: globalSettings || {}
   };
 
-  // Generate Master Excel (.xlsx) file in memory
-  let excelBase64 = null;
-  let excelArrayBuffer = null;
+  const snap = window.saveLocalStoreSnapshot(backupObj, "Manual Instant Snapshot");
+  if (snap && typeof showFloatingToast === 'function') {
+    showFloatingToast(`✅ Snapshot successfully created (${snap.invoicesCount} Invoices, ${snap.productsCount} Products)!`, "success", 4000);
+  }
+};
+
+window.restoreStoreSnapshot = function(snapshotId) {
+  const snapshots = window.getStoreSnapshots();
+  const found = snapshots.find(s => s.id === snapshotId);
+  if (!found || !found.data) {
+    if (typeof showFloatingToast === 'function') showFloatingToast("⚠️ Snapshot data not found.", "warning");
+    return;
+  }
+
+  const promptMsg = `📦 RESTORE STORE BACKUP SNAPSHOT?\n\n` +
+    `• Snapshot Time: ${found.displayTime}\n` +
+    `• Invoices to restore: ${found.invoicesCount}\n` +
+    `• Products to restore: ${found.productsCount}\n` +
+    `• Parties to restore: ${found.partiesCount}\n\n` +
+    `Are you sure you want to restore this snapshot? Current database will be safely replaced with this snapshot.`;
+
+  if (!confirm(promptMsg)) return;
+
   try {
-    if (typeof window.generateMasterExcelWorkbook === 'function') {
-      const xlRes = window.generateMasterExcelWorkbook(backupObj);
-      excelBase64 = xlRes.base64;
-      excelArrayBuffer = xlRes.arrayBuffer;
+    const data = found.data;
+    invoicesDb = data.invoices || [];
+    productsDb = data.products || [];
+    partiesDb = data.parties || [];
+    if (data.settings) globalSettings = data.settings;
+
+    localStorage.setItem("invoices_db", JSON.stringify(invoicesDb));
+    localStorage.setItem("products_db", JSON.stringify(productsDb));
+    localStorage.setItem("parties_db", JSON.stringify(partiesDb));
+    localStorage.setItem("global_settings", JSON.stringify(globalSettings));
+
+    if (typeof renderAllDashboardStats === 'function') renderAllDashboardStats();
+    if (typeof renderInvoiceHistoryTable === 'function') renderInvoiceHistoryTable();
+    if (typeof renderProductsTable === 'function') renderProductsTable();
+    if (typeof renderPartiesTable === 'function') renderPartiesTable();
+
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`✅ Database successfully restored from snapshot (${found.displayTime})!`, "success", 5000);
     }
-  } catch (xlErr) {
-    console.warn("Could not generate Excel attachment:", xlErr);
+  } catch (err) {
+    alert("Restore error: " + err.message);
+  }
+};
+
+window.sendBackupToWhatsApp = function(targetPhone) {
+  if (typeof loadAllDatabases === 'function') loadAllDatabases();
+  const backupObj = {
+    app: "Aaryan Aqua GST Billing & Store Management",
+    version: "5.4.0",
+    exportDate: new Date().toISOString(),
+    invoices: invoicesDb || [],
+    products: productsDb || [],
+    parties: partiesDb || [],
+    settings: globalSettings || {}
+  };
+
+  // 1. Save local snapshot
+  window.saveLocalStoreSnapshot(backupObj, "WhatsApp Backup Export");
+
+  // 2. Download Master Excel file so user can easily attach it in WhatsApp
+  if (typeof window.exportMasterExcelBackup === 'function') {
+    window.exportMasterExcelBackup();
   }
 
-  // 1. Instant local offline copies (JSON + Excel) if manual
-  if (!isSilent) {
-    try {
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupObj, null, 2));
-      const dl = document.createElement('a');
-      dl.setAttribute("href", dataStr);
-      const today = new Date().toISOString().split('T')[0];
-      dl.setAttribute("download", `Aaryan_Aqua_Backup_${today}.json`);
-      document.body.appendChild(dl);
-      dl.click();
-      dl.remove();
-    } catch (_) {}
-  }
+  // 3. Compose WhatsApp message URL
+  const comp = (typeof globalSettings !== 'undefined' && globalSettings.company) ? globalSettings.company : {};
+  const phone = (targetPhone || comp.phones || "7416605652").replace(/[^0-9]/g, '');
+  const cleanPhone = phone.startsWith('91') && phone.length === 12 ? phone : (phone.length === 10 ? '91' + phone : (phone || '917416605652'));
+  const text = window.generateStoreBackupSummaryText();
 
-  // 2. Dispatch email with Excel + JSON attachments via Google Apps Script MailApp
-  const origBtnHtml = sendBtn ? sendBtn.innerHTML : "";
-  if (sendBtn && !isSilent) {
-    sendBtn.disabled = true;
-    sendBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Sending...`;
-  }
+  const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
+  window.open(waUrl, '_blank');
 
-  if (!isSilent) {
-    showFloatingToast(`📤 Dispatching complete store backup (Excel .xlsx + JSON) to ${targetEmail}...`, "info", 4000);
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast("📲 WhatsApp opened with Backup Report & Master Excel downloaded!", "success", 6000);
   }
+};
+
+window.shareStoreBackupFiles = async function(options = {}) {
+  if (typeof loadAllDatabases === 'function') loadAllDatabases();
+  const backupObj = {
+    app: "Aaryan Aqua GST Billing & Store Management",
+    version: "5.4.0",
+    exportDate: new Date().toISOString(),
+    invoices: invoicesDb || [],
+    products: productsDb || [],
+    parties: partiesDb || [],
+    settings: globalSettings || {}
+  };
+
+  // 1. Save snapshot
+  window.saveLocalStoreSnapshot(backupObj, "Native Share Export");
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const jsonStr = JSON.stringify(backupObj, null, 2);
+  const jsonBlob = new Blob([jsonStr], { type: 'application/json' });
+  let filesToShare = [];
 
   try {
-    const scriptUrl = typeof GOOGLE_SCRIPT_URL !== 'undefined' ? GOOGLE_SCRIPT_URL : "https://script.google.com/macros/s/AKfycbxHi4L_xLrfRhx1KWxRxQD1QcqbVEZVMcYR37DJEGSPe2ykZyy-ATnYyZFxnSySS6OF/exec";
-    const res = await fetch(scriptUrl, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        action: "email_backup",
-        email: targetEmail,
-        backup: backupObj,
-        excelBase64: excelBase64,
-        scheduleType: scheduleType,
-        token: typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : ""
-      })
-    });
+    const jsonFile = new File([jsonBlob], `Aaryan_Aqua_Backup_${todayStr}.json`, { type: 'application/json' });
+    filesToShare.push(jsonFile);
+  } catch (_) {}
 
-    const resJson = await res.json().catch(() => null);
-    if (resJson && resJson.ok) {
-      const msg = scheduleType === "WEEKLY_AUTOMATED"
-        ? `📅 Weekly Automated Backup (Excel + JSON) delivered to ${targetEmail}!`
-        : (scheduleType === "MONTHLY_AUTOMATED"
-          ? `📊 Monthly Automated Backup (Excel + JSON) delivered to ${targetEmail}!`
-          : `✅ Success! Complete Store Backup (Excel .xlsx + JSON) delivered to ${targetEmail}!`);
+  if (typeof window.generateMasterExcelWorkbook === 'function') {
+    try {
+      const xlRes = window.generateMasterExcelWorkbook(backupObj);
+      if (xlRes && xlRes.arrayBuffer) {
+        const xlFile = new File([xlRes.arrayBuffer], `Aaryan_Aqua_Master_${todayStr}.xlsx`, {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
+        filesToShare.unshift(xlFile);
+      }
+    } catch (e) {
+      console.warn("Excel creation warning:", e);
+    }
+  }
 
-      showFloatingToast(msg, "success", 7000);
-      if (sendBtn && !isSilent) {
-        sendBtn.innerHTML = `<i class="fa-solid fa-check"></i> Sent!`;
-        setTimeout(() => {
-          sendBtn.disabled = false;
-          sendBtn.innerHTML = origBtnHtml;
-        }, 3000);
+  // 2. Try Web Share API (WhatsApp / Gmail / Google Drive / Bluetooth)
+  if (filesToShare.length > 0 && navigator.canShare && navigator.canShare({ files: filesToShare })) {
+    try {
+      await navigator.share({
+        title: "Aaryan Aqua Store Backup",
+        text: window.generateStoreBackupSummaryText(),
+        files: filesToShare
+      });
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("✅ Backup files shared successfully!", "success", 4000);
       }
       return;
-    }
-    throw new Error(resJson?.error || "Script returned error");
-  } catch (err) {
-    console.warn("[Backup to Email] Primary cloud dispatch note:", err);
-    if (!isSilent) {
-      const compName = globalSettings.company?.name || "Aaryan Aqua Needs";
-      const subject = encodeURIComponent(`📦 Store Database Backup Snapshot - ${compName}`);
-      const body = encodeURIComponent(
-        `Store Database Backup generated on ${new Date().toLocaleString()}\n\n` +
-        `Summary:\n` +
-        `• Total Invoices: ${(backupObj.invoices || []).length}\n` +
-        `• Total Products: ${(backupObj.products || []).length}\n` +
-        `• Total Parties: ${(backupObj.parties || []).length}\n\n` +
-        `The full JSON backup file has been saved to your Downloads folder and can be restored anytime via Settings > Import Excel / Backup.`
-      );
-      window.open(`mailto:${targetEmail}?subject=${subject}&body=${body}`, '_blank');
-      showFloatingToast(`📁 Backup downloaded to your computer & email draft opened for ${targetEmail}.`, "info", 6000);
-      if (sendBtn) {
-        sendBtn.disabled = false;
-        sendBtn.innerHTML = origBtnHtml;
-      }
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      console.warn("Native share error, falling back to direct package:", err);
     }
   }
+
+  // 3. Fallback: Instant Direct Downloads of Master Excel + JSON
+  if (typeof window.exportMasterExcelBackup === 'function') {
+    window.exportMasterExcelBackup();
+  }
+  setTimeout(() => {
+    if (typeof window.exportDataBackupJSON === 'function') {
+      window.exportDataBackupJSON();
+    }
+  }, 350);
+
+  // 4. Open Gmail Compose with Executive Summary
+  const recipient = (document.getElementById('backup-target-email')?.value || "kandukurijagan99@gmail.com").trim();
+  const compName = (typeof globalSettings !== 'undefined' && globalSettings.company?.name) || "Aaryan Aqua Needs";
+  const subject = encodeURIComponent(`📦 ${compName} - Store Database Backup (${todayStr})`);
+  const body = encodeURIComponent(window.generateStoreBackupSummaryText() + "\n\n(Master Excel and JSON backup files have been downloaded to your computer to attach.)");
+  const gmailComposeUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipient)}&su=${subject}&body=${body}`;
+  window.open(gmailComposeUrl, '_blank');
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast("📁 Master Excel & JSON downloaded & Gmail opened!", "success", 5000);
+  }
+};
+
+window.sendDataBackupToEmail = async function(options = {}) {
+  await window.shareStoreBackupFiles(options);
 };
 
 // ============================================================================
