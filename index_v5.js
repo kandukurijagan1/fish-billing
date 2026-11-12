@@ -9734,6 +9734,17 @@ window.closeBarcodeScannerModal = function() {
   lastScannedBarcodeValue = "";
   lastScannedBarcodeTimestamp = 0;
   continuousSessionItems = [];
+  window.isCameraPausedForSettlement = false;
+  const camWrap = document.getElementById("scanner-camera-upi-settle-wrap");
+  if (camWrap) {
+    camWrap.style.display = "none";
+    camWrap.innerHTML = "";
+  }
+  const upWrap = document.getElementById("qr-upload-upi-settle-wrap");
+  if (upWrap) {
+    upWrap.style.display = "none";
+    upWrap.innerHTML = "";
+  }
 };
 
 window.switchScannerTab = async function(tab) {
@@ -9890,7 +9901,7 @@ function startBarcodeDetectionLoop() {
   if (barcodeDetectInterval) clearInterval(barcodeDetectInterval);
 
   barcodeDetectInterval = setInterval(async () => {
-    if (isBarcodeProcessingFrame) return;
+    if (window.isCameraPausedForSettlement || isBarcodeProcessingFrame) return;
     const video = document.getElementById("barcode-scanner-video");
     if (!video || !barcodeCameraStream || video.readyState < 2 || video.paused || video.ended) {
       return;
@@ -10573,7 +10584,10 @@ window.handleDeviceQrFile = async function(file, source = 'upload') {
         isInvoice = true;
       } else if (clean.startsWith("upi://pay")) {
         category = "UPI PAYMENT";
-        actionLabel = "💳 Pay via UPI";
+        actionLabel = "💳 Settle Payment via QR";
+        if (typeof window.renderQrUpiSettlementHub === "function") {
+          window.renderQrUpiSettlementHub(clean, 'upload');
+        }
       } else if (clean.includes("sync_pin=")) {
         category = "P2P SYNC PIN";
         actionLabel = "🔗 Pair Real-Time Mesh";
@@ -10640,6 +10654,8 @@ window.resetDeviceQrUpload = function() {
   const errorCard = document.getElementById("qr-upload-error-card");
   const fileInput = document.getElementById("qr-device-file-input");
   const camInput = document.getElementById("qr-device-camera-input");
+  const settleWrap = document.getElementById("qr-upload-upi-settle-wrap");
+  const actionBtn = document.getElementById("qr-result-action-btn");
 
   if (previewWrap) previewWrap.style.display = "none";
   if (dropzone) dropzone.style.display = "block";
@@ -10648,6 +10664,11 @@ window.resetDeviceQrUpload = function() {
   if (errorCard) errorCard.style.display = "none";
   if (fileInput) fileInput.value = "";
   if (camInput) camInput.value = "";
+  if (settleWrap) {
+    settleWrap.style.display = "none";
+    settleWrap.innerHTML = "";
+  }
+  if (actionBtn) actionBtn.style.display = "";
 };
 
 window.handleQrDropOver = function(e) {
@@ -10839,6 +10860,539 @@ window.addScannedProductToInvoice = function(product, qtyToAdd = 1) {
   };
 };
 
+// ============================================================================
+// DEDICATED UPI QR PAYMENT SETTLEMENT & REAL-TIME RECONCILIATION HUB
+// ============================================================================
+window.parseUpiPaymentUri = function(rawUri) {
+  if (!rawUri) return null;
+  const clean = String(rawUri).trim();
+  const upiObj = {
+    pa: "",
+    pn: "",
+    am: 0,
+    cu: "INR",
+    tn: "",
+    tr: "",
+    mc: "",
+    raw: clean
+  };
+
+  try {
+    const qIndex = clean.indexOf("?");
+    if (qIndex !== -1) {
+      const qStr = clean.slice(qIndex + 1);
+      const params = new URLSearchParams(qStr);
+      upiObj.pa = decodeURIComponent(params.get("pa") || "").trim();
+      upiObj.pn = decodeURIComponent(params.get("pn") || "").trim();
+      upiObj.am = parseFloat(params.get("am") || "0") || 0;
+      upiObj.cu = (params.get("cu") || "INR").trim();
+      upiObj.tn = decodeURIComponent(params.get("tn") || "").trim();
+      upiObj.tr = decodeURIComponent(params.get("tr") || "").trim();
+      upiObj.mc = (params.get("mc") || "").trim();
+    }
+  } catch (e) {
+    const getP = (p) => {
+      const m = clean.match(new RegExp(`[?&]${p}=([^&]*)`, 'i'));
+      return m ? decodeURIComponent(m[1]).trim() : "";
+    };
+    upiObj.pa = getP("pa");
+    upiObj.pn = getP("pn");
+    upiObj.am = parseFloat(getP("am") || "0") || 0;
+    upiObj.cu = getP("cu") || "INR";
+    upiObj.tn = getP("tn");
+    upiObj.tr = getP("tr");
+    upiObj.mc = getP("mc");
+  }
+
+  return upiObj;
+};
+
+window.findMatchingInvoiceForUpi = function(upiData) {
+  const invs = (typeof invoicesDb !== "undefined" && Array.isArray(invoicesDb)) ? invoicesDb : (window.invoicesDb || []);
+  if (!invs.length) return null;
+
+  const note = (upiData.tn || "").toLowerCase();
+  const ref = (upiData.tr || "").toLowerCase();
+  const amt = upiData.am || 0;
+
+  const getBal = (inv) => {
+    if (typeof getInvoicePaidAndBalance === "function") {
+      return getInvoicePaidAndBalance(inv).balance;
+    }
+    return Math.max(0, (parseFloat(inv.total || 0) - parseFloat(inv.paidAmount || 0)));
+  };
+
+  // 1. Match by Invoice Number mentioned in transaction note or reference
+  if (note || ref) {
+    for (const inv of invs) {
+      const invNoClean = String(inv.invoiceNo || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      const rawNo = String(inv.invoiceNo || "").toLowerCase();
+      if (invNoClean && (note.includes(invNoClean) || ref.includes(invNoClean))) return inv;
+      if (rawNo && (note.includes(rawNo) || ref.includes(rawNo))) return inv;
+      if (inv.id && (note.includes(String(inv.id).toLowerCase()) || ref.includes(String(inv.id).toLowerCase()))) return inv;
+    }
+  }
+
+  // 2. Match by Customer / Buyer name mentioned in transaction note
+  if (note) {
+    for (const inv of invs) {
+      const buyer = String(inv.buyerName || inv.customerName || inv.clientName || "").toLowerCase().trim();
+      if (buyer && buyer.length >= 3 && note.includes(buyer)) return inv;
+    }
+  }
+
+  // 3. Match pending invoice where balance exactly matches scanned UPI amount
+  if (amt > 0) {
+    const balMatch = invs.find(inv => {
+      const bal = getBal(inv);
+      return bal > 0 && Math.abs(bal - amt) < 0.01;
+    });
+    if (balMatch) return balMatch;
+
+    // 4. Match invoice where total exactly equals scanned UPI amount
+    const totMatch = invs.find(inv => {
+      const tot = parseFloat(inv.total || 0);
+      return Math.abs(tot - amt) < 0.01;
+    });
+    if (totMatch) return totMatch;
+  }
+
+  // 5. Default to the most recent pending (unpaid / partial) invoice
+  const pendingInv = invs.find(inv => getBal(inv) > 0.01);
+  if (pendingInv) return pendingInv;
+
+  // 6. Default to first invoice
+  return invs[0];
+};
+
+window.renderQrUpiSettlementHub = function(rawUri, source = 'upload') {
+  if (!rawUri) return;
+  const clean = String(rawUri).trim();
+  const upiData = window.parseUpiPaymentUri(clean);
+  if (!upiData) return;
+
+  window._currentQrUpiData = upiData;
+
+  const wrapId = (source === 'camera') ? "scanner-camera-upi-settle-wrap" : "qr-upload-upi-settle-wrap";
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+
+  if (source === 'camera') {
+    window.isCameraPausedForSettlement = true;
+    const unrecCard = document.getElementById("barcode-unrecognized-card");
+    if (unrecCard) unrecCard.style.display = "none";
+  } else {
+    const actionBtn = document.getElementById("qr-result-action-btn");
+    if (actionBtn) actionBtn.style.display = "none";
+  }
+
+  const allInvs = (typeof invoicesDb !== "undefined" && Array.isArray(invoicesDb)) ? invoicesDb : (window.invoicesDb || []);
+  const matchedInv = window.findMatchingInvoiceForUpi(upiData);
+  const matchedId = matchedInv ? (matchedInv.id || matchedInv.invoiceNo) : "";
+  window._currentQrMatchedInvId = matchedId;
+
+  const fmt = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Separate pending vs settled invoices for the dropdown
+  const pendingInvs = [];
+  const settledInvs = [];
+  allInvs.forEach(inv => {
+    const p = (typeof getInvoicePaidAndBalance === "function") ? getInvoicePaidAndBalance(inv) : { balance: 0 };
+    if (p.balance > 0.01) pendingInvs.push(inv);
+    else settledInvs.push(inv);
+  });
+
+  let optionsHtml = "";
+  if (pendingInvs.length > 0) {
+    optionsHtml += `<optgroup label="⚠️ Pending / Unpaid Bills (${pendingInvs.length})">`;
+    pendingInvs.forEach(inv => {
+      const p = (typeof getInvoicePaidAndBalance === "function") ? getInvoicePaidAndBalance(inv) : { balance: 0, total: 0 };
+      const cust = inv.buyerName || inv.customerName || "Customer";
+      const isSel = (inv.id === matchedId || inv.invoiceNo === matchedId);
+      optionsHtml += `<option value="${inv.id || inv.invoiceNo}" ${isSel ? 'selected' : ''}>#${inv.invoiceNo} • ${cust} • Due: ₹${fmt(p.balance)} (Total: ₹${fmt(p.total)})</option>`;
+    });
+    optionsHtml += `</optgroup>`;
+  }
+
+  if (settledInvs.length > 0) {
+    optionsHtml += `<optgroup label="✅ Settled / Paid Invoices (${settledInvs.length})">`;
+    settledInvs.forEach(inv => {
+      const p = (typeof getInvoicePaidAndBalance === "function") ? getInvoicePaidAndBalance(inv) : { balance: 0, total: 0 };
+      const cust = inv.buyerName || inv.customerName || "Customer";
+      const isSel = (inv.id === matchedId || inv.invoiceNo === matchedId);
+      optionsHtml += `<option value="${inv.id || inv.invoiceNo}" ${isSel ? 'selected' : ''}>#${inv.invoiceNo} • ${cust} • Settled (₹${fmt(p.total)})</option>`;
+    });
+    optionsHtml += `</optgroup>`;
+  }
+
+  if (allInvs.length === 0) {
+    optionsHtml = `<option value="">No invoices found in database</option>`;
+  }
+
+  const payeeDisplayName = upiData.pn || "AARYAN AQUA NEEDS";
+  const payeeVpa = upiData.pa || "Store VPA";
+  const scannedAmountDisplay = upiData.am > 0 ? `₹ ${fmt(upiData.am)}` : "Custom Amount";
+
+  wrap.style.display = "block";
+  wrap.innerHTML = `
+    <div style="background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%); border: 1.5px solid #10b981; border-radius: 12px; padding: 14px; text-align: left; box-shadow: 0 10px 25px rgba(0,0,0,0.6); color: #ffffff;">
+      
+      <!-- Header Banner -->
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; gap: 9px;">
+          <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; color: #34d399; display: flex; align-items: center; justify-content: center; font-size: 16px;">
+            <i class="fa-solid fa-qrcode"></i>
+          </div>
+          <div>
+            <div style="font-size: 13px; font-weight: 800; color: #ffffff; letter-spacing: 0.3px;">UPI QR Payment &amp; Settlement Hub</div>
+            <div style="font-size: 11px; color: #94a3b8;">Payee: <strong style="color: #38bdf8;">${payeeDisplayName}</strong> (${payeeVpa})</div>
+          </div>
+        </div>
+        <div style="text-align: right;">
+          <div style="background: #047857; color: #ecfdf5; font-size: 13px; font-weight: 900; padding: 4px 10px; border-radius: 8px; box-shadow: 0 2px 8px rgba(4,120,87,0.4);">
+            ${scannedAmountDisplay}
+          </div>
+        </div>
+      </div>
+
+      <!-- Bill / Invoice Selection Dropdown -->
+      <div style="margin-bottom: 12px;">
+        <label style="font-size: 11px; font-weight: 700; color: #cbd5e1; display: flex; justify-content: space-between; margin-bottom: 5px;">
+          <span>Select Invoice / Bill to Settle:</span>
+          <span style="color: #38bdf8; font-size: 10.5px; font-weight: 600;"><i class="fa-solid fa-link"></i> Auto-Linked</span>
+        </label>
+        <select id="qr-settle-invoice-select-${source}" style="width: 100%; background: #0b1120; color: #ffffff; border: 1.5px solid #38bdf8; border-radius: 8px; padding: 8px 10px; font-size: 12px; font-weight: 600; outline: none;" onchange="window.onQrSettleInvoiceChanged('${source}', ${upiData.am})">
+          ${optionsHtml}
+        </select>
+      </div>
+
+      <!-- Selected Invoice Financial Summary Card -->
+      <div id="qr-settle-card-${source}" style="background: #090e1a; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px;"></div>
+
+      <!-- Action Buttons Row -->
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <!-- Button 1: Mark as FULLY PAID -->
+        <button type="button" id="qr-btn-full-settle-${source}" class="btn" onclick="window.confirmQrPaymentSettlement('${source}', 'full')" style="width: 100%; background: linear-gradient(135deg, #059669 0%, #10b981 100%); color: #ffffff; border: none; border-radius: 8px; padding: 10px 12px; font-size: 13px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; box-shadow: 0 4px 14px rgba(16,185,129,0.35);">
+          <i class="fa-solid fa-circle-check"></i>
+          <span id="qr-btn-full-text-${source}">Mark Bill as FULLY PAID</span>
+        </button>
+
+        <div style="display: flex; gap: 8px;">
+          <!-- Button 2: Record Partial Payment (Drawer Toggle) -->
+          <button type="button" class="btn" onclick="window.toggleQrPartialDrawer('${source}')" style="flex: 1; background: #d97706; color: #ffffff; border: none; border-radius: 8px; padding: 8px 10px; font-size: 11.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;">
+            <i class="fa-solid fa-pen-to-square"></i> Record Partial Payment
+          </button>
+
+          <!-- Button 3: Mobile UPI App Link -->
+          <a href="${clean}" target="_blank" class="btn" style="flex: 1; background: #1e293b; color: #38bdf8; border: 1px solid #38bdf8; border-radius: 8px; padding: 8px 10px; font-size: 11.5px; font-weight: 700; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <i class="fa-solid fa-mobile-screen"></i> Pay in UPI App
+          </a>
+        </div>
+      </div>
+
+      <!-- Expandable Partial Payment Drawer -->
+      <div id="qr-partial-drawer-${source}" style="display: none; margin-top: 12px; background: rgba(0,0,0,0.35); border: 1.5px dashed #f59e0b; border-radius: 10px; padding: 12px;">
+        <div style="font-size: 12px; font-weight: 800; color: #fbbf24; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-calculator"></i> Enter Partial Installment Received
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+          <div>
+            <label style="font-size: 10.5px; color: #94a3b8; display: block; margin-bottom: 3px; font-weight: 600;">Amount Received (₹):</label>
+            <input type="number" id="qr-partial-amt-${source}" step="0.01" min="1" style="width: 100%; background: #0f172a; border: 1.5px solid #38bdf8; color: #34d399; font-weight: 800; font-size: 14px; border-radius: 6px; padding: 6px 8px; outline: none;" oninput="window.calcQrPartialRemaining('${source}')">
+          </div>
+          <div>
+            <label style="font-size: 10.5px; color: #94a3b8; display: block; margin-bottom: 3px; font-weight: 600;">Payment Mode:</label>
+            <select id="qr-partial-mode-${source}" style="width: 100%; background: #0f172a; border: 1px solid #475569; color: #ffffff; font-size: 11.5px; border-radius: 6px; padding: 7px 8px; outline: none;">
+              <option value="UPI / QR Scan" selected>UPI / QR Scan</option>
+              <option value="Cash">Cash</option>
+              <option value="Bank Transfer (NEFT/IMPS)">Bank Transfer (NEFT/IMPS)</option>
+              <option value="Cheque / DD">Cheque / DD</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 10px;">
+          <label style="font-size: 10.5px; color: #94a3b8; display: block; margin-bottom: 3px; font-weight: 600;">UTR / Transaction Reference #:</label>
+          <input type="text" id="qr-partial-ref-${source}" value="${upiData.tr || ('UPI-QR-' + Date.now().toString().slice(-6))}" placeholder="e.g. 423984029348 or UTR" style="width: 100%; background: #0f172a; border: 1px solid #475569; color: #ffffff; font-size: 11.5px; border-radius: 6px; padding: 6px 8px; outline: none;">
+        </div>
+
+        <!-- Dynamic Live Calculation Preview -->
+        <div id="qr-partial-calc-preview-${source}" style="background: #111827; border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 8px 10px; font-size: 11.5px; color: #cbd5e1; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+          <span>Remaining Balance after installment:</span>
+          <strong id="qr-partial-rem-val-${source}" style="color: #fbbf24; font-size: 13px;">₹0.00</strong>
+        </div>
+
+        <button type="button" class="btn" onclick="window.confirmQrPaymentSettlement('${source}', 'partial')" style="width: 100%; background: linear-gradient(135deg, #d97706 0%, #b45309 100%); color: #ffffff; border: none; border-radius: 8px; padding: 9px; font-size: 12.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 7px; cursor: pointer;">
+          <i class="fa-solid fa-floppy-disk"></i> Confirm Partial Payment &amp; Update Bill
+        </button>
+      </div>
+
+      <!-- Dismiss / Cancel Button -->
+      <div style="margin-top: 10px; text-align: center;">
+        <button type="button" onclick="window.cancelQrSettlement('${source}')" style="background: none; border: none; color: #94a3b8; font-size: 11px; text-decoration: underline; cursor: pointer;">
+          Cancel / Scan Another Code
+        </button>
+      </div>
+
+    </div>
+  `;
+
+  // Render initial invoice card details and calculate amounts
+  window.onQrSettleInvoiceChanged(source, upiData.am);
+};
+
+window.onQrSettleInvoiceChanged = function(source, scannedAmt) {
+  const select = document.getElementById(`qr-settle-invoice-select-${source}`);
+  const card = document.getElementById(`qr-settle-card-${source}`);
+  const fullBtn = document.getElementById(`qr-btn-full-settle-${source}`);
+  const fullText = document.getElementById(`qr-btn-full-text-${source}`);
+  const partialAmtInput = document.getElementById(`qr-partial-amt-${source}`);
+  if (!select) return;
+
+  const invId = select.value;
+  window._currentQrMatchedInvId = invId;
+
+  const allInvs = (typeof invoicesDb !== "undefined" && Array.isArray(invoicesDb)) ? invoicesDb : (window.invoicesDb || []);
+  const inv = allInvs.find(i => (i.id === invId || i.invoiceNo === invId));
+
+  const fmt = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  if (!inv) {
+    if (card) card.innerHTML = `<span style="color: #94a3b8; font-size: 11px;">No invoice selected</span>`;
+    if (fullBtn) fullBtn.disabled = true;
+    return;
+  }
+
+  const payInfo = (typeof getInvoicePaidAndBalance === "function") 
+    ? getInvoicePaidAndBalance(inv) 
+    : { total: parseFloat(inv.total || 0), paid: parseFloat(inv.paidAmount || 0), balance: parseFloat(inv.balanceDue || 0), status: inv.paymentStatus || 'Paid' };
+
+  const total = payInfo.total;
+  const paid = payInfo.paid;
+  const balance = payInfo.balance;
+  const isPaid = (balance <= 0.01);
+
+  const cust = inv.buyerName || inv.customerName || "Customer";
+  const dateStr = inv.date || inv.createdAt || "Recent";
+
+  let statusBadge = "";
+  if (isPaid) {
+    statusBadge = `<span style="background: #065f46; color: #a7f3d0; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800;">PAID</span>`;
+  } else if (paid > 0) {
+    statusBadge = `<span style="background: #78350f; color: #fde68a; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800;">PARTIAL</span>`;
+  } else {
+    statusBadge = `<span style="background: #7f1d1d; color: #fecaca; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 800;">UNPAID</span>`;
+  }
+
+  if (card) {
+    card.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <span style="font-size: 12px; font-weight: 800; color: #38bdf8;">
+          <i class="fa-solid fa-file-invoice"></i> Bill #${inv.invoiceNo} <span style="font-size: 11px; font-weight: 400; color: #94a3b8;">(${dateStr})</span>
+        </span>
+        ${statusBadge}
+      </div>
+      <div style="font-size: 11.5px; color: #cbd5e1; margin-bottom: 6px;">
+        Customer: <strong style="color: #ffffff;">${cust}</strong>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; background: rgba(0,0,0,0.3); padding: 6px 8px; border-radius: 6px; text-align: center;">
+        <div>
+          <div style="font-size: 9.5px; color: #94a3b8; text-transform: uppercase;">Total Bill</div>
+          <div style="font-size: 12px; font-weight: 700; color: #ffffff;">₹${fmt(total)}</div>
+        </div>
+        <div>
+          <div style="font-size: 9.5px; color: #94a3b8; text-transform: uppercase;">Paid So Far</div>
+          <div style="font-size: 12px; font-weight: 700; color: #34d399;">₹${fmt(paid)}</div>
+        </div>
+        <div>
+          <div style="font-size: 9.5px; color: #94a3b8; text-transform: uppercase;">Balance Due</div>
+          <div style="font-size: 12.5px; font-weight: 900; color: ${isPaid ? '#34d399' : '#ef4444'};">₹${fmt(balance)}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Update Full Settle Button
+  if (fullBtn && fullText) {
+    if (isPaid) {
+      fullBtn.disabled = true;
+      fullBtn.style.opacity = "0.6";
+      fullBtn.style.cursor = "not-allowed";
+      fullText.textContent = `Bill #${inv.invoiceNo} is Already Fully Paid (₹0 Due)`;
+    } else {
+      fullBtn.disabled = false;
+      fullBtn.style.opacity = "1";
+      fullBtn.style.cursor = "pointer";
+      fullText.textContent = `Mark Bill #${inv.invoiceNo} as FULLY PAID (₹ ${fmt(balance)})`;
+    }
+  }
+
+  // Pre-fill partial input
+  if (partialAmtInput) {
+    let defPartial = 0;
+    if (balance > 0) {
+      defPartial = (scannedAmt > 0 && scannedAmt < balance) ? scannedAmt : Math.round(balance / 2);
+      if (defPartial <= 0) defPartial = balance;
+    }
+    partialAmtInput.value = defPartial > 0 ? defPartial.toFixed(2) : "";
+    partialAmtInput.max = balance > 0 ? balance : total;
+  }
+
+  window.calcQrPartialRemaining(source);
+};
+
+window.toggleQrPartialDrawer = function(source) {
+  const drawer = document.getElementById(`qr-partial-drawer-${source}`);
+  if (!drawer) return;
+  const isHidden = (drawer.style.display === "none" || !drawer.style.display);
+  drawer.style.display = isHidden ? "block" : "none";
+  if (isHidden) {
+    window.calcQrPartialRemaining(source);
+    const amtInput = document.getElementById(`qr-partial-amt-${source}`);
+    if (amtInput) amtInput.focus();
+  }
+};
+
+window.calcQrPartialRemaining = function(source) {
+  const select = document.getElementById(`qr-settle-invoice-select-${source}`);
+  const amtInput = document.getElementById(`qr-partial-amt-${source}`);
+  const remEl = document.getElementById(`qr-partial-rem-val-${source}`);
+  if (!select || !remEl) return;
+
+  const invId = select.value;
+  const allInvs = (typeof invoicesDb !== "undefined" && Array.isArray(invoicesDb)) ? invoicesDb : (window.invoicesDb || []);
+  const inv = allInvs.find(i => (i.id === invId || i.invoiceNo === invId));
+
+  const fmt = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  let curBal = 0;
+  if (inv) {
+    const payInfo = (typeof getInvoicePaidAndBalance === "function") 
+      ? getInvoicePaidAndBalance(inv) 
+      : { balance: parseFloat(inv.balanceDue || 0) };
+    curBal = payInfo.balance;
+  }
+
+  const entered = parseFloat(amtInput ? amtInput.value : 0) || 0;
+  const rem = Math.max(0, curBal - entered);
+
+  remEl.textContent = `₹ ${fmt(rem)}`;
+  if (rem <= 0.01) {
+    remEl.style.color = "#34d399";
+    remEl.textContent = "₹ 0.00 (Fully Cleared)";
+  } else {
+    remEl.style.color = "#fbbf24";
+  }
+};
+
+window.cancelQrSettlement = function(source) {
+  const wrapId = (source === 'camera') ? "scanner-camera-upi-settle-wrap" : "qr-upload-upi-settle-wrap";
+  const wrap = document.getElementById(wrapId);
+  if (wrap) {
+    wrap.style.display = "none";
+    wrap.innerHTML = "";
+  }
+  if (source === 'camera') {
+    window.isCameraPausedForSettlement = false;
+  } else {
+    if (typeof resetDeviceQrUpload === "function") {
+      resetDeviceQrUpload();
+    }
+  }
+};
+
+window.confirmQrPaymentSettlement = function(source, type) {
+  const select = document.getElementById(`qr-settle-invoice-select-${source}`);
+  const invId = select ? select.value : window._currentQrMatchedInvId;
+  const upiData = window._currentQrUpiData || {};
+
+  if (!invId) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Please select an invoice to settle.", "warning", 3000);
+    }
+    return;
+  }
+
+  const allInvs = (typeof invoicesDb !== "undefined" && Array.isArray(invoicesDb)) ? invoicesDb : (window.invoicesDb || []);
+  const inv = allInvs.find(i => (i.id === invId || i.invoiceNo === invId));
+
+  if (!inv) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("❌ Selected invoice could not be found.", "error", 3000);
+    }
+    return;
+  }
+
+  const payInfo = (typeof getInvoicePaidAndBalance === "function") 
+    ? getInvoicePaidAndBalance(inv) 
+    : { total: parseFloat(inv.total || 0), balance: parseFloat(inv.balanceDue || 0) };
+
+  let payAmt = 0;
+  let mode = "UPI / QR Scan";
+  let ref = upiData.tr || ('UPI-QR-' + Date.now().toString().slice(-6));
+  let note = "Settled via UPI QR Scan";
+
+  const fmt = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  if (type === 'full') {
+    payAmt = payInfo.balance > 0 ? payInfo.balance : (upiData.am > 0 ? upiData.am : payInfo.total);
+    note = `Full settlement via UPI QR scan (Scanned ${upiData.pa || 'UPI'})`;
+  } else if (type === 'partial') {
+    const amtInput = document.getElementById(`qr-partial-amt-${source}`);
+    const modeSelect = document.getElementById(`qr-partial-mode-${source}`);
+    const refInput = document.getElementById(`qr-partial-ref-${source}`);
+
+    payAmt = parseFloat(amtInput ? amtInput.value : 0);
+    if (isNaN(payAmt) || payAmt <= 0) {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("⚠️ Please enter a valid partial amount greater than ₹0.", "warning", 3000);
+      }
+      if (amtInput) amtInput.focus();
+      return;
+    }
+    if (modeSelect && modeSelect.value) mode = modeSelect.value;
+    if (refInput && refInput.value.trim()) ref = refInput.value.trim();
+    note = `Partial installment recorded via QR scan (${mode})`;
+  }
+
+  if (typeof window.recordPostInvoicePayment === "function") {
+    const res = window.recordPostInvoicePayment(inv.id || inv.invoiceNo, {
+      amount: payAmt,
+      mode: mode,
+      reference: ref,
+      note: note,
+      date: new Date().toISOString()
+    });
+
+    if (res && res.ok) {
+      const isFull = (res.invoice.balanceDue <= 0.01);
+      if (typeof showFloatingToast === 'function') {
+        if (isFull) {
+          showFloatingToast(`🎉 Invoice #${res.invoice.invoiceNo} marked as FULLY PAID (₹ ${fmt(payAmt)})!`, "success", 4500);
+        } else {
+          showFloatingToast(`✅ Recorded Partial Payment of ₹ ${fmt(payAmt)} on #${res.invoice.invoiceNo}! Remaining: ₹ ${fmt(res.invoice.balanceDue)}`, "success", 4500);
+        }
+      }
+
+      window.closeBarcodeScannerModal();
+
+      if (typeof loadInvoicesHistoryTable === "function") loadInvoicesHistoryTable();
+      if (typeof updateDashboardOverview === "function") updateDashboardOverview();
+      if (typeof renderRecentInvoicesTable === "function") renderRecentInvoicesTable();
+      if (typeof renderCustomerLedgerSummary === "function") renderCustomerLedgerSummary();
+    } else {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("⚠️ Failed to record payment: " + (res?.error || "Unknown error"), "error", 4000);
+      }
+    }
+  } else {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("❌ Payment recording engine not available.", "error", 3000);
+    }
+  }
+};
+
 window.processAndRouteDecodedQr = function(rawCode, source = 'upload') {
   if (!rawCode) return;
   const clean = String(rawCode).trim();
@@ -10907,10 +11461,9 @@ window.processAndRouteDecodedQr = function(rawCode, source = 'upload') {
 
   // 4. UPI Payment
   if (clean.startsWith("upi://pay")) {
-    window.closeBarcodeScannerModal();
     window.playScannerBeep();
-    if (typeof showFloatingToast === 'function') {
-      showFloatingToast("💳 UPI Payment QR detected!", "info", 3500);
+    if (typeof window.renderQrUpiSettlementHub === "function") {
+      window.renderQrUpiSettlementHub(clean, source);
     }
     return;
   }
@@ -10925,6 +11478,12 @@ window.handleScannedBarcode = function(code) {
 
   // Intercept Invoice Verification QR scans
   if (clean.includes("verify_invoice=") || clean.includes("/?verify_invoice=")) {
+    window.processAndRouteDecodedQr(clean, 'camera');
+    return;
+  }
+
+  // Intercept UPI Payment QR scans
+  if (clean.startsWith("upi://pay")) {
     window.processAndRouteDecodedQr(clean, 'camera');
     return;
   }
