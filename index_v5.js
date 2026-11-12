@@ -13056,56 +13056,45 @@ function populateA4PrintOverlay(invoice) {
   const bankBranchEl = document.getElementById("p-print-bank-branch");
   if (bankBranchEl) bankBranchEl.textContent = bank.branch || "Repalle";
 
-  // Payment QR Code (Strict Privacy: NO website links, NO customer details, NO plain text data)
-  const isEstimateDoc = Boolean(invoice.isEstimate || String(invoice.invoiceType || '').toUpperCase().includes("QUOTATION") || String(invoice.invoiceNo || '').startsWith("EST-"));
-  const payInfoA4 = (typeof getInvoicePaidAndBalance === "function") 
-    ? getInvoicePaidAndBalance(invoice) 
-    : { isPaid: true, balance: 0 };
-  const rawStatusA4 = String(invoice.paymentStatus || invoice.status || (invoice.details && invoice.details.paymentStatus) || payInfoA4.status || 'Paid').toLowerCase().trim();
-  const rawBalanceA4 = (invoice.balanceDue !== undefined && !isNaN(parseFloat(invoice.balanceDue)))
-    ? parseFloat(invoice.balanceDue)
-    : ((invoice.details && invoice.details.balanceDue !== undefined && !isNaN(parseFloat(invoice.details.balanceDue)))
-        ? parseFloat(invoice.details.balanceDue)
-        : payInfoA4.balance);
-  const isPaidInvoice = Boolean(isEstimateDoc || payInfoA4.isPaid || rawStatusA4 === 'paid' || rawBalanceA4 <= 0);
+  // Payment QR Code (Strict Privacy: Direct Banking UPI QR - NO website URLs, NO plain customer leaks)
   const qrPaidContainer = document.getElementById("p-print-qr-paid-container");
   const qrUnpaidContainer = document.getElementById("p-print-qr-unpaid-container");
   const qrHeaderTitle = document.getElementById("p-print-qr-header-title");
   const verifyQrImg = document.getElementById("p-print-verify-qr-img");
+  const qrCaption = document.getElementById("p-print-qr-caption");
 
-  if (isPaidInvoice) {
-    // If invoice is PAID or QUOTATION: NO QR CODE! Show clean official seal. Nothing to scan, zero data exposed!
-    if (qrPaidContainer) {
-      qrPaidContainer.style.display = "flex";
-      const sealTitle = qrPaidContainer.querySelector("span:first-of-type");
-      if (sealTitle) sealTitle.textContent = isEstimateDoc ? "ESTIMATE" : "PAID";
-    }
-    if (qrUnpaidContainer) qrUnpaidContainer.style.display = "none";
-    if (qrHeaderTitle) qrHeaderTitle.textContent = isEstimateDoc ? "ESTIMATE STATUS" : "PAYMENT STATUS";
-    if (verifyQrImg) verifyQrImg.src = "";
-  } else {
-    // If UNPAID or PARTIAL: Show pure standard UPI Payment QR (NO website URL, NO customer name, NO customer phone)
-    if (qrPaidContainer) qrPaidContainer.style.display = "none";
-    if (qrUnpaidContainer) qrUnpaidContainer.style.display = "flex";
-    if (qrHeaderTitle) qrHeaderTitle.textContent = "SCAN & PAY UPI";
+  if (qrPaidContainer) qrPaidContainer.style.display = "none";
+  if (qrUnpaidContainer) qrUnpaidContainer.style.display = "flex";
+  if (qrHeaderTitle) qrHeaderTitle.textContent = "SCAN & PAY UPI";
 
-    if (verifyQrImg) {
-      const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
-      const cName = (globalSettings.company?.name || "Aaryan Aqua Needs").replace(/[^a-zA-Z0-9 ]/g, '').trim();
-      const balAmt = parseFloat(invoice.balanceDue !== undefined ? invoice.balanceDue : (invoice.total || 0)) || 0;
-      // Standard Direct Banking UPI String ONLY - zero web URLs, zero customer info
-      const pureUpiUrl = `upi://pay?pa=${encodeURIComponent(realUpiId)}&pn=${encodeURIComponent(cName)}&am=${balAmt.toFixed(2)}&cu=INR`;
+  const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
+  const cName = (globalSettings.company?.name || "Aaryan Aqua Needs").replace(/[^a-zA-Z0-9 ]/g, '').trim();
+  const rawTot = parseFloat(invoice.total !== undefined ? invoice.total : (invoice.details?.total || 0)) || 0;
+  const rawBal = (invoice.balanceDue !== undefined && !isNaN(parseFloat(invoice.balanceDue)))
+    ? parseFloat(invoice.balanceDue)
+    : ((invoice.details && invoice.details.balanceDue !== undefined && !isNaN(parseFloat(invoice.details.balanceDue)))
+        ? parseFloat(invoice.details.balanceDue)
+        : rawTot);
+  const balAmt = (rawBal > 0) ? rawBal : rawTot;
+  const cleanInvNo = String(invoice.invoiceNo || invoice.id || '1').replace(/[^a-zA-Z0-9]/g, '');
+  const pureUpiUrl = `upi://pay?pa=${encodeURIComponent(realUpiId)}&pn=${encodeURIComponent(cName)}&am=${balAmt.toFixed(2)}&cu=INR&tn=Bill${cleanInvNo}`;
 
-      try {
-        if (typeof QRious !== 'undefined') {
-          const qr = new QRious({ value: pureUpiUrl, size: 400, level: 'M' });
-          verifyQrImg.src = qr.toDataURL('image/png');
-        } else {
-          verifyQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(pureUpiUrl)}`;
-        }
-      } catch (e) {
+  if (qrCaption) {
+    qrCaption.textContent = (rawBal > 0) 
+      ? `Scan & Pay via UPI (Due: ₹${formatCurrency(rawBal)})` 
+      : `Scan with UPI (GPay / PhonePe)`;
+  }
+
+  if (verifyQrImg) {
+    try {
+      if (typeof QRious !== 'undefined') {
+        const qr = new QRious({ value: pureUpiUrl, size: 400, level: 'M' });
+        verifyQrImg.src = qr.toDataURL('image/png');
+      } else {
         verifyQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(pureUpiUrl)}`;
       }
+    } catch (e) {
+      verifyQrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(pureUpiUrl)}`;
     }
   }
 }
@@ -13178,45 +13167,33 @@ function populateThermalPrintOverlay(invoice) {
     if (dueContainer) dueContainer.style.display = "none";
   }
 
-  // Dynamic UPI Payment QR code for physical thermal slip (Strict Privacy)
-  const isEstimateThermal = Boolean(invoice.isEstimate || String(invoice.invoiceType || '').toUpperCase().includes("QUOTATION") || String(invoice.invoiceNo || '').startsWith("EST-"));
+  // Dynamic UPI Payment QR code for physical thermal slip (Always Present)
   const thUpiContainer = document.getElementById("th-upi-qr-container");
-  const payInfoTh = (typeof getInvoicePaidAndBalance === "function") 
-    ? getInvoicePaidAndBalance(invoice) 
-    : { isPaid: true, balance: 0 };
-  const rawStatusTh = String(invoice.paymentStatus || invoice.status || (invoice.details && invoice.details.paymentStatus) || payInfoTh.status || 'Paid').toLowerCase().trim();
-  const rawBalanceTh = (invoice.balanceDue !== undefined && !isNaN(parseFloat(invoice.balanceDue)))
+  const qrImg = document.getElementById("th-upi-qr-img");
+
+  if (thUpiContainer) thUpiContainer.style.display = "block";
+  const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
+  const cName = (globalSettings.company?.name || "Aaryan Aqua Needs").replace(/[^a-zA-Z0-9 ]/g, '').trim();
+  const rawTotTh = parseFloat(invoice.total !== undefined ? invoice.total : (invoice.details?.total || taxableVal)) || 0;
+  const rawBalTh = (invoice.balanceDue !== undefined && !isNaN(parseFloat(invoice.balanceDue)))
     ? parseFloat(invoice.balanceDue)
     : ((invoice.details && invoice.details.balanceDue !== undefined && !isNaN(parseFloat(invoice.details.balanceDue)))
         ? parseFloat(invoice.details.balanceDue)
-        : payInfoTh.balance);
-  const isPaidThermal = Boolean(isEstimateThermal || payInfoTh.isPaid || rawStatusTh === 'paid' || rawBalanceTh <= 0);
-  const qrImg = document.getElementById("th-upi-qr-img");
+        : rawTotTh);
+  const amountToPay = (rawBalTh > 0) ? rawBalTh : rawTotTh;
+  const cleanInvNoTh = String(invoice.invoiceNo || '1').replace(/[^a-zA-Z0-9]/g, '');
+  const upiUrl = `upi://pay?pa=${encodeURIComponent(realUpiId)}&pn=${encodeURIComponent(cName)}&am=${amountToPay.toFixed(2)}&cu=INR&tn=Bill${cleanInvNoTh}`;
 
-  if (isPaidThermal) {
-    // If paid, hide the thermal QR container completely! No QR code on paid receipts!
-    if (thUpiContainer) thUpiContainer.style.display = "none";
-    if (qrImg) qrImg.src = "";
-  } else {
-    // Only if balance is due: show pure standard UPI payment QR (NO website URL, NO customer data)
-    if (thUpiContainer) thUpiContainer.style.display = "block";
-    const realUpiId = (globalSettings.upiId || globalSettings.bank?.upi || "7386262139@upi").trim();
-    const cName = (globalSettings.company?.name || "Aaryan Aqua Needs").replace(/[^a-zA-Z0-9 ]/g, '').trim();
-    const amountToPay = (invoice.balanceDue > 0 ? invoice.balanceDue : (invoice.total || taxableVal)) || 0;
-    const cleanInvNo = String(invoice.invoiceNo || '1').replace(/[^a-zA-Z0-9]/g, '');
-    const upiUrl = `upi://pay?pa=${encodeURIComponent(realUpiId)}&pn=${encodeURIComponent(cName)}&am=${amountToPay.toFixed(2)}&cu=INR&tn=Bill${cleanInvNo}`;
-
-    if (qrImg) {
-      try {
-        if (typeof QRious !== 'undefined') {
-          const qr = new QRious({ value: upiUrl, size: 160, level: 'M' });
-          qrImg.src = qr.toDataURL('image/png');
-        } else {
-          qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(upiUrl)}`;
-        }
-      } catch (e) {
+  if (qrImg) {
+    try {
+      if (typeof QRious !== 'undefined') {
+        const qr = new QRious({ value: upiUrl, size: 160, level: 'M' });
+        qrImg.src = qr.toDataURL('image/png');
+      } else {
         qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(upiUrl)}`;
       }
+    } catch (e) {
+      qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(upiUrl)}`;
     }
   }
 }
