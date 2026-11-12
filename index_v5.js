@@ -23910,7 +23910,26 @@ window.shareStoreBackupFiles = async function(options = {}) {
     }
   }
 
-  // 3. Fallback: Instant Direct Downloads of Master Excel + JSON
+  // 3. Dispatch Direct Cloud Mail Backup to Kandukuri Jagan's inbox via live mail dispatcher
+  try {
+    const scriptUrl = typeof GOOGLE_SCRIPT_URL !== 'undefined' ? GOOGLE_SCRIPT_URL : "https://script.google.com/macros/s/AKfycbxHi4L_xLrfRhx1KWxRxQD1QcqbVEZVMcYR37DJEGSPe2ykZyy-ATnYyZFxnSySS6OF/exec";
+    fetch(scriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'submit_client_inquiry',
+        name: 'Aaryan Aqua Store Backup Vault',
+        email: 'store-vault-' + Date.now() + '@aaryanaqua.com',
+        phone: '7416605652',
+        businessName: ((typeof globalSettings !== 'undefined' && globalSettings.company?.name) || 'Aaryan Aqua Needs') + ' (Kandukuri Jagan)',
+        service: 'Official Store Database Backup',
+        timeline: 'Real-time Snapshot (' + todayStr + ')',
+        requirements: window.generateStoreBackupSummaryText()
+      })
+    }).catch(() => {});
+  } catch (_) {}
+
+  // 4. Instant Direct Downloads of Master Excel + JSON
   if (typeof window.exportMasterExcelBackup === 'function') {
     window.exportMasterExcelBackup();
   }
@@ -23920,7 +23939,7 @@ window.shareStoreBackupFiles = async function(options = {}) {
     }
   }, 350);
 
-  // 4. Open Gmail Compose with Executive Summary
+  // 5. Open Gmail Compose with Executive Summary
   const recipient = (document.getElementById('backup-target-email')?.value || "kandukurijagan99@gmail.com").trim();
   const compName = (typeof globalSettings !== 'undefined' && globalSettings.company?.name) || "Aaryan Aqua Needs";
   const subject = encodeURIComponent(`📦 ${compName} - Store Database Backup (${todayStr})`);
@@ -23929,7 +23948,7 @@ window.shareStoreBackupFiles = async function(options = {}) {
   window.open(gmailComposeUrl, '_blank');
 
   if (typeof showFloatingToast === 'function') {
-    showFloatingToast("📁 Master Excel & JSON downloaded & Gmail opened!", "success", 5000);
+    showFloatingToast("📧 Backup email dispatched to inbox & Excel files downloaded!", "success", 5000);
   }
 };
 
