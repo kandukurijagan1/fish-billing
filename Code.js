@@ -1209,7 +1209,9 @@ var ALLOWED_ACTIONS = [
   "upload_pdf",
   "send_login_otp",
   "verify_login_otp",
-  "submit_client_inquiry"
+  "submit_client_inquiry",
+  "email_backup",
+  "setup_backup_schedule"
 ];
 
 function computeSyncDataHash(invs, prods, parts) {

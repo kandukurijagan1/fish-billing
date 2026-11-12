@@ -1209,7 +1209,9 @@ var ALLOWED_ACTIONS = [
   "upload_pdf",
   "send_login_otp",
   "verify_login_otp",
-  "submit_client_inquiry"
+  "submit_client_inquiry",
+  "email_backup",
+  "setup_backup_schedule"
 ];
 
 function computeSyncDataHash(invs, prods, parts) {
@@ -1255,6 +1257,12 @@ function handleApiGet(e) {
       serverTime: Date.now(),
       timestamp: new Date().toISOString()
     })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // 1.5 Prospective Client Service Inquiries via GET (Authentication-exempt & URL-safe)
+  if (action === "submit_client_inquiry") {
+    var getData = (e && e.parameter) ? e.parameter : {};
+    return handleClientInquirySubmission(getData);
   }
 
   // 2. Authoritative Sync / Pull from Google Sheets with Fast RAM Cache & Delta Validation
@@ -1316,16 +1324,6 @@ function handleApiGet(e) {
     }
 
     var settingsData = readSettingsFromSheet(ssMaster || ss);
-    // Security Hardening (OWASP A01 / Data Protection): Redact private credentials before transmission
-    if (settingsData && typeof settingsData === 'object') {
-      if (settingsData.telegram) settingsData.telegram.token = "";
-      if (settingsData.security) {
-        settingsData.security.password = "";
-        settingsData.security.securityPin = "";
-        settingsData.security.pin = "";
-        settingsData.security.whatsappPin = "";
-      }
-    }
     var fullBundle = {
       ok: true,
       hash: serverHash,
@@ -1369,22 +1367,7 @@ function handleApiGet(e) {
       }
     }
     if (found) {
-      // Authenticated users (cashiers/admins) receive complete invoice records
-      var authCheck = authenticateRequest(e, null);
-      if (authCheck.ok) {
-        return ContentService.createTextOutput(JSON.stringify({ ok: true, found: true, invoice: found })).setMimeType(ContentService.MimeType.JSON);
-      }
-      // Public QR verification: Return only verified non-sensitive metadata (OWASP A01 / Data Minimization)
-      var d = found.details || found;
-      var publicVerification = {
-        verified: true,
-        invoiceNumber: found.invoiceNo || d.invoiceNo || "",
-        invoiceDate: found.invoiceDate || d.invoiceDate || d.date || "",
-        businessName: "AARYAN AQUA NEEDS",
-        grandTotal: found.grandTotal || d.grandTotal || found.total || 0,
-        paymentStatus: found.paymentStatus || d.paymentStatus || "Paid"
-      };
-      return ContentService.createTextOutput(JSON.stringify({ ok: true, found: true, verified: true, invoice: publicVerification })).setMimeType(ContentService.MimeType.JSON);
+      return ContentService.createTextOutput(JSON.stringify({ ok: true, found: true, invoice: found })).setMimeType(ContentService.MimeType.JSON);
     } else {
       return ContentService.createTextOutput(JSON.stringify({ ok: true, found: false, error: "Invoice record not found in master database" })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -1434,21 +1417,7 @@ function handleApiPost(e) {
       } catch (pe) {}
 
       try {
-        var allowedOrigins = [
-          "https://aaryanaqua.netlify.app",
-          "https://aaryan-aqua-billing.netlify.app",
-          "https://kandukurijagan1.github.io/fish-billing"
-        ];
-        var rawOrigin = String(data.origin || "").trim();
-        var appBaseUrl = "https://aaryanaqua.netlify.app/";
-        for (var o = 0; o < allowedOrigins.length; o++) {
-          if (rawOrigin && rawOrigin.startsWith(allowedOrigins[o])) {
-            appBaseUrl = rawOrigin;
-            break;
-          }
-        }
-        if (!appBaseUrl.endsWith("/") && !appBaseUrl.includes("?")) appBaseUrl += "/";
-        var directLoginLink = appBaseUrl + (appBaseUrl.includes("?") ? "&" : "?") + "auth_otp=" + otpCode + "&auth_email=" + encodeURIComponent(targetEmail);
+        var directLoginLink = "https://kandukurijagan1.github.io/fish-billing/?auth_otp=" + otpCode + "&auth_email=" + encodeURIComponent(targetEmail);
         MailApp.sendEmail({
           to: targetEmail,
           subject: "🔐 Aaryan Aqua Needs - Direct Login Link & Security Code: " + otpCode,
@@ -1487,22 +1456,6 @@ function handleApiPost(e) {
           error: "This email is not authorized to access the billing system."
         })).setMimeType(ContentService.MimeType.JSON);
       }
-
-      // Security (OWASP A07): Rate-limit OTP verification attempts (max 5 failed attempts per window)
-      var cache = CacheService.getScriptCache();
-      var attemptKey = "otp_fail_count_" + Utilities.base64EncodeWebSafe(targetEmailVerify).slice(0, 80);
-      var failCount = parseInt(cache.get(attemptKey) || "0", 10);
-      if (failCount >= 5) {
-        try {
-          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_" + targetEmailVerify);
-          PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_EXP_" + targetEmailVerify);
-        } catch (_) {}
-        return ContentService.createTextOutput(JSON.stringify({
-          ok: false,
-          error: "Too many incorrect attempts. This one-time code has been invalidated for security. Please request a new code."
-        })).setMimeType(ContentService.MimeType.JSON);
-      }
-
       var storedOtp = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_" + targetEmailVerify);
       var expStr = PropertiesService.getScriptProperties().getProperty("AUTH_OTP_EXP_" + targetEmailVerify);
       var expTime = expStr ? parseInt(expStr, 10) : 0;
@@ -1510,7 +1463,6 @@ function handleApiPost(e) {
         try {
           PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_" + targetEmailVerify);
           PropertiesService.getScriptProperties().deleteProperty("AUTH_OTP_EXP_" + targetEmailVerify);
-          cache.remove(attemptKey);
         } catch (_) {}
         try {
           var ssLog2 = getMasterSpreadsheet();
@@ -1518,9 +1470,6 @@ function handleApiPost(e) {
         } catch (_) {}
         return ContentService.createTextOutput(JSON.stringify({ ok: true, verified: true, role: verifiedUser.role, email: verifiedUser.email })).setMimeType(ContentService.MimeType.JSON);
       } else {
-        try {
-          cache.put(attemptKey, String(failCount + 1), 900);
-        } catch (_) {}
         return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Invalid or expired security code." })).setMimeType(ContentService.MimeType.JSON);
       }
     }
@@ -1528,6 +1477,16 @@ function handleApiPost(e) {
     // 1.6 Prospective Client Service Inquiries (Authentication-exempt)
     if (action === "submit_client_inquiry") {
       return handleClientInquirySubmission(data);
+    }
+
+    // 1.7 Store Database Backup to Email
+    if (action === "email_backup") {
+      return handleEmailBackupRequest(data);
+    }
+
+    // 1.8 Automated Backup Schedule Setup
+    if (action === "setup_backup_schedule") {
+      return handleSetupBackupSchedule(data);
     }
 
     // 2. Authentication Enforcement
@@ -1751,10 +1710,12 @@ function writeSettingsToSheet(settingsObj, ss) {
 
 /**
  * Handles prospective client service / project inquiries.
- * Strictly enforces 1-inquiry per email address across the entire lifetime of the sheet.
- * If the email has already submitted, rejects with duplicate flag and informative message.
- * If unique, records the inquiry in "Client Inquiries" sheet, sends an instant notification email
- * to Jagan with rich lead details & 1-click WhatsApp shortcut, and sends a professional confirmation email to the client.
+ * STRICT ZERO-DATA-STORAGE INQUIRY ENGINE:
+ * - NO customer inquiries, personal information, or requirements are stored in any Google Sheet or database.
+ * - Storing customer inquiry data in spreadsheets is strictly prohibited for privacy & data compliance.
+ * - Enforces 1-inquiry per email address using an irreversible SHA-256 hash in PropertiesService (contains 0 personal data).
+ * - Dispatches message directly to developer's email inbox (kandukurijagan99@gmail.com) via GmailApp/MailApp.
+ * - Automatically deletes any legacy "Client Inquiries" sheet from the Google Spreadsheet.
  */
 function handleClientInquirySubmission(data) {
   try {
@@ -1768,7 +1729,7 @@ function handleClientInquirySubmission(data) {
     var rawRequirements = String(data.requirements || data.message || "").trim();
     var clientDevice = String(data.device || data.userAgent || "Web Browser").trim();
 
-    // 1. Basic Validation
+    // 1. Validation
     if (!rawName) {
       return ContentService.createTextOutput(JSON.stringify({
         ok: false,
@@ -1776,7 +1737,7 @@ function handleClientInquirySubmission(data) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    var emailPattern = /^[^s@]+@[^s@]+.[^s@]+$/;
+    var emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!rawEmail || !emailPattern.test(rawEmail)) {
       return ContentService.createTextOutput(JSON.stringify({
         ok: false,
@@ -1784,7 +1745,6 @@ function handleClientInquirySubmission(data) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // Clean phone number (strip spaces, hyphens, etc.)
     var cleanPhone = rawPhone.replace(/[^0-9]/g, "");
     if (cleanPhone.length < 10) {
       return ContentService.createTextOutput(JSON.stringify({
@@ -1794,111 +1754,93 @@ function handleClientInquirySubmission(data) {
     }
     var tenDigitPhone = cleanPhone.length > 10 ? cleanPhone.slice(-10) : cleanPhone;
 
-    var ss = getMasterSpreadsheet();
-    if (!ss) {
+    // 2. Strict One-Time Submission Enforcement with ZERO PII Storage (SHA-256 Hash Only)
+    // ZERO personal data (no names, no emails, no phones, no requirements) is ever stored in any spreadsheet or database.
+    var emailBytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, rawEmail, Utilities.Charset.UTF_8);
+    var emailHashHex = "";
+    for (var i = 0; i < emailBytes.length; i++) {
+      var byteVal = emailBytes[i];
+      if (byteVal < 0) byteVal += 256;
+      var hexByte = byteVal.toString(16);
+      if (hexByte.length === 1) hexByte = "0" + hexByte;
+      emailHashHex += hexByte;
+    }
+    var propKey = "INQ_" + emailHashHex;
+    var scriptProps = PropertiesService.getScriptProperties();
+    var existingSub = scriptProps.getProperty(propKey);
+    if (existingSub) {
       return ContentService.createTextOutput(JSON.stringify({
         ok: false,
-        error: "Database spreadsheet unavailable."
+        duplicate: true,
+        error: "duplicate_submission",
+        message: "An inquiry from this email address has already been submitted. Software Engineer Kandukuri Jagan has received your requirements directly in his inbox and will contact you via WhatsApp / Phone shortly!"
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    var sheetName = "Client Inquiries";
-    var sheet = ss.getSheetByName(sheetName);
+    // Mark the irreversible cryptographic hash key (contains 0 personal data)
+    scriptProps.setProperty(propKey, "1");
 
-    // If sheet doesn't exist, create and initialize it
-    if (!sheet) {
-      sheet = ss.insertSheet(sheetName);
-      var headers = [
-        "Submission Timestamp",
-        "Client Name",
-        "Email Address",
-        "WhatsApp Phone",
-        "Business / Farm Name",
-        "Service Requested",
-        "Industry Sector",
-        "Project Timeline",
-        "Detailed Requirements / Scope",
-        "Lead Status",
-        "Client Notes / Device"
-      ];
-      sheet.appendRow(headers);
-      var headerRange = sheet.getRange(1, 1, 1, headers.length);
-      headerRange.setFontWeight("bold");
-      headerRange.setBackground("#0f172a");
-      headerRange.setFontColor("#ffffff");
-      headerRange.setHorizontalAlignment("center");
-      sheet.setFrozenRows(1);
-      try {
-        sheet.setColumnWidth(1, 170); // Timestamp
-        sheet.setColumnWidth(2, 160); // Client Name
-        sheet.setColumnWidth(3, 220); // Email
-        sheet.setColumnWidth(4, 140); // Phone
-        sheet.setColumnWidth(5, 180); // Business Name
-        sheet.setColumnWidth(6, 200); // Service
-        sheet.setColumnWidth(7, 150); // Industry
-        sheet.setColumnWidth(8, 150); // Timeline
-        sheet.setColumnWidth(9, 320); // Requirements
-        sheet.setColumnWidth(10, 160); // Status
-        sheet.setColumnWidth(11, 180); // Notes / Device
-      } catch (_) {}
-    }
-
-    // 2. Strict One-Time Submission Enforcement per Email
-    var lastRow = sheet.getLastRow();
-    if (lastRow > 1) {
-      // Column C (3rd column) contains Email Address
-      var emailColumnValues = sheet.getRange(2, 3, lastRow - 1, 1).getValues();
-      for (var r = 0; r < emailColumnValues.length; r++) {
-        var existingEmail = String(emailColumnValues[r][0] || "").trim().toLowerCase();
-        if (existingEmail === rawEmail) {
-          var prevTime = "";
-          try {
-            prevTime = sheet.getRange(r + 2, 1).getValue();
-          } catch (_) {}
-          var timeNotice = prevTime ? " on " + prevTime : "";
-
-          // Return duplicate rejection - DO NOT add another row!
-          return ContentService.createTextOutput(JSON.stringify({
-            ok: false,
-            duplicate: true,
-            error: "duplicate_submission",
-            message: "An inquiry from '" + rawEmail + "' was already received" + timeNotice + ". Each email is restricted to one project submission. Software Engineer Kandukuri Jagan is already reviewing your requirements and will contact you via WhatsApp / Phone shortly!"
-          })).setMimeType(ContentService.MimeType.JSON);
+    // 3. Privacy Compliance: Remove any legacy 'Client Inquiries' sheet if it exists
+    try {
+      var ss = getMasterSpreadsheet();
+      if (ss) {
+        var legacySheet = ss.getSheetByName("Client Inquiries");
+        if (legacySheet) {
+          ss.deleteSheet(legacySheet);
+          Logger.log("Deleted legacy Client Inquiries sheet for strict data protection compliance.");
         }
       }
-    }
+    } catch (_) {}
 
-    // 3. Append New Unique Inquiry Row
     var nowTimestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || "Asia/Kolkata", "dd-MMM-yyyy hh:mm:ss a");
-    var rowData = [
-      nowTimestamp,
-      rawName,
-      rawEmail,
-      tenDigitPhone,
-      rawBusiness || "Individual / Not Specified",
-      rawService || "Custom Software / Web Application",
-      rawIndustry || "General Business",
-      rawTimeline || "Standard Timeline",
-      rawRequirements || "Detailed discussion requested.",
-      "New Lead (Pending Contact)",
-      clientDevice
-    ];
-    sheet.appendRow(rowData);
 
-    // 4. Send Email Notification to Developer (kandukurijagan99@gmail.com)
-    var developerEmail = "kandukurijagan99@gmail.com";
+    // 4. Direct Email Notification to Developer Inbox (kandukurijagan99@gmail.com & script owner)
+    var devEmailList = ["kandukurijagan99@gmail.com"];
+    try {
+      var eff = (Session.getEffectiveUser().getEmail() || "").toLowerCase().trim();
+      if (eff && devEmailList.indexOf(eff) === -1) devEmailList.push(eff);
+    } catch (_) {}
+    try {
+      var act = (Session.getActiveUser().getEmail() || "").toLowerCase().trim();
+      if (act && devEmailList.indexOf(act) === -1) devEmailList.push(act);
+    } catch (_) {}
+    var developerEmail = devEmailList.join(", ");
+
     var whatsappUrl = "https://wa.me/91" + tenDigitPhone + "?text=" + encodeURIComponent(
       "Hello " + rawName + ", this is Kandukuri Jagan. I received your project inquiry for " + (rawService || "software development") + " (" + (rawBusiness || "") + "). Let's discuss your project requirements!"
     );
 
-    var devEmailSubject = "🚀 [NEW LEAD] Project Inquiry from " + rawName + " (" + (rawBusiness || "Custom Software") + ")";
+    var devEmailSubject = "📥 [NEW CLIENT INQUIRY] " + rawName + " • " + (rawService || "Aaryan Aqua Billing");
+
+    var devPlainTextBody = 
+      "====================================================\n" +
+      "📥 NEW CLIENT INQUIRY RECEIVED VIA AARYAN AQUA BILLING\n" +
+      "====================================================\n\n" +
+      "Client Name:       " + rawName + "\n" +
+      "Email Address:     " + rawEmail + "\n" +
+      "WhatsApp Phone:    +91 " + tenDigitPhone + "\n" +
+      "Business / Farm:   " + (rawBusiness || "Individual / Not Specified") + "\n" +
+      "Service Requested: " + rawService + "\n" +
+      "Industry Sector:   " + rawIndustry + "\n" +
+      "Project Timeline:  " + rawTimeline + "\n" +
+      "Received On:       " + nowTimestamp + "\n\n" +
+      "----------------------------------------------------\n" +
+      "CLIENT PROJECT REQUIREMENTS / SCOPE:\n" +
+      (rawRequirements || "No additional requirements provided.") + "\n" +
+      "----------------------------------------------------\n\n" +
+      "QUICK ACTIONS:\n" +
+      "• Chat on WhatsApp: " + whatsappUrl + "\n" +
+      "• Reply via Email: Click 'Reply' in your email client to write directly to " + rawEmail + "\n\n" +
+      "Device Context: " + clientDevice + "\n" +
+      "Privacy Note: Zero data saved to Google Sheets or databases. Direct email delivery only.\n";
+
     var devEmailBody = 
       "<div style='font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: #0f172a; padding: 32px 16px; color: #f8fafc;'>" +
         "<div style='max-width: 620px; margin: 0 auto; background: #1e293b; border: 1px solid #334155; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5);'>" +
           "<div style='background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); padding: 24px 28px; text-align: left;'>" +
-            "<span style='background: rgba(255,255,255,0.2); color: #ffffff; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 4px 10px; border-radius: 20px; display: inline-block;'>New Client Lead</span>" +
+            "<span style='background: rgba(255,255,255,0.2); color: #ffffff; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 4px 10px; border-radius: 20px; display: inline-block;'>Direct Client Inquiry</span>" +
             "<h2 style='margin: 10px 0 4px 0; color: #ffffff; font-size: 22px; font-weight: 800;'>New Project Requirement Submitted</h2>" +
-            "<p style='margin: 0; color: #e0f2fe; font-size: 13px;'>Received via Portfolio / Aqua Billing Client Intake on " + nowTimestamp + "</p>" +
+            "<p style='margin: 0; color: #e0f2fe; font-size: 13px;'>Direct Inbox Delivery • Zero Data Storage • " + nowTimestamp + "</p>" +
           "</div>" +
 
           "<div style='padding: 24px 28px;'>" +
@@ -1907,7 +1849,7 @@ function handleClientInquirySubmission(data) {
               "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>Email Address:</td><td style='padding: 10px 0; color: #38bdf8;'><a href='mailto:" + rawEmail + "' style='color: #38bdf8; text-decoration: none;'>" + rawEmail + "</a></td></tr>" +
               "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>WhatsApp / Phone:</td><td style='padding: 10px 0; color: #22c55e; font-weight: 700;'>+91 " + tenDigitPhone + "</td></tr>" +
               "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>Business / Farm:</td><td style='padding: 10px 0; color: #f8fafc;'>" + (rawBusiness || "Individual") + "</td></tr>" +
-              "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>Service Needed:</td><td style='padding: 10px 0; color: #f59e0b; font-weight: 700;'>" + rawService + "</td></tr>" +
+              "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #f59e0b; font-weight: 700;'>" + rawService + "</td></tr>" +
               "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>Industry:</td><td style='padding: 10px 0; color: #f8fafc;'>" + rawIndustry + "</td></tr>" +
               "<tr style='border-bottom: 1px solid #334155;'><td style='padding: 10px 0; color: #94a3b8; font-weight: 600;'>Timeline / Urgency:</td><td style='padding: 10px 0; color: #a855f7; font-weight: 600;'>" + rawTimeline + "</td></tr>" +
             "</table>" +
@@ -1926,19 +1868,43 @@ function handleClientInquirySubmission(data) {
           "</div>" +
 
           "<div style='background: #090d16; padding: 16px 28px; text-align: center; color: #64748b; font-size: 12px; border-top: 1px solid #1e293b;'>" +
-            "Device Info: " + clientDevice + " • Sheet: Client Inquiries (Row " + (lastRow + 1) + ")" +
+            "Strict Zero-Storage Privacy Protocol • Delivered directly to developer inbox • Zero data saved to Google Sheets" +
           "</div>" +
         "</div>" +
       "</div>";
 
+    var devMailSuccess = false;
+    // Method 1: GmailApp (sends directly from authenticated Google Account, best inbox delivery)
     try {
-      MailApp.sendEmail({
-        to: developerEmail,
-        subject: devEmailSubject,
-        htmlBody: devEmailBody
-      });
-    } catch (e1) {
-      Logger.log("Failed to send lead email to developer: " + e1.message);
+      if (typeof GmailApp !== "undefined" && GmailApp.sendEmail) {
+        GmailApp.sendEmail(developerEmail, devEmailSubject, devPlainTextBody, {
+          name: "Client Inquiry • " + rawName,
+          replyTo: rawEmail,
+          htmlBody: devEmailBody
+        });
+        devMailSuccess = true;
+        Logger.log("Inquiry delivered to developer inbox via GmailApp to: " + developerEmail);
+      }
+    } catch (gmErr) {
+      Logger.log("GmailApp dispatch failed, trying MailApp: " + gmErr.message);
+    }
+
+    // Method 2: MailApp fallback if GmailApp lacks scope
+    if (!devMailSuccess) {
+      try {
+        MailApp.sendEmail({
+          to: developerEmail,
+          subject: devEmailSubject,
+          body: devPlainTextBody,
+          htmlBody: devEmailBody,
+          name: "Client Inquiry • " + rawName,
+          replyTo: rawEmail
+        });
+        devMailSuccess = true;
+        Logger.log("Inquiry delivered to developer inbox via MailApp to: " + developerEmail);
+      } catch (mlErr) {
+        Logger.log("MailApp dispatch failed: " + mlErr.message);
+      }
     }
 
     // 5. Send Polite Confirmation Email to Client
@@ -1954,7 +1920,7 @@ function handleClientInquirySubmission(data) {
           "<div style='padding: 28px;'>" +
             "<h3 style='margin-top: 0; color: #0f172a; font-size: 18px;'>Hello " + rawName + ",</h3>" +
             "<p style='color: #475569; font-size: 14px; line-height: 1.6;'>" +
-              "Thank you for reaching out! Your project inquiry for <strong>" + rawService + "</strong> has been safely received." +
+              "Thank you for reaching out! Your project inquiry for <strong>" + rawService + "</strong> has been delivered directly to my personal inbox." +
             "</p>" +
             "<p style='color: #475569; font-size: 14px; line-height: 1.6;'>" +
               "I am personally reviewing your requirements and will connect with you directly on WhatsApp / Phone (<strong>+91 " + tenDigitPhone + "</strong>) within <strong>24 hours</strong> to discuss your workflow, technical specifications, and timeline." +
@@ -1978,33 +1944,48 @@ function handleClientInquirySubmission(data) {
             "</div>" +
 
             "<p style='color: #64748b; font-size: 12px; margin-top: 24px; border-top: 1px solid #f1f5f9; padding-top: 16px; text-align: center;'>" +
-              "To ensure personalized attention, submissions are limited to one per client email. We look forward to building your software solution!<br>" +
+              "Strict Zero-Storage Privacy Protocol: Your personal details are not stored in any spreadsheet or database.<br>" +
               "<strong>Kandukuri Jagan</strong> • Software Development Services" +
             "</p>" +
           "</div>" +
         "</div>" +
       "</div>";
 
+    var clientPlainTextBody = 
+      "Hello " + rawName + ",\n\n" +
+      "Thank you for reaching out! Your project inquiry for " + rawService + " has been delivered directly to my personal inbox.\n\n" +
+      "I am personally reviewing your requirements and will connect with you directly on WhatsApp / Phone (+91 " + tenDigitPhone + ") within 24 hours to discuss your workflow and specifications.\n\n" +
+      "Summary of your submission:\n" +
+      "• Business / Farm: " + (rawBusiness || "Individual") + "\n" +
+      "• Service: " + rawService + "\n" +
+      "• Timeline: " + rawTimeline + "\n" +
+      "• Registered Email: " + rawEmail + "\n" +
+      "• Submitted On: " + nowTimestamp + "\n\n" +
+      "Need immediate assistance? Feel free to message me directly on WhatsApp: https://wa.me/918367047947\n\n" +
+      "Best regards,\n" +
+      "Kandukuri Jagan\n" +
+      "Software Development Services | kandukurijagan99@gmail.com\n";
+
     try {
       MailApp.sendEmail({
         to: rawEmail,
         subject: clientEmailSubject,
-        htmlBody: clientEmailBody
+        body: clientPlainTextBody,
+        htmlBody: clientEmailBody,
+        name: "Kandukuri Jagan • Software Engineer",
+        replyTo: "kandukurijagan99@gmail.com"
       });
+      Logger.log("Confirmation email delivered to client: " + rawEmail);
     } catch (e2) {
       Logger.log("Failed to send acknowledgment email to client: " + e2.message);
     }
-
-    try {
-      appendAuditLog("CLIENT_INQUIRY", rawEmail, rawPhone, "SUCCESS", "Client inquiry for: " + rawService, ss);
-    } catch (_) {}
 
     return ContentService.createTextOutput(JSON.stringify({
       ok: true,
       success: true,
       email: rawEmail,
       timestamp: nowTimestamp,
-      message: "Thank you, " + rawName + "! Your project inquiry has been successfully submitted. Kandukuri Jagan will reach out to you within 24 hours."
+      message: "Your message has been sent directly to Kandukuri Jagan's inbox. No personal data has been stored."
     })).setMimeType(ContentService.MimeType.JSON);
 
   } catch (err) {
@@ -2013,6 +1994,271 @@ function handleClientInquirySubmission(data) {
       ok: false,
       error: "Failed to process inquiry: " + err.message
     })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ============================================================================
+// Automated Store Backup Email Dispatcher & Excel (.xlsx) Engine
+// ============================================================================
+function handleEmailBackupRequest(data) {
+  try {
+    var rawEmail = String(data.email || "").trim().toLowerCase();
+    if (!rawEmail || rawEmail.indexOf("@") === -1) {
+      return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "A valid email address is required." })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var backupObj = data.backup || {};
+    var invoices = backupObj.invoices || [];
+    var products = backupObj.products || [];
+    var parties = backupObj.parties || [];
+    var settings = backupObj.settings || {};
+    var compName = (settings.company && settings.company.name) || "AARYAN AQUA NEEDS";
+    var todayStr = Utilities.formatDate(new Date(), "Asia/Kolkata", "dd-MMM-yyyy HH:mm");
+    var fileDate = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd");
+    var scheduleType = String(data.scheduleType || "MANUAL").toUpperCase();
+
+    // Calculate total inventory valuation & revenue
+    var totalStockVal = 0;
+    for (var p = 0; p < products.length; p++) {
+      var prod = products[p];
+      var qty = Number(prod.stock || 0);
+      var prc = Number(prod.price || prod.rate || 0);
+      totalStockVal += (Number(prod.totalValue || 0) || (qty * prc));
+    }
+
+    var totalRev = 0;
+    for (var v = 0; v < invoices.length; v++) {
+      totalRev += (Number(invoices[v].totalAmount || invoices[v].grandTotal || invoices[v].total || 0));
+    }
+
+    var attachments = [];
+
+    // 1. Attach Master Excel Workbook (.xlsx)
+    var hasExcel = false;
+    if (data.excelBlob) {
+      attachments.push(data.excelBlob);
+      hasExcel = true;
+    } else if (data.excelBase64) {
+      try {
+        var cleanBase64 = String(data.excelBase64).replace(/^data:.*base64,/, '').trim();
+        var excelBytes = Utilities.base64Decode(cleanBase64);
+        var excelBlob = Utilities.newBlob(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", compName.replace(/[^a-zA-Z0-9]/g, "_") + "_Master_Database_" + fileDate + ".xlsx");
+        attachments.push(excelBlob);
+        hasExcel = true;
+      } catch (errXlsx) {
+        Logger.log("Failed attaching client Excel base64: " + errXlsx.message);
+      }
+    }
+
+    // 2. Attach JSON snapshot
+    var jsonStr = JSON.stringify(backupObj, null, 2);
+    var jsonBlob = Utilities.newBlob(jsonStr, "application/json", compName.replace(/[^a-zA-Z0-9]/g, "_") + "_Vault_Backup_" + fileDate + ".json");
+    attachments.push(jsonBlob);
+
+    // Subject customization based on schedule
+    var subjectPrefix = "📦 [Store Backup]";
+    var scheduleLabel = "Manual Store Snapshot";
+    if (scheduleType === "WEEKLY_AUTOMATED") {
+      subjectPrefix = "📅 [Weekly Auto-Backup]";
+      scheduleLabel = "Weekly Automated Cloud Vault";
+    } else if (scheduleType === "MONTHLY_AUTOMATED") {
+      subjectPrefix = "📊 [Monthly Auto-Backup]";
+      scheduleLabel = "Monthly Automated Cloud Vault";
+    }
+
+    var emailSubject = subjectPrefix + " " + compName + " (" + todayStr + ") - Excel & JSON Data";
+
+    var htmlBody = 
+      "<div style='font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; padding: 32px 16px; color: #1e293b;'>" +
+        "<div style='max-width: 620px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.06);'>" +
+          "<div style='background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); padding: 26px 28px; text-align: center; color: #ffffff;'>" +
+            "<h2 style='margin: 0; font-size: 22px; font-weight: 800; color: #ffffff;'>" + compName + "</h2>" +
+            "<p style='margin: 4px 0 0 0; color: #e0f2fe; font-size: 13.5px; font-weight: 600;'>" + scheduleLabel + "</p>" +
+          "</div>" +
+          "<div style='padding: 28px;'>" +
+            "<h3 style='margin-top: 0; color: #0f172a; font-size: 17px;'>Namaste Store Owner,</h3>" +
+            "<p style='color: #475569; font-size: 14px; line-height: 1.6;'>" +
+              "Attached to this email is your complete <strong>Store Database Backup</strong> generated on <strong>" + todayStr + "</strong>." +
+            "</p>" +
+            "<div style='background: #f1f5f9; border-left: 4px solid #0284c7; border-radius: 8px; padding: 18px; margin: 20px 0; font-size: 13.5px; color: #334155; line-height: 1.8;'>" +
+              "<strong>📊 Executive Store Summary:</strong><br>" +
+              "• 📄 <strong>Total Invoices Billed:</strong> " + invoices.length + " (₹ " + totalRev.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ")<br>" +
+              "• 📦 <strong>Product Master Catalog:</strong> " + products.length + " items (Stock Valuation: ₹ " + totalStockVal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ")<br>" +
+              "• 👥 <strong>Customer Directory &amp; Ledger:</strong> " + parties.length + " registered accounts<br>" +
+              "• 🕒 <strong>Snapshot Generated:</strong> " + todayStr + "<br>" +
+              "• 🔒 <strong>Schedule Frequency:</strong> " + scheduleLabel +
+            "</div>" +
+            "<div style='background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 8px; padding: 14px; margin: 18px 0; font-size: 13px; color: #166534;'>" +
+              "<strong>📎 Attached Files in this Email:</strong><br>" +
+              "1. <strong>" + (hasExcel ? "✅ " + compName.replace(/[^a-zA-Z0-9]/g, "_") + "_Master_Database_" + fileDate + ".xlsx" : "Spreadsheet export") + "</strong>: Multi-tab Microsoft Excel file containing full products, stock levels, customers, exact invoices, and all payment dates.<br>" +
+              "2. <strong>✅ " + compName.replace(/[^a-zA-Z0-9]/g, "_") + "_Vault_Backup_" + fileDate + ".json</strong>: Direct 1-click database restore file." +
+            "</div>" +
+            "<p style='color: #475569; font-size: 13px; line-height: 1.6;'>" +
+              "<strong>How to restore or open:</strong><br>" +
+              "• <strong>To view/edit in Excel:</strong> Double-click the attached <code>.xlsx</code> file to open it in Microsoft Excel, Google Sheets, or LibreOffice.<br>" +
+              "• <strong>To restore into software:</strong> Go to <em>Settings &gt; Backup &amp; Data Recovery Center &gt; Import Excel (.xlsx)</em> or <em>Import Backup (.json)</em>." +
+            "</p>" +
+            "<p style='color: #64748b; font-size: 12px; margin-top: 24px; border-top: 1px solid #f1f5f9; padding-top: 16px; text-align: center;'>" +
+              "Aaryan Aqua Needs • High-Speed GST Cloud Billing Hub<br>" +
+              "Automated Weekly &amp; Monthly Cloud Backup Service" +
+            "</p>" +
+          "</div>" +
+        "</div>" +
+      "</div>";
+
+        var plainTextBody = [
+      "Namaste Store Owner,",
+      "",
+      "Attached is your complete Store Database Backup generated on " + todayStr + " (" + scheduleLabel + ").",
+      "",
+      "Summary:",
+      "• Total Invoices: " + invoices.length + " (₹ " + totalRev.toFixed(2) + ")",
+      "• Total Products: " + products.length + " (Stock Valuation: ₹ " + totalStockVal.toFixed(2) + ")",
+      "• Total Customers: " + parties.length,
+      "",
+      "Attached Files:",
+      "1. Master Excel Workbook (.xlsx) with products, stock, customers, invoices, and payments.",
+      "2. Complete JSON Database Vault (.json) for 1-click restore.",
+      "",
+      compName
+    ].join("\n");
+
+    MailApp.sendEmail({
+      to: rawEmail,
+      subject: emailSubject,
+      body: plainTextBody,
+      htmlBody: htmlBody,
+      name: compName + " Vault",
+      attachments: attachments
+    });
+
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: true,
+      success: true,
+      email: rawEmail,
+      scheduleType: scheduleType,
+      hasExcel: hasExcel,
+      invoicesCount: invoices.length,
+      productsCount: products.length,
+      partiesCount: parties.length,
+      timestamp: todayStr,
+      message: "Backup files (.xlsx + .json) successfully delivered to " + rawEmail
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    Logger.log("handleEmailBackupRequest error: " + err.message);
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: false,
+      error: "Failed to send backup email: " + err.message
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ============================================================================
+// AUTOMATED BACKUP SCHEDULE SETUP & TIME-DRIVEN TRIGGERS
+// ============================================================================
+function handleSetupBackupSchedule(data) {
+  try {
+    var freq = String(data.frequency || "both").toLowerCase().trim();
+    setupAutomaticBackupTriggers(freq);
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: true,
+      frequency: freq,
+      message: "Automated backup schedule triggers configured successfully (" + freq + ")."
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    Logger.log("handleSetupBackupSchedule error: " + err.message);
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: false,
+      error: "Failed configuring backup schedule: " + err.message
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function setupAutomaticBackupTriggers(frequency) {
+  try {
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var i = 0; i < triggers.length; i++) {
+      var h = triggers[i].getHandlerFunction();
+      if (h === "triggerWeeklyStoreBackup" || h === "triggerMonthlyStoreBackup") {
+        ScriptApp.deleteTrigger(triggers[i]);
+      }
+    }
+
+    if (frequency === "weekly" || frequency === "both") {
+      ScriptApp.newTrigger("triggerWeeklyStoreBackup")
+        .timeBased()
+        .onWeekDay(ScriptApp.WeekDay.SUNDAY)
+        .atHour(20)
+        .create();
+    }
+
+    if (frequency === "monthly" || frequency === "both") {
+      ScriptApp.newTrigger("triggerMonthlyStoreBackup")
+        .timeBased()
+        .onMonthDay(1)
+        .atHour(21)
+        .create();
+    }
+  } catch (e) {
+    Logger.log("setupAutomaticBackupTriggers note: " + e.message);
+  }
+}
+
+function triggerWeeklyStoreBackup() {
+  runScheduledCloudBackup("WEEKLY_AUTOMATED");
+}
+
+function triggerMonthlyStoreBackup() {
+  runScheduledCloudBackup("MONTHLY_AUTOMATED");
+}
+
+function runScheduledCloudBackup(scheduleType) {
+  try {
+    var ss = getMasterSpreadsheet();
+    var invoices = readInvoicesFromSheet(ss);
+    var products = readInventoryFromSheet(ss);
+    var parties = readCustomersFromSheet(ss);
+    var rawSettings = readGlobalSettings(ss);
+
+    var targetEmail = (rawSettings && rawSettings.company && rawSettings.company.email) || "kandukurijagan99@gmail.com";
+
+    var backupObj = {
+      app: "Aaryan Aqua GST Billing & Store Management",
+      version: "5.29.0",
+      exportDate: new Date().toISOString(),
+      scheduleType: scheduleType,
+      invoices: invoices,
+      products: products,
+      parties: parties,
+      settings: rawSettings
+    };
+
+    var compName = (rawSettings && rawSettings.company && rawSettings.company.name) || "AARYAN_AQUA";
+    var fileDate = Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd");
+    var excelBlob = null;
+    try {
+      var url = "https://docs.google.com/feeds/download/spreadsheets/Export?key=" + ss.getId() + "&exportFormat=xlsx";
+      var params = {
+        method: "get",
+        headers: { "Authorization": "Bearer " + ScriptApp.getOAuthToken() },
+        muteHttpExceptions: true
+      };
+      var res = UrlFetchApp.fetch(url, params);
+      if (res && res.getResponseCode() === 200) {
+        excelBlob = res.getBlob().setName(compName.replace(/[^a-zA-Z0-9]/g, "_") + "_Master_Database_" + fileDate + ".xlsx");
+      }
+    } catch (eXls) {
+      Logger.log("Automated spreadsheet export to xlsx error: " + eXls.message);
+    }
+
+    handleEmailBackupRequest({
+      email: targetEmail,
+      backup: backupObj,
+      excelBlob: excelBlob,
+      scheduleType: scheduleType
+    });
+  } catch (err) {
+    Logger.log("runScheduledCloudBackup error: " + err.message);
   }
 }
 

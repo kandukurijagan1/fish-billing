@@ -23910,22 +23910,42 @@ window.shareStoreBackupFiles = async function(options = {}) {
     }
   }
 
-  // 3. Dispatch Direct Cloud Mail Backup to Kandukuri Jagan's inbox via live mail dispatcher
+  // 3. Dispatch Genuine Database Backup with Excel (.xlsx) + JSON (.json) Attachments
   try {
     const scriptUrl = typeof GOOGLE_SCRIPT_URL !== 'undefined' ? GOOGLE_SCRIPT_URL : "https://script.google.com/macros/s/AKfycbxHi4L_xLrfRhx1KWxRxQD1QcqbVEZVMcYR37DJEGSPe2ykZyy-ATnYyZFxnSySS6OF/exec";
+    let excelBase64 = null;
+    if (typeof window.generateMasterExcelWorkbook === 'function') {
+      try {
+        const xlRes = window.generateMasterExcelWorkbook(backupObj);
+        if (xlRes && xlRes.arrayBuffer) {
+          const bytes = new Uint8Array(xlRes.arrayBuffer);
+          let binary = '';
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          excelBase64 = btoa(binary);
+        }
+      } catch (eXl) {}
+    }
+
+    const recipient = (document.getElementById('backup-target-email')?.value || "kandukurijagan99@gmail.com").trim();
+
     fetch(scriptUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        action: 'submit_client_inquiry',
-        name: 'Aaryan Aqua Store Backup Vault',
-        email: 'store-vault-' + Date.now() + '@aaryanaqua.com',
-        phone: '7416605652',
-        businessName: ((typeof globalSettings !== 'undefined' && globalSettings.company?.name) || 'Aaryan Aqua Needs') + ' (Kandukuri Jagan)',
-        service: 'Official Store Database Backup',
-        timeline: 'Real-time Snapshot (' + todayStr + ')',
-        requirements: window.generateStoreBackupSummaryText()
+        action: 'email_backup',
+        email: recipient,
+        backup: backupObj,
+        excelBase64: excelBase64
       })
+    }).then(async r => {
+      const res = await r.json().catch(() => ({}));
+      if (res && res.ok) {
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast("📦 Real database backup (.xlsx + .json) delivered to your Gmail inbox!", "success", 6000);
+        }
+      }
     }).catch(() => {});
   } catch (_) {}
 
