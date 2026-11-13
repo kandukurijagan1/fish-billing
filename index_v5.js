@@ -24041,6 +24041,7 @@ window.shareStoreBackupFiles = async function(options = {}) {
     filesToShare.push(jsonFile);
   } catch (_) {}
 
+  let excelBase64 = null;
   if (typeof window.generateMasterExcelWorkbook === 'function') {
     try {
       const xlRes = window.generateMasterExcelWorkbook(backupObj);
@@ -24049,13 +24050,46 @@ window.shareStoreBackupFiles = async function(options = {}) {
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         });
         filesToShare.unshift(xlFile);
+
+        const bytes = new Uint8Array(xlRes.arrayBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        excelBase64 = btoa(binary);
       }
     } catch (e) {
       console.warn("Excel creation warning:", e);
     }
   }
 
-  // 2. Try Web Share API (WhatsApp / Gmail / Google Drive / Bluetooth)
+  // 2. Dispatch Genuine Database Backup with Excel (.xlsx) + JSON (.json) Attachments to Google Apps Script
+  const recipient = (document.getElementById('backup-target-email')?.value || "kandukurijagan99@gmail.com").trim();
+  const scriptUrl = typeof GOOGLE_SCRIPT_URL !== 'undefined' ? GOOGLE_SCRIPT_URL : "https://script.google.com/macros/s/AKfycbwXIi4FIu9Z_eqJ-w0cX9lKc-ilS7TF23sqVRlykTsFE1C7pFD-PJJtxe3MuKGCCRMYXw/exec";
+
+  if (scriptUrl) {
+    fetch(scriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'email_backup',
+        email: recipient,
+        backup: backupObj,
+        excelBase64: excelBase64
+      })
+    }).then(async r => {
+      const res = await r.json().catch(() => ({}));
+      if (res && (res.ok || res.success)) {
+        if (typeof showFloatingToast === 'function') {
+          showFloatingToast(`📦 Real database backup (.xlsx + .json) delivered to ${recipient}!`, "success", 6000);
+        }
+      }
+    }).catch(err => {
+      console.warn("[Backup Share] Cloud delivery notice:", err);
+    });
+  }
+
+  // 3. Try Web Share API (WhatsApp / Gmail / Google Drive / Bluetooth)
   if (filesToShare.length > 0 && navigator.canShare && navigator.canShare({ files: filesToShare })) {
     try {
       await navigator.share({
@@ -24069,48 +24103,9 @@ window.shareStoreBackupFiles = async function(options = {}) {
       return;
     } catch (err) {
       if (err.name === 'AbortError') return;
-      console.warn("Native share error, falling back to direct package:", err);
+      console.warn("Native share error, falling back to direct downloads:", err);
     }
   }
-
-  // 3. Dispatch Genuine Database Backup with Excel (.xlsx) + JSON (.json) Attachments
-  try {
-    const scriptUrl = typeof GOOGLE_SCRIPT_URL !== 'undefined' ? GOOGLE_SCRIPT_URL : "https://script.google.com/macros/s/AKfycbwXIi4FIu9Z_eqJ-w0cX9lKc-ilS7TF23sqVRlykTsFE1C7pFD-PJJtxe3MuKGCCRMYXw/exec";
-    let excelBase64 = null;
-    if (typeof window.generateMasterExcelWorkbook === 'function') {
-      try {
-        const xlRes = window.generateMasterExcelWorkbook(backupObj);
-        if (xlRes && xlRes.arrayBuffer) {
-          const bytes = new Uint8Array(xlRes.arrayBuffer);
-          let binary = '';
-          for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-          }
-          excelBase64 = btoa(binary);
-        }
-      } catch (eXl) {}
-    }
-
-    const recipient = (document.getElementById('backup-target-email')?.value || "kandukurijagan99@gmail.com").trim();
-
-    fetch(scriptUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'email_backup',
-        email: recipient,
-        backup: backupObj,
-        excelBase64: excelBase64
-      })
-    }).then(async r => {
-      const res = await r.json().catch(() => ({}));
-      if (res && res.ok) {
-        if (typeof showFloatingToast === 'function') {
-          showFloatingToast("📦 Real database backup (.xlsx + .json) delivered to your Gmail inbox!", "success", 6000);
-        }
-      }
-    }).catch(() => {});
-  } catch (_) {}
 
   // 4. Instant Direct Downloads of Master Excel + JSON
   if (typeof window.exportMasterExcelBackup === 'function') {
@@ -24122,21 +24117,102 @@ window.shareStoreBackupFiles = async function(options = {}) {
     }
   }, 350);
 
-  // 5. Open Gmail Compose with Executive Summary
-  const recipient = (document.getElementById('backup-target-email')?.value || "kandukurijagan99@gmail.com").trim();
-  const compName = (typeof globalSettings !== 'undefined' && globalSettings.company?.name) || "Aaryan Aqua Needs";
-  const subject = encodeURIComponent(`📦 ${compName} - Store Database Backup (${todayStr})`);
-  const body = encodeURIComponent(window.generateStoreBackupSummaryText() + "\n\n(Master Excel and JSON backup files have been downloaded to your computer to attach.)");
-  const gmailComposeUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipient)}&su=${subject}&body=${body}`;
-  window.open(gmailComposeUrl, '_blank');
-
   if (typeof showFloatingToast === 'function') {
     showFloatingToast("📧 Backup email dispatched to inbox & Excel files downloaded!", "success", 5000);
   }
 };
 
 window.sendDataBackupToEmail = async function(options = {}) {
-  await window.shareStoreBackupFiles(options);
+  if (typeof loadAllDatabases === 'function') loadAllDatabases();
+
+  const emailInput = document.getElementById('backup-target-email');
+  const recipient = (options.email || (emailInput ? emailInput.value : "") || "kandukurijagan99@gmail.com").trim().toLowerCase();
+
+  if (!recipient || !recipient.includes('@')) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Please enter a valid recipient Gmail address.", "warning", 4000);
+    }
+    return;
+  }
+
+  const backupObj = {
+    app: "Aaryan Aqua GST Billing & Store Management",
+    version: "5.4.0",
+    exportDate: new Date().toISOString(),
+    invoices: invoicesDb || [],
+    products: productsDb || [],
+    parties: partiesDb || [],
+    settings: globalSettings || {}
+  };
+
+  // 1. Save local verified snapshot in the vault
+  window.saveLocalStoreSnapshot(backupObj, "Gmail Cloud Backup Dispatch");
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast(`⏳ Packaging and delivering database backup (.xlsx + .json) to ${recipient}...`, "info", 4000);
+  }
+
+  // 2. Generate Master Excel base64
+  let excelBase64 = null;
+  if (typeof window.generateMasterExcelWorkbook === 'function') {
+    try {
+      const xlRes = window.generateMasterExcelWorkbook(backupObj);
+      if (xlRes && xlRes.arrayBuffer) {
+        const bytes = new Uint8Array(xlRes.arrayBuffer);
+        let binary = '';
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        excelBase64 = btoa(binary);
+      }
+    } catch (eXl) {
+      console.warn("[Backup Email] Excel generation note:", eXl);
+    }
+  }
+
+  // 3. Dispatch to Google Apps Script
+  const scriptUrl = typeof GOOGLE_SCRIPT_URL !== 'undefined' ? GOOGLE_SCRIPT_URL : "https://script.google.com/macros/s/AKfycbwXIi4FIu9Z_eqJ-w0cX9lKc-ilS7TF23sqVRlykTsFE1C7pFD-PJJtxe3MuKGCCRMYXw/exec";
+
+  try {
+    const response = await fetch(scriptUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: "email_backup",
+        email: recipient,
+        backup: backupObj,
+        excelBase64: excelBase64
+      })
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (data && (data.ok || data.success)) {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast(`🎉 Real Database Backup (.xlsx + .json) successfully delivered to ${recipient}! (${(backupObj.invoices || []).length} Invoices, ${(backupObj.products || []).length} Products, ${(backupObj.parties || []).length} Customers)`, "success", 8000);
+      }
+    } else {
+      console.warn("[Backup Email] GAS response:", data);
+      throw new Error(data.error || data.message || "Cloud delivery rejected");
+    }
+  } catch (err) {
+    console.error("[Backup Email] Dispatch error:", err);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`⚠️ Email cloud dispatch error: ${err.message}. Local backup files downloaded.`, "warning", 6000);
+    }
+  }
+
+  // 4. Download local backup files directly as fallback / instant local safety copy
+  if (options.downloadFiles !== false) {
+    if (typeof window.exportMasterExcelBackup === 'function') {
+      window.exportMasterExcelBackup();
+    }
+    setTimeout(() => {
+      if (typeof window.exportDataBackupJSON === 'function') {
+        window.exportDataBackupJSON();
+      }
+    }, 400);
+  }
 };
 
 // ============================================================================
@@ -24172,7 +24248,7 @@ window.saveBackupScheduleSettings = async function() {
   }
 
   try {
-    const scriptUrl = typeof GOOGLE_SCRIPT_URL !== 'undefined' ? GOOGLE_SCRIPT_URL : "";
+    const scriptUrl = typeof GOOGLE_SCRIPT_URL !== 'undefined' ? GOOGLE_SCRIPT_URL : "https://script.google.com/macros/s/AKfycbwXIi4FIu9Z_eqJ-w0cX9lKc-ilS7TF23sqVRlykTsFE1C7pFD-PJJtxe3MuKGCCRMYXw/exec";
     if (scriptUrl) {
       await fetch(scriptUrl, {
         method: "POST",
@@ -24191,6 +24267,11 @@ window.saveBackupScheduleSettings = async function() {
         : "⏸️ Paused: Manual Backups Only";
     }
     showFloatingToast("✅ Automated Cloud Backup Schedule saved and synced with Google Cloud Cron!", "success", 6000);
+
+    // If enabled, also trigger an immediate baseline backup delivery to verify the inbox receives it
+    if (enabled && typeof window.sendDataBackupToEmail === 'function') {
+      window.sendDataBackupToEmail({ email: targetEmail, downloadFiles: false }).catch(() => {});
+    }
   } catch (err) {
     showFloatingToast("✅ Backup schedule saved locally.", "info", 4000);
   } finally {
