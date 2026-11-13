@@ -59,6 +59,8 @@
 
   function isDemoActive() {
     if (typeof window === 'undefined') return false;
+    if (window._isRestoringData === true) return false;
+    if (typeof localStorage !== 'undefined' && (localStorage.getItem("is_imported_data") === "true" || localStorage.getItem("has_real_data") === "true")) return false;
     if (typeof window.isDemoMode === 'function') return window.isDemoMode();
     if (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) return true;
     if (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) return true;
@@ -423,6 +425,14 @@
         return { ok: false, error };
       }
       return { ok: true };
+    },
+
+    async bulkUpsertProducts(products) {
+      return this.saveAllProducts(products);
+    },
+
+    async bulkUpsertCustomers(customers) {
+      return this.saveAllCustomers(customers);
     },
 
     async fetchProducts(options = {}) {
