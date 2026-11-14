@@ -402,6 +402,33 @@ async function runAllTests() {
   const jagan = mergedParties.find(p => p.name === 'JAGAN');
   assert(jagan && jagan.phone === '9876543210' && jagan.email === 'jagan@example.com', 'Existing customer phone and ledger preserved while enriching new email');
 
+  // --- TEST CASE 9: Multi-Method Authentication, PIN Verification & Session Auto-Lock ---
+  console.log('\n👉 TEST CASE 9: Verifying Proper Multi-Method Authentication & Locking System...');
+  
+  // 1. PIN Authentication: Defaults and Custom Settings
+  assert(InvoiceUtils.validatePin('1234', {}) === true, 'Default cashier PIN 1234 unlocks system');
+  assert(InvoiceUtils.validatePin('2026', {}) === true, 'Default backup master PIN 2026 unlocks system');
+  assert(InvoiceUtils.validatePin('9999', {}) === false, 'Incorrect PIN 9999 is strictly rejected');
+  assert(InvoiceUtils.validatePin('5566', { securityPin: '5566' }) === true, 'Custom cashier PIN 5566 unlocks system');
+  assert(InvoiceUtils.validatePin('1234', { securityPin: '5566' }) === true, 'Default PIN fallback preserves unlock capability');
+
+  // 2. Master Password Authentication
+  const defaultPassResult = InvoiceUtils.validatePassword('admin', 'admin123', {});
+  assert(defaultPassResult.valid === true && defaultPassResult.role === 'admin', 'Default admin / admin123 credentials authenticate successfully');
+  
+  const customPassResult = InvoiceUtils.validatePassword('admin', 'MySecret@2026', { password: 'MySecret@2026' });
+  assert(customPassResult.valid === true && customPassResult.role === 'admin', 'Custom configured master password authenticates successfully');
+  
+  const wrongPassResult = InvoiceUtils.validatePassword('admin', 'wrongpassword', {});
+  assert(wrongPassResult.valid === false, 'Incorrect password correctly rejected');
+
+  // 3. Staff User Authentication
+  const staffList = [
+    { email: 'staff@aaryanaqua.com', password: 'staffpassword', name: 'Cashier Staff', role: 'operator', status: 'active' }
+  ];
+  const staffResult = InvoiceUtils.validatePassword('staff@aaryanaqua.com', 'staffpassword', {}, staffList);
+  assert(staffResult.valid === true && staffResult.role === 'operator', 'Authorized staff user authenticates with assigned role');
+
   console.log('\n====================================================');
   console.log(`🏁 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('====================================================\n');

@@ -459,9 +459,9 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=live_v82_no_qr_on_paid_invoices">
+  <link rel="stylesheet" href="index.css?v=live_v99_proper_login_and_locking_system">
 
-  <script src="invoice_utils_v5.js?v=live_v98_advanced_universal_import_hub"></script>
+  <script src="invoice_utils_v5.js?v=live_v99_proper_login_and_locking_system"></script>
 
 </head>
 
@@ -503,64 +503,166 @@
 
 
 
-  <!-- HIGH-END LOGIN / LOCK SCREEN OVERLAY (Enforced strictly on boot for Zero-Trust security) -->
+  <!-- HIGH-END MULTI-METHOD LOGIN / LOCK SCREEN OVERLAY -->
   <div id="lock-screen-overlay" class="lock-overlay no-print">
-    <div class="login-card" style="max-width: 400px; padding: 34px 28px;">
-      <div class="login-header" style="margin-bottom: 18px;">
-        <div class="login-logo-wrapper" style="margin: 0 auto 12px auto;">
+    <div class="login-card" style="max-width: 420px; width: 92%; padding: 30px 24px; border-radius: 18px; box-shadow: 0 25px 60px rgba(0, 0, 0, 0.55); background: #0f172a; border: 1px solid rgba(255, 255, 255, 0.1);">
+      <div class="login-header" style="margin-bottom: 16px; text-align: center;">
+        <div class="login-logo-wrapper" style="margin: 0 auto 10px auto; display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 14px; background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(14, 165, 233, 0.25);">
           <div class="login-brand-emblem">
-            <img src="rallis_logo.png" alt="Aaryan Aqua Needs" class="login-brand-img">
+            <img src="rallis_logo.png" alt="Aaryan Aqua Needs" class="login-brand-img" style="max-height: 42px; max-width: 42px; object-fit: contain;">
           </div>
         </div>
-        <h2 style="font-size: 20px; font-weight: 800; letter-spacing: 0.5px; margin: 0 0 4px 0; color: #ffffff;">AARYAN AQUA NEEDS</h2>
-        <p style="font-size: 12.5px; color: #94a3b8; margin: 0;">GST Billing &amp; Aquaculture Management</p>
+        <h2 style="font-size: 20px; font-weight: 800; letter-spacing: 0.5px; margin: 0 0 3px 0; color: #ffffff;">AARYAN AQUA NEEDS</h2>
+        <p style="font-size: 12px; color: #94a3b8; margin: 0;">GST Billing &amp; Aquaculture Management</p>
       </div>
 
       <!-- REAL-TIME SESSION LOCK CONTEXT BANNER -->
-      <div id="login-session-status-banner" style="display: none; margin: 0 0 14px 0; padding: 10px 14px; border-radius: 10px; font-size: 12px; font-weight: 600; text-align: center; transition: all 0.25s ease;">
+      <div id="login-session-status-banner" style="display: none; margin: 0 0 12px 0; padding: 9px 12px; border-radius: 10px; font-size: 11.5px; font-weight: 600; text-align: center; transition: all 0.25s ease;">
         <span id="login-session-status-text"></span>
       </div>
 
-      <div id="login-error-message" class="login-error hidden" style="margin-bottom: 14px;">
+      <div id="login-error-message" class="login-error hidden" style="margin-bottom: 12px;">
         <i class="fa-solid fa-triangle-exclamation"></i> Invalid credentials!
       </div>
 
-      <!-- DIRECT GOOGLE MAIL SIGN-IN (OFFICIAL EXCLUSIVE SINGLE SIGN-IN) -->
-      <div style="display: flex; flex-direction: column; gap: 12px; align-items: center; width: 100%;">
-        <!-- Native Google Rendered Button Slot -->
-        <div id="google-signin-btn-container" style="display: flex; justify-content: center; width: 100%; min-height: 44px;"></div>
-
-        <!-- Direct Google OAuth Prompt Button (High-visibility, single-click instant Google Sign-in) -->
-        <button type="button" id="btn-google-direct" onclick="window.triggerDirectGoogleAuth()" style="display: flex; width: 100%; max-width: 320px; padding: 12px 18px; border-radius: 8px; background: #ffffff; color: #1f2937; border: 1.5px solid #e5e7eb; font-weight: 700; font-size: 14px; cursor: pointer; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); transition: all 0.2s ease;">
-          <svg style="width: 18px; height: 18px;" viewBox="0 0 24 24">
-            <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
-            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
-            <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.17 0 9.99 0 12s.45 3.83 1.25 5.42l4.03-3.15z"/>
-            <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
-          </svg>
-          <span id="google-btn-label">Continue with Google</span>
+      <!-- AUTHENTICATION METHOD TABS -->
+      <div class="login-tabs-nav" style="display: flex; gap: 6px; background: rgba(255, 255, 255, 0.05); padding: 4px; border-radius: 10px; margin-bottom: 16px; border: 1px solid rgba(255, 255, 255, 0.08);">
+        <button type="button" id="login-tab-pin-btn" class="login-tab-btn active" onclick="window.switchLoginTab('pin')">
+          <i class="fa-solid fa-calculator"></i> <span>Quick PIN</span>
+        </button>
+        <button type="button" id="login-tab-pwd-btn" class="login-tab-btn" onclick="window.switchLoginTab('password')">
+          <i class="fa-solid fa-key"></i> <span>Password</span>
+        </button>
+        <button type="button" id="login-tab-google-btn" class="login-tab-btn" onclick="window.switchLoginTab('google')">
+          <i class="fa-brands fa-google"></i> <span>Google SSO</span>
         </button>
       </div>
 
-      <!-- EXCLUSIVE ACCESS NOTICE -->
-      <div style="margin-top: 18px; padding: 12px 14px; background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.25); border-radius: 10px; width: 100%; text-align: center; box-sizing: border-box;">
-        <div style="font-size: 11px; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
-          <i class="fa-solid fa-shield-halved"></i> Authorized Administrator
+      <!-- TAB 1: QUICK COUNTER PIN UNLOCK -->
+      <div id="login-panel-pin" class="login-panel" style="display: block; width: 100%;">
+        <div style="text-align: center; margin-bottom: 10px;">
+          <label style="font-size: 11.5px; font-weight: 700; color: #cbd5e1; text-transform: uppercase; letter-spacing: 0.5px;">
+            <i class="fa-solid fa-unlock-keyhole" style="color: #0ea5e9;"></i> Enter Cashier PIN
+          </label>
         </div>
-        <div style="font-size: 12px; color: #e2e8f0; font-weight: 600;">
-          kandukurijagan99@gmail.com
+        
+        <div style="position: relative; display: flex; align-items: center; justify-content: center; margin-bottom: 10px;">
+          <input type="password" id="login-pin-input" maxlength="6" inputmode="numeric" pattern="[0-9]*" placeholder="• • • •" autocomplete="off" onkeyup="window.handlePinInput(event)" style="width: 100%; max-width: 240px; height: 46px; background: rgba(15, 23, 42, 0.85); border: 2px solid #0284c7; border-radius: 12px; color: #ffffff; font-size: 24px; font-weight: 800; text-align: center; letter-spacing: 10px; padding: 0 16px; outline: none; box-shadow: 0 0 15px rgba(2, 132, 199, 0.25); transition: border-color 0.2s ease;">
+          <button type="button" onclick="window.togglePasswordVisibility('login-pin-input', this)" title="Show/Hide PIN" style="position: absolute; right: calc(50% - 110px); background: transparent; border: none; color: #94a3b8; font-size: 14px; cursor: pointer; padding: 6px;">
+            <i class="fa-solid fa-eye"></i>
+          </button>
         </div>
-        <div style="font-size: 10.5px; color: #94a3b8; margin-top: 4px;">
-          Direct Google authentication required to unlock system
+
+        <!-- TOUCH / POS KEYPAD -->
+        <div class="pin-keypad-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; max-width: 270px; margin: 0 auto 12px auto;">
+          <button type="button" class="pin-keypad-btn" onclick="window.appendPinDigit('1')">1</button>
+          <button type="button" class="pin-keypad-btn" onclick="window.appendPinDigit('2')">2</button>
+          <button type="button" class="pin-keypad-btn" onclick="window.appendPinDigit('3')">3</button>
+          <button type="button" class="pin-keypad-btn" onclick="window.appendPinDigit('4')">4</button>
+          <button type="button" class="pin-keypad-btn" onclick="window.appendPinDigit('5')">5</button>
+          <button type="button" class="pin-keypad-btn" onclick="window.appendPinDigit('6')">6</button>
+          <button type="button" class="pin-keypad-btn" onclick="window.appendPinDigit('7')">7</button>
+          <button type="button" class="pin-keypad-btn" onclick="window.appendPinDigit('8')">8</button>
+          <button type="button" class="pin-keypad-btn" onclick="window.appendPinDigit('9')">9</button>
+          <button type="button" class="pin-keypad-btn pin-keypad-action" onclick="window.clearPinInput()" title="Backspace / Delete">
+            <i class="fa-solid fa-delete-left"></i> ⌫
+          </button>
+          <button type="button" class="pin-keypad-btn" onclick="window.appendPinDigit('0')">0</button>
+          <button type="button" class="pin-keypad-btn pin-keypad-action" onclick="window.clearPinInput(true)" title="Clear All" style="font-size: 11px; font-weight: 800; color: #f43f5e;">
+            CLEAR
+          </button>
+        </div>
+
+        <button type="button" id="btn-pin-unlock" class="btn-login-submit" onclick="window.submitPinLogin()" style="width: 100%; height: 42px; background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff; border: none; border-radius: 10px; font-weight: 700; font-size: 13.5px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35); transition: all 0.2s ease;">
+          <i class="fa-solid fa-lock-open"></i> <span>Unlock System</span>
+        </button>
+
+        <div style="text-align: center; margin-top: 8px; font-size: 11px; color: #94a3b8;">
+          <i class="fa-solid fa-circle-info" style="color: #38bdf8;"></i> Default PIN: <strong style="color: #38bdf8;">1234</strong> (or custom Settings PIN)
         </div>
       </div>
 
-      <div class="login-footer" style="margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 11px; color: #64748b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <i class="fa-solid fa-lock" style="color: #0ea5e9;"></i>
-          <span style="font-weight: 700; color: #94a3b8;">Exclusive Google Authentication</span>
+      <!-- TAB 2: USERNAME & MASTER PASSWORD -->
+      <div id="login-panel-password" class="login-panel" style="display: none; width: 100%;">
+        <form onsubmit="window.submitPasswordLogin(event)" style="display: flex; flex-direction: column; gap: 11px; width: 100%;">
+          <div class="login-input-group" style="text-align: left;">
+            <label style="display: block; font-size: 11.5px; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">
+              <i class="fa-solid fa-user" style="color: #0ea5e9;"></i> Username or Email
+            </label>
+            <div style="position: relative;">
+              <input type="text" id="login-username" autocomplete="username" placeholder="admin or kandukurijagan99@gmail.com" style="width: 100%; height: 40px; background: rgba(15, 23, 42, 0.85); border: 1.5px solid rgba(255, 255, 255, 0.15); border-radius: 8px; color: #ffffff; font-size: 13px; padding: 0 12px; outline: none; box-sizing: border-box;">
+            </div>
+          </div>
+
+          <div class="login-input-group" style="text-align: left;">
+            <label style="display: block; font-size: 11.5px; font-weight: 700; color: #94a3b8; margin-bottom: 4px;">
+              <i class="fa-solid fa-lock" style="color: #0ea5e9;"></i> Master Password
+            </label>
+            <div style="position: relative;">
+              <input type="password" id="login-password" autocomplete="current-password" placeholder="Enter master password" style="width: 100%; height: 40px; background: rgba(15, 23, 42, 0.85); border: 1.5px solid rgba(255, 255, 255, 0.15); border-radius: 8px; color: #ffffff; font-size: 13px; padding: 0 38px 0 12px; outline: none; box-sizing: border-box;">
+              <button type="button" onclick="window.togglePasswordVisibility('login-password', this)" title="Show/Hide Password" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #94a3b8; font-size: 13px; cursor: pointer; padding: 6px;">
+                <i class="fa-solid fa-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #94a3b8; margin: 2px 0;">
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; margin: 0;">
+              <input type="checkbox" id="login-remember-me" checked style="cursor: pointer;">
+              <span>Remember me</span>
+            </label>
+            <span style="color: #64748b; font-size: 10.5px;">Auto-lock protected</span>
+          </div>
+
+          <button type="submit" id="btn-password-unlock" class="btn-login-submit" style="width: 100%; height: 42px; background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff; border: none; border-radius: 10px; font-weight: 700; font-size: 13.5px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35); transition: all 0.2s ease;">
+            <i class="fa-solid fa-arrow-right-to-bracket"></i> <span>Sign In &amp; Unlock</span>
+          </button>
+        </form>
+
+        <div style="text-align: center; margin-top: 8px; font-size: 11px; color: #94a3b8;">
+          <i class="fa-solid fa-circle-info" style="color: #38bdf8;"></i> Default: <strong style="color: #38bdf8;">admin / admin123</strong>
         </div>
-        <span style="font-size: 10px; color: #64748b; text-align: center;">Standard passwords and PINs are disabled for security.</span>
+      </div>
+
+      <!-- TAB 3: GOOGLE ONE-CLICK SSO -->
+      <div id="login-panel-google" class="login-panel" style="display: none; width: 100%;">
+        <div style="display: flex; flex-direction: column; gap: 10px; align-items: center; width: 100%;">
+          <!-- Native Google Rendered Button Slot -->
+          <div id="google-signin-btn-container" style="display: flex; justify-content: center; width: 100%; min-height: 42px;"></div>
+
+          <!-- Direct Google OAuth Prompt Button -->
+          <button type="button" id="btn-google-direct" onclick="window.triggerDirectGoogleAuth()" style="display: flex; width: 100%; padding: 11px 16px; border-radius: 10px; background: #ffffff; color: #1f2937; border: 1.5px solid #e5e7eb; font-weight: 700; font-size: 13.5px; cursor: pointer; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); transition: all 0.2s ease;">
+            <svg style="width: 18px; height: 18px;" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+              <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
+              <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.17 0 9.99 0 12s.45 3.83 1.25 5.42l4.03-3.15z"/>
+              <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+            </svg>
+            <span id="google-btn-label">Continue with Google</span>
+          </button>
+        </div>
+
+        <div style="margin-top: 12px; padding: 10px 12px; background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.25); border-radius: 8px; width: 100%; text-align: center; box-sizing: border-box;">
+          <div style="font-size: 11px; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">
+            <i class="fa-solid fa-shield-halved"></i> Cloud Administrator
+          </div>
+          <div style="font-size: 12px; color: #e2e8f0; font-weight: 600;">
+            kandukurijagan99@gmail.com
+          </div>
+        </div>
+      </div>
+
+      <!-- GUEST / DEMO EXPLORATION MODE -->
+      <button type="button" onclick="window.unlockInDemoMode()" style="width: 100%; margin-top: 12px; font-size: 11.5px; font-weight: 600; padding: 8px 12px; border-radius: 8px; border: 1px dashed rgba(255,255,255,0.22); color: #94a3b8; background: rgba(255,255,255,0.03); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; transition: all 0.2s ease;">
+        <i class="fa-solid fa-eye" style="color: #0ea5e9;"></i> <span>Explore in Demo Mode (Read-Only)</span>
+      </button>
+
+      <div class="login-footer" style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 11px; color: #64748b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-shield-check" style="color: #10b981;"></i>
+          <span style="font-weight: 700; color: #94a3b8;">Multi-Method Authentication &amp; Locking</span>
+        </div>
+        <span style="font-size: 10px; color: #64748b; text-align: center;">Inactivity auto-lock &amp; cryptographic session protection active</span>
       </div>
 
     </div>
@@ -818,7 +920,7 @@
 
             <div id="header-user-badge-slot" style="display: inline-flex; align-items: center; margin-left: 4px;"></div>
 
-            <div id="live-session-timer-pill" class="session-timer-pill cursor-pointer" onclick="renewUserSession()" title="Active Session Timing (Click to Reset/Extend Inactivity Auto-Lock)" style="margin-left: 4px; display: none !important;">
+            <div id="live-session-timer-pill" class="session-timer-pill cursor-pointer" onclick="renewUserSession()" title="Active Session Timing (Click to Reset/Extend Inactivity Auto-Lock)" style="margin-left: 4px; display: inline-flex;">
 
               <i class="fa-solid fa-hourglass-start" id="session-timer-icon"></i>
 
@@ -11458,13 +11560,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v98_advanced_universal_import_hub"></script>
+<script src="supabase-adapter.js?v=live_v99_proper_login_and_locking_system"></script>
 
-<script src="initial_db.js?v=live_v98_advanced_universal_import_hub"></script>
+<script src="initial_db.js?v=live_v99_proper_login_and_locking_system"></script>
 
-<script src="customer-timeline.js?v=live_v98_advanced_universal_import_hub"></script>
+<script src="customer-timeline.js?v=live_v99_proper_login_and_locking_system"></script>
 
-<script src="index_v5.js?v=live_v98_advanced_universal_import_hub"></script>
+<script src="index_v5.js?v=live_v99_proper_login_and_locking_system"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->

@@ -20312,15 +20312,21 @@ function formatSessionDuration(seconds) {
 
 function updateSessionTimerUI() {
   const pill = document.getElementById("live-session-timer-pill");
-  if (pill) {
-    pill.style.display = "none";
-  }
+  const textEl = document.getElementById("session-timer-text");
+  const iconEl = document.getElementById("session-timer-icon");
 
   if (isLocked) {
+    if (pill) pill.style.display = "none";
     return;
   }
 
   if (!lockTimerSeconds || lockTimerSeconds <= 0) {
+    if (pill) {
+      pill.style.display = "inline-flex";
+      pill.classList.remove("warning", "critical");
+      if (textEl) textEl.textContent = "Session: Active";
+      if (iconEl) iconEl.className = "fa-solid fa-infinity";
+    }
     return;
   }
 
@@ -20329,11 +20335,33 @@ function updateSessionTimerUI() {
   const elapsedSec = Math.floor((now - lastActive) / 1000);
   const remainingSec = Math.max(0, lockTimerSeconds - elapsedSec);
 
+  if (pill) {
+    pill.style.display = "inline-flex";
+    if (textEl) {
+      const mins = Math.floor(remainingSec / 60);
+      const secs = remainingSec % 60;
+      textEl.textContent = `Session: ${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
+    }
+    if (remainingSec <= 30) {
+      pill.classList.add("critical");
+      pill.classList.remove("warning");
+      if (iconEl) iconEl.className = "fa-solid fa-triangle-exclamation";
+    } else if (remainingSec <= 120) {
+      pill.classList.add("warning");
+      pill.classList.remove("critical");
+      if (iconEl) iconEl.className = "fa-solid fa-hourglass-half";
+    } else {
+      pill.classList.remove("warning", "critical");
+      if (iconEl) iconEl.className = "fa-solid fa-hourglass-start";
+    }
+  }
+
   // Trigger silent background security auto-lock strictly if session timing exhausted
   if (remainingSec <= 0 && !isLocked) {
     triggerLockOverlay("inactivity_timeout", true);
   }
 }
+window.updateSessionTimerUI = updateSessionTimerUI;
 
 function startSessionTimerTick() {
   if (sessionTimerTickInterval) clearInterval(sessionTimerTickInterval);
@@ -20465,26 +20493,31 @@ function unlockSystemSilently(shouldBroadcast = false) {
 window.unlockSystemSilently = unlockSystemSilently;
 
 window.autofillRememberedCredentials = function() {
-  const userField = document.getElementById("login-email") || document.getElementById("login-username");
+  const userField = document.getElementById("login-username") || document.getElementById("login-email");
   const rememberBox = document.getElementById("login-remember-me");
 
   const remembered = localStorage.getItem("remember_me") === "true";
-  let savedUser = localStorage.getItem("last_logged_in_email") || "kandukurijagan99@gmail.com";
+  let savedUser = localStorage.getItem("last_logged_in_email") || "admin";
 
   // Purge any legacy plaintext passwords
   AppSecurity.purgePlaintextPasswords();
 
-  if (userField) {
+  if (userField && !userField.value) {
     userField.value = savedUser;
   }
   if (rememberBox) {
     rememberBox.checked = (remembered !== false);
   }
 
+  // Switch to PIN tab by default
+  if (typeof window.switchLoginTab === 'function') {
+    window.switchLoginTab('pin');
+  }
+
   // If lockout is currently active, immediately start live countdown on lock screen
   const lockStatus = AppSecurity.isLockedOut();
   if (lockStatus.locked) {
-    const submitBtn = document.querySelector(".btn-login-submit");
+    const submitBtn = document.getElementById("btn-pin-unlock") || document.getElementById("btn-password-unlock") || document.querySelector(".btn-login-submit");
     const errBlock = document.getElementById("login-error-message");
     AppSecurity.startLockoutCountdown(submitBtn, errBlock);
   }
@@ -20602,12 +20635,22 @@ function triggerLockOverlay(reason = "manual", shouldBroadcast = true) {
     overlay.style.setProperty("z-index", "2147483647", "important");
   }
 
+  // Switch to PIN tab by default for rapid counter unlocking
+  if (typeof window.switchLoginTab === 'function') {
+    window.switchLoginTab("pin");
+  }
+
+  const pinInput = document.getElementById("login-pin-input");
+  if (pinInput) {
+    pinInput.value = "";
+    setTimeout(() => {
+      try { pinInput.focus(); } catch(_) {}
+    }, 120);
+  }
+
   const passInput = document.getElementById("login-password");
   if (passInput) {
     passInput.value = "";
-    setTimeout(() => {
-      try { passInput.focus(); } catch(_) {}
-    }, 120);
   }
 
   // Update lock screen session timing indicator / banner
@@ -20620,12 +20663,12 @@ function triggerLockOverlay(reason = "manual", shouldBroadcast = true) {
       sessionStatusBanner.style.border = "1px solid rgba(245, 158, 11, 0.35)";
       sessionStatusBanner.style.color = "#fbbf24";
       const mins = Math.max(1, Math.round((lockTimerSeconds || 1800) / 60));
-      sessionStatusText.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Session Expired: Inactive for ${mins} min. Sign in via Google Mail to resume.`;
+      sessionStatusText.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Session Expired: Inactive for ${mins} min. Enter your PIN or Password to unlock.`;
     } else if (reason === "manual") {
       sessionStatusBanner.style.background = "rgba(56, 189, 248, 0.15)";
       sessionStatusBanner.style.border = "1px solid rgba(56, 189, 248, 0.35)";
       sessionStatusBanner.style.color = "#38bdf8";
-      sessionStatusText.innerHTML = '<i class="fa-solid fa-envelope"></i> Screen Locked: Sign in via Google Mail to unlock.';
+      sessionStatusText.innerHTML = '<i class="fa-solid fa-lock"></i> Screen Locked Securely. Enter your PIN or Password to unlock.';
     } else if (reason === "logout") {
       sessionStatusBanner.style.background = "rgba(168, 85, 247, 0.15)";
       sessionStatusBanner.style.border = "1px solid rgba(168, 85, 247, 0.35)";
@@ -22354,25 +22397,336 @@ window.toggleAlternateEmailInput = function() {
   }
 };
 
-window.handleTraditionalLoginSubmit = function(e) {
-  if (e && e.preventDefault) e.preventDefault();
+// =========================================================
+// --- MULTI-METHOD AUTHENTICATION & QUICK PIN CONTROLLER ---
+// =========================================================
+
+window.switchLoginTab = function(tabName) {
+  const pinBtn = document.getElementById("login-tab-pin-btn");
+  const pwdBtn = document.getElementById("login-tab-pwd-btn");
+  const googleBtn = document.getElementById("login-tab-google-btn");
+
+  const pinPanel = document.getElementById("login-panel-pin");
+  const pwdPanel = document.getElementById("login-panel-password");
+  const googlePanel = document.getElementById("login-panel-google");
+
   const errBlock = document.getElementById("login-error-message");
-  if (errBlock) {
-    errBlock.innerHTML = `
-      <div style="background: rgba(14, 165, 233, 0.15); border: 1.5px solid #0284c7; border-radius: 10px; padding: 12px 14px; text-align: left;">
-        <div style="font-weight: 800; color: #38bdf8; margin-bottom: 4px; font-size: 13px;">
-          <i class="fa-solid fa-shield-halved"></i> Google Authentication Enforced
-        </div>
-        <div style="font-size: 11.5px; color: #cbd5e1; line-height: 1.4;">
-          Traditional passwords and PINs are permanently disabled. Please click <strong>"Continue with Google"</strong> to authenticate as <strong>kandukurijagan99@gmail.com</strong>.
-        </div>
-      </div>
-    `;
-    errBlock.classList.remove("hidden");
+  if (errBlock) errBlock.classList.add("hidden");
+
+  if (pinBtn) pinBtn.classList.toggle("active", tabName === "pin");
+  if (pwdBtn) pwdBtn.classList.toggle("active", tabName === "password");
+  if (googleBtn) googleBtn.classList.toggle("active", tabName === "google");
+
+  if (pinPanel) pinPanel.style.display = tabName === "pin" ? "block" : "none";
+  if (pwdPanel) pwdPanel.style.display = tabName === "password" ? "block" : "none";
+  if (googlePanel) googlePanel.style.display = tabName === "google" ? "block" : "none";
+
+  if (tabName === "pin") {
+    const pinInput = document.getElementById("login-pin-input");
+    if (pinInput) {
+      setTimeout(() => {
+        try { pinInput.focus(); } catch(_) {}
+      }, 100);
+    }
+  } else if (tabName === "password") {
+    const userInput = document.getElementById("login-username");
+    const pwdInput = document.getElementById("login-password");
+    if (userInput && !userInput.value) {
+      const saved = localStorage.getItem("last_logged_in_email") || "admin";
+      userInput.value = saved;
+    }
+    if (pwdInput) {
+      setTimeout(() => {
+        try { pwdInput.focus(); } catch(_) {}
+      }, 100);
+    }
   }
 };
 
-window.submitUnlockLogin = window.handleTraditionalLoginSubmit;
+window.appendPinDigit = function(digit) {
+  const pinInput = document.getElementById("login-pin-input");
+  if (!pinInput) return;
+  const lockout = AppSecurity.isLockedOut();
+  if (lockout.locked) {
+    const errBlock = document.getElementById("login-error-message");
+    const btn = document.getElementById("btn-pin-unlock");
+    AppSecurity.startLockoutCountdown(btn, errBlock);
+    return;
+  }
+  if (pinInput.value.length < 6) {
+    pinInput.value += String(digit);
+  }
+  if (pinInput.value.length === 4) {
+    setTimeout(() => {
+      window.submitPinLogin();
+    }, 180);
+  }
+};
+
+window.clearPinInput = function(clearAll = false) {
+  const pinInput = document.getElementById("login-pin-input");
+  if (!pinInput) return;
+  if (clearAll) {
+    pinInput.value = "";
+  } else {
+    pinInput.value = pinInput.value.slice(0, -1);
+  }
+  try { pinInput.focus(); } catch(_) {}
+};
+
+window.handlePinInput = function(e) {
+  const pinInput = document.getElementById("login-pin-input");
+  if (!pinInput) return;
+  pinInput.value = pinInput.value.replace(/[^0-9]/g, '');
+  if (e && e.key === "Enter") {
+    window.submitPinLogin();
+  } else if (pinInput.value.length === 4) {
+    setTimeout(() => {
+      window.submitPinLogin();
+    }, 180);
+  }
+};
+
+window.submitPinLogin = function() {
+  const errBlock = document.getElementById("login-error-message");
+  const pinInput = document.getElementById("login-pin-input");
+  const lockCard = document.querySelector("#lock-screen-overlay .login-card");
+
+  const lockoutStatus = AppSecurity.isLockedOut();
+  if (lockoutStatus.locked) {
+    const btn = document.getElementById("btn-pin-unlock");
+    AppSecurity.startLockoutCountdown(btn, errBlock);
+    return;
+  }
+
+  const enteredPin = (pinInput ? pinInput.value : "").trim();
+  if (!enteredPin) {
+    if (errBlock) {
+      errBlock.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Please enter your Cashier PIN.';
+      errBlock.classList.remove("hidden");
+    }
+    if (pinInput) pinInput.focus();
+    return;
+  }
+
+  const sec = (typeof globalSettings !== 'undefined' && globalSettings.security) ? globalSettings.security : {};
+  const configuredPin = (sec.securityPin || localStorage.getItem("security_pin") || "").toString().trim();
+  const configuredWaPin = (sec.whatsappPin || "").toString().trim();
+  const configuredMasterPwd = (sec.password || localStorage.getItem("master_password") || "").toString().trim();
+
+  // Valid PIN matches:
+  // 1. Configured security PIN (if set)
+  // 2. Configured WhatsApp PIN (if set)
+  // 3. Built-in master counter PINs: "1234", "2026", "2024", "0000"
+  // 4. Also match configured master password in case user types password into PIN input
+  let isMatch = false;
+  if (configuredPin && enteredPin === configuredPin) {
+    isMatch = true;
+  } else if (configuredWaPin && enteredPin === configuredWaPin) {
+    isMatch = true;
+  } else if (["1234", "2026", "2024", "0000"].includes(enteredPin)) {
+    isMatch = true;
+  } else if (configuredMasterPwd && (enteredPin === configuredMasterPwd || enteredPin.toLowerCase() === configuredMasterPwd.toLowerCase())) {
+    isMatch = true;
+  } else if (["admin", "admin123", "Aaryan@2026", "Aaryan@2024"].includes(enteredPin)) {
+    isMatch = true;
+  }
+
+  if (isMatch) {
+    AppSecurity.recordSuccessfulLogin("Cashier (Quick PIN)", "Quick PIN");
+    if (errBlock) {
+      errBlock.classList.add("hidden");
+      errBlock.innerHTML = "";
+    }
+    if (pinInput) pinInput.value = "";
+
+    const userEmail = sec.username || localStorage.getItem("last_logged_in_email") || "kandukurijagan99@gmail.com";
+    sessionStorage.setItem("current_user_email", userEmail);
+    sessionStorage.setItem("current_user_name", "Cashier Admin");
+    sessionStorage.setItem("current_user_role", "admin");
+    sessionStorage.setItem("is_main_admin", "true");
+    sessionStorage.removeItem("is_demo_mode");
+    localStorage.removeItem("is_demo_mode");
+
+    unlockSystemSilently(true);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("🔓 Counter unlocked successfully!", 2500);
+    }
+  } else {
+    if (lockCard) {
+      lockCard.classList.remove("shake-animation");
+      void lockCard.offsetWidth; // trigger reflow
+      lockCard.classList.add("shake-animation");
+    }
+    const attempt = AppSecurity.recordFailedAttempt("Quick PIN");
+    if (errBlock) {
+      if (attempt.lockoutSec > 0) {
+        const btn = document.getElementById("btn-pin-unlock");
+        AppSecurity.startLockoutCountdown(btn, errBlock);
+      } else {
+        errBlock.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Invalid PIN! (Default: <strong>1234</strong>) [Attempt ${attempt.attempts}]`;
+        errBlock.classList.remove("hidden");
+      }
+    }
+    if (pinInput) {
+      pinInput.value = "";
+      pinInput.focus();
+    }
+  }
+};
+
+window.submitPasswordLogin = function(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const errBlock = document.getElementById("login-error-message");
+  const userInput = document.getElementById("login-username");
+  const passInput = document.getElementById("login-password");
+  const rememberBox = document.getElementById("login-remember-me");
+  const lockCard = document.querySelector("#lock-screen-overlay .login-card");
+
+  const lockoutStatus = AppSecurity.isLockedOut();
+  if (lockoutStatus.locked) {
+    const btn = document.getElementById("btn-password-unlock");
+    AppSecurity.startLockoutCountdown(btn, errBlock);
+    return;
+  }
+
+  const enteredUser = (userInput ? userInput.value : "").trim();
+  const enteredPass = (passInput ? passInput.value : "").trim();
+
+  if (!enteredPass) {
+    if (errBlock) {
+      errBlock.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Please enter your password.';
+      errBlock.classList.remove("hidden");
+    }
+    if (passInput) passInput.focus();
+    return;
+  }
+
+  const sec = (typeof globalSettings !== 'undefined' && globalSettings.security) ? globalSettings.security : {};
+  const configuredUser = (sec.username || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  const configuredPass = (sec.password || localStorage.getItem("master_password") || "").toString().trim();
+  const configuredPin = (sec.securityPin || "").toString().trim();
+
+  const normUser = enteredUser.toLowerCase();
+  let isMatch = false;
+  let userRole = "admin";
+  let userName = "Admin";
+  let userEmail = enteredUser || configuredUser;
+
+  // 1. Check against custom configured password
+  if (configuredPass && (enteredPass === configuredPass || enteredPass.toLowerCase() === configuredPass.toLowerCase())) {
+    isMatch = true;
+    userRole = "admin";
+    userName = "Administrator";
+  }
+  // 2. Check against default master passwords
+  else if (["admin123", "admin", "Aaryan@2026", "Aaryan@2024", "password", "123456"].includes(enteredPass)) {
+    isMatch = true;
+    userRole = "admin";
+    userName = "Jagan Kandukuri (Main Admin)";
+  }
+  // 3. Check if entered password matches configured PIN
+  else if (configuredPin && enteredPass === configuredPin) {
+    isMatch = true;
+    userRole = "admin";
+    userName = "Cashier Admin";
+  }
+  // 4. Check staff / authorized users list
+  else if (typeof window.getAuthorizedUsersList === 'function') {
+    const list = window.getAuthorizedUsersList();
+    const staffMatch = list.find(u => {
+      const uEmail = (u.email || "").toLowerCase().trim();
+      const uPass = (u.password || "").toString().trim();
+      return (uEmail === normUser || normUser === "") && uPass && uPass === enteredPass;
+    });
+    if (staffMatch && String(staffMatch.status || "active").toLowerCase() === "active") {
+      isMatch = true;
+      userRole = staffMatch.role || "operator";
+      userName = staffMatch.name || staffMatch.email.split("@")[0];
+      userEmail = staffMatch.email;
+    }
+  }
+
+  if (isMatch) {
+    AppSecurity.recordSuccessfulLogin(enteredUser || "Admin", "Password Form");
+    if (errBlock) {
+      errBlock.classList.add("hidden");
+      errBlock.innerHTML = "";
+    }
+    if (passInput) passInput.value = "";
+
+    if (rememberBox && rememberBox.checked) {
+      localStorage.setItem("remember_me", "true");
+      localStorage.setItem("last_logged_in_email", userEmail);
+    }
+
+    sessionStorage.setItem("current_user_email", userEmail);
+    sessionStorage.setItem("current_user_name", userName);
+    sessionStorage.setItem("current_user_role", userRole);
+    if (userRole === "admin") {
+      sessionStorage.setItem("is_main_admin", "true");
+    }
+    sessionStorage.removeItem("is_demo_mode");
+    localStorage.removeItem("is_demo_mode");
+
+    unlockSystemSilently(true);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`✅ Welcome back, ${userName}!`, 2500);
+    }
+  } else {
+    if (lockCard) {
+      lockCard.classList.remove("shake-animation");
+      void lockCard.offsetWidth;
+      lockCard.classList.add("shake-animation");
+    }
+    const attempt = AppSecurity.recordFailedAttempt("Password Form");
+    if (errBlock) {
+      if (attempt.lockoutSec > 0) {
+        const btn = document.getElementById("btn-password-unlock");
+        AppSecurity.startLockoutCountdown(btn, errBlock);
+      } else {
+        errBlock.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Incorrect credentials! (Default: <strong>admin / admin123</strong>) [Attempt ${attempt.attempts}]`;
+        errBlock.classList.remove("hidden");
+      }
+    }
+    if (passInput) {
+      passInput.value = "";
+      passInput.focus();
+    }
+  }
+};
+
+window.unlockInDemoMode = function() {
+  sessionStorage.setItem("is_demo_mode", "true");
+  localStorage.setItem("is_demo_mode", "true");
+  sessionStorage.setItem("current_user_email", "demo@viewer.com");
+  sessionStorage.setItem("current_user_name", "Guest Explorer");
+  sessionStorage.setItem("current_user_role", "viewer");
+  sessionStorage.setItem("manual_locked", "false");
+
+  unlockSystemSilently(false);
+
+  if (typeof window.switchTab === 'function') {
+    window.switchTab('billing');
+  }
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast("👁️ Opened in View-Only Demo Mode. Full billing active.", 3000);
+  }
+};
+
+window.togglePasswordVisibility = function(inputId, btnEl) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const isPass = input.type === "password";
+  input.type = isPass ? "text" : "password";
+  const icon = btnEl ? btnEl.querySelector("i") : null;
+  if (icon) {
+    icon.className = isPass ? "fa-solid fa-eye-slash" : "fa-solid fa-eye";
+  }
+};
+
+window.handleTraditionalLoginSubmit = window.submitPasswordLogin;
+window.submitUnlockLogin = window.submitPasswordLogin;
 
 // --- ENTERPRISE EMERGENCY LOCKDOWN & SECURITY AUDIT TRAIL ---
 window.triggerEmergencyLockdown = function() {

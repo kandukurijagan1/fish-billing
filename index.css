@@ -1099,7 +1099,21 @@ body {
 /* Live Active Session Timing Pill */
 .session-timer-pill,
 #live-session-timer-pill {
-  display: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  height: 28px !important;
+  padding: 0 9px !important;
+  border-radius: 14px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  background: rgba(13, 148, 136, 0.1) !important;
+  border: 1px solid rgba(13, 148, 136, 0.25) !important;
+  color: #0f766e !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
 }
 
 .session-timer-pill:hover {
@@ -1134,6 +1148,89 @@ body {
 @keyframes sessionPulse {
   0% { transform: scale(1); }
   100% { transform: scale(1.05); }
+}
+
+/* Authentication Method Tabs & PIN Keypad */
+.login-tabs-nav {
+  display: flex;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 4px;
+  border-radius: 10px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.login-tab-btn {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.login-tab-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.login-tab-btn.active {
+  color: #ffffff;
+  background: #0284c7;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.4);
+}
+
+.pin-keypad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  max-width: 270px;
+  margin: 0 auto 12px auto;
+}
+
+.pin-keypad-btn {
+  height: 44px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  font-size: 19px;
+  font-weight: 700;
+  color: #f8fafc;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s ease;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pin-keypad-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+.pin-keypad-btn:active {
+  background: rgba(14, 165, 233, 0.35);
+  border-color: #38bdf8;
+  transform: scale(0.96);
+}
+
+.pin-keypad-action {
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
+  font-size: 13px;
 }
 
 /* Counter Privacy Shield & Financial Figure Masking */
