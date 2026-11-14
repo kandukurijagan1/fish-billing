@@ -20493,33 +20493,12 @@ function unlockSystemSilently(shouldBroadcast = false) {
 window.unlockSystemSilently = unlockSystemSilently;
 
 window.autofillRememberedCredentials = function() {
-  const userField = document.getElementById("login-username") || document.getElementById("login-email");
-  const rememberBox = document.getElementById("login-remember-me");
-
-  const remembered = localStorage.getItem("remember_me") === "true";
-  let savedUser = localStorage.getItem("last_logged_in_email") || "admin";
-
   // Purge any legacy plaintext passwords
   AppSecurity.purgePlaintextPasswords();
 
-  if (userField && !userField.value) {
-    userField.value = savedUser;
-  }
-  if (rememberBox) {
-    rememberBox.checked = (remembered !== false);
-  }
-
-  // Switch to PIN tab by default
-  if (typeof window.switchLoginTab === 'function') {
-    window.switchLoginTab('pin');
-  }
-
-  // If lockout is currently active, immediately start live countdown on lock screen
-  const lockStatus = AppSecurity.isLockedOut();
-  if (lockStatus.locked) {
-    const submitBtn = document.getElementById("btn-pin-unlock") || document.getElementById("btn-password-unlock") || document.querySelector(".btn-login-submit");
-    const errBlock = document.getElementById("login-error-message");
-    AppSecurity.startLockoutCountdown(submitBtn, errBlock);
+  // Initialize Google Sign-In
+  if (typeof window.initGoogleSignIn === 'function') {
+    window.initGoogleSignIn();
   }
 };
 
@@ -20635,22 +20614,9 @@ function triggerLockOverlay(reason = "manual", shouldBroadcast = true) {
     overlay.style.setProperty("z-index", "2147483647", "important");
   }
 
-  // Switch to PIN tab by default for rapid counter unlocking
-  if (typeof window.switchLoginTab === 'function') {
-    window.switchLoginTab("pin");
-  }
-
-  const pinInput = document.getElementById("login-pin-input");
-  if (pinInput) {
-    pinInput.value = "";
-    setTimeout(() => {
-      try { pinInput.focus(); } catch(_) {}
-    }, 120);
-  }
-
-  const passInput = document.getElementById("login-password");
-  if (passInput) {
-    passInput.value = "";
+  // Ensure direct Google Mail sign-in is initialized
+  if (typeof window.initGoogleSignIn === 'function') {
+    window.initGoogleSignIn();
   }
 
   // Update lock screen session timing indicator / banner
@@ -20663,11 +20629,21 @@ function triggerLockOverlay(reason = "manual", shouldBroadcast = true) {
       sessionStatusBanner.style.border = "1px solid rgba(245, 158, 11, 0.35)";
       sessionStatusBanner.style.color = "#fbbf24";
       const mins = Math.max(1, Math.round((lockTimerSeconds || 1800) / 60));
-      sessionStatusText.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Session Expired: Inactive for ${mins} min. Enter your PIN or Password to unlock.`;
+      sessionStatusText.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Session Expired: Inactive for ${mins} min. Sign in via Google Mail to resume.`;
     } else if (reason === "manual") {
       sessionStatusBanner.style.background = "rgba(56, 189, 248, 0.15)";
       sessionStatusBanner.style.border = "1px solid rgba(56, 189, 248, 0.35)";
       sessionStatusBanner.style.color = "#38bdf8";
+      sessionStatusText.innerHTML = '<i class="fa-solid fa-envelope"></i> Screen Locked Securely. Sign in via Google Mail to unlock.';
+    } else if (reason === "logout") {
+      sessionStatusBanner.style.background = "rgba(168, 85, 247, 0.15)";
+      sessionStatusBanner.style.border = "1px solid rgba(168, 85, 247, 0.35)";
+      sessionStatusBanner.style.color = "#c084fc";
+      sessionStatusText.innerHTML = '<i class="fa-solid fa-arrow-right-from-bracket"></i> You have signed out successfully.';
+    } else {
+      sessionStatusBanner.style.display = "none";
+    }
+  }
       sessionStatusText.innerHTML = '<i class="fa-solid fa-lock"></i> Screen Locked Securely. Enter your PIN or Password to unlock.';
     } else if (reason === "logout") {
       sessionStatusBanner.style.background = "rgba(168, 85, 247, 0.15)";

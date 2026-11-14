@@ -421,6 +421,18 @@
     return { valid: false };
   }
 
+  function validateDirectMailAuth(email, authorizedList = []) {
+    const norm = String(email || "").toLowerCase().trim();
+    if (!norm) return false;
+    const mainAdmin = "kandukurijagan99@gmail.com";
+    if (norm === mainAdmin || norm === "kandukurijagan88@gmail.com") return true;
+    if (Array.isArray(authorizedList)) {
+      const match = authorizedList.find(u => String(u.email || "").toLowerCase().trim() === norm);
+      if (match && String(match.status || "active").toLowerCase() === "active") return true;
+    }
+    return false;
+  }
+
   global.InvoiceUtils = {
     roundToTwo,
     calculateInvoiceBreakdown,
@@ -431,7 +443,8 @@
     mergeProductsNonDestructively,
     mergePartiesNonDestructively,
     validatePin,
-    validatePassword
+    validatePassword,
+    validateDirectMailAuth
   };
 
   if (typeof module !== 'undefined' && module.exports) {

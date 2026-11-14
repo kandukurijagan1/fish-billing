@@ -429,6 +429,12 @@ async function runAllTests() {
   const staffResult = InvoiceUtils.validatePassword('staff@aaryanaqua.com', 'staffpassword', {}, staffList);
   assert(staffResult.valid === true && staffResult.role === 'operator', 'Authorized staff user authenticates with assigned role');
 
+  // 4. Direct Google Mail Authentication
+  const adminEmail = 'kandukurijagan99@gmail.com';
+  assert(InvoiceUtils.validateDirectMailAuth(adminEmail) === true, 'Direct Google Mail kandukurijagan99@gmail.com is authorized as Main Admin');
+  assert(InvoiceUtils.validateDirectMailAuth('unauthorized@example.com') === false, 'Unauthorized email is rejected by Direct Mail Auth');
+  assert(InvoiceUtils.validateDirectMailAuth('staff@aaryanaqua.com', staffList) === true, 'Authorized staff email authenticates via Direct Mail Auth');
+
   console.log('\n====================================================');
   console.log(`🏁 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('====================================================\n');
