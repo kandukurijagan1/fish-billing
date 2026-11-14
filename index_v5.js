@@ -20795,10 +20795,35 @@ window.isEmailBanned = function(email) {
   return window.BANNED_EMAILS.some(b => b.toLowerCase().trim() === norm);
 };
 
+window.isMainAdminEmail = function(email) {
+  const norm = (email || "").toLowerCase().trim();
+  if (!norm) return false;
+  return (
+    norm === "kandukurijagan99@gmail.com" ||
+    norm === "kandukurijagan7@gmail.com" ||
+    norm === "kandukurijagan88@gmail.com" ||
+    norm === "kandukurijagan642@gmail.com"
+  );
+};
+
 window.DEFAULT_AUTHORIZED_USERS = [
   {
     email: "kandukurijagan99@gmail.com",
     name: "Jagan Kandukuri (Main Admin)",
+    role: "super_admin",
+    status: "active",
+    isMainAdmin: true
+  },
+  {
+    email: "kandukurijagan7@gmail.com",
+    name: "Jagan Kandukuri (Admin)",
+    role: "super_admin",
+    status: "active",
+    isMainAdmin: true
+  },
+  {
+    email: "kandukurijagan88@gmail.com",
+    name: "Jagan Kandukuri (Admin)",
     role: "super_admin",
     status: "active",
     isMainAdmin: true
@@ -20809,6 +20834,7 @@ window.DEFAULT_AUTHORIZED_USERS = [
 window.isUserSuspendedByAdmin = function(email) {
   const norm = (email || "").toLowerCase().trim();
   if (!norm) return false;
+  if (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(norm)) return false;
   const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
   if (norm === mainAdminNorm) return false;
 
@@ -20985,6 +21011,10 @@ window.isUserAuthorizedByAdmin = function(email) {
     return false;
   }
 
+  if (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(norm)) {
+    return true;
+  }
+
   const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
   if (norm === mainAdminNorm) return true;
 
@@ -21048,8 +21078,8 @@ window.updateUserLastLogin = function(email) {
 window.verifyAndAuthorizeUser = async function(email, displayName) {
   const normEmail = (email || "").toLowerCase().trim();
   const errBlock = document.getElementById("login-error-message");
-  const mainAdminNorm = window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
-  const isMainAdmin = (normEmail === mainAdminNorm);
+  const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  const isMainAdmin = (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(normEmail)) || (normEmail === mainAdminNorm);
 
   if (!normEmail) {
     if (errBlock) {
@@ -21059,7 +21089,42 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
     return false;
   }
 
-  // 1. STRICT BLOCK FOR SUSPENDED ACCOUNTS
+  // 1. Fetch real-time settings & authorized users from Supabase FIRST
+  if (window.SupabaseDB && typeof window.SupabaseDB.fetchSettings === 'function') {
+    try {
+      const sbRes = await window.SupabaseDB.fetchSettings();
+      if (sbRes && sbRes.ok && sbRes.settings) {
+        const cloudSett = sbRes.settings;
+        const authList = cloudSett.authorizedUsers || cloudSett.authorized_users;
+        if (Array.isArray(authList)) {
+          if (typeof globalSettings !== 'undefined') {
+            globalSettings = Object.assign({}, globalSettings, cloudSett);
+            try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(_) {}
+          }
+          window.saveAuthorizedUsersList(authList, true);
+        }
+      }
+    } catch(sbErr) {
+      console.warn("[Supabase] Cloud auth check error:", sbErr);
+    }
+  }
+
+  // 2. STRICT BLOCK FOR BANNED ACCOUNTS
+  if (typeof window.isEmailBanned === 'function' && window.isEmailBanned(normEmail)) {
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+            <i class="fa-solid fa-ban"></i> Account Banned
+          </div>
+          <div style="font-size: 11.5px; color: #cbd5e1;">This account is permanently banned.</div>
+        </div>`;
+      errBlock.classList.remove("hidden");
+    }
+    return false;
+  }
+
+  // 3. STRICT BLOCK FOR SUSPENDED ACCOUNTS (Only for non-owner accounts)
   if (!isMainAdmin && typeof window.isUserSuspendedByAdmin === 'function' && window.isUserSuspendedByAdmin(normEmail)) {
     if (errBlock) {
       errBlock.innerHTML = `
@@ -21080,75 +21145,8 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
     return false;
   }
 
-  // 2. STRICT BLOCK FOR BANNED ACCOUNTS
-  if (typeof window.isEmailBanned === 'function' && window.isEmailBanned(normEmail)) {
-    if (errBlock) {
-      errBlock.innerHTML = `<div style="color: #f43f5e; font-weight: 700;">Account Banned</div>`;
-      errBlock.classList.remove("hidden");
-    }
-    return false;
-  }
-
-  // STRICT ACCESS CONTROL: ONLY Main Admin or users explicitly added by Main Admin can open the system!
-  let isAuthorized = window.isUserAuthorizedByAdmin(normEmail);
-
-  // If local check fails (e.g. on a new device with empty localStorage), check Supabase PostgreSQL first!
-  if (!isAuthorized && window.SupabaseDB && typeof window.SupabaseDB.fetchSettings === 'function') {
-    try {
-      const sbRes = await window.SupabaseDB.fetchSettings();
-      if (sbRes && sbRes.ok && sbRes.settings) {
-        const cloudSett = sbRes.settings;
-        const authList = cloudSett.authorizedUsers || cloudSett.authorized_users;
-        if (Array.isArray(authList)) {
-          if (typeof globalSettings !== 'undefined') {
-            globalSettings = Object.assign({}, globalSettings, cloudSett);
-            try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(_) {}
-          }
-          window.saveAuthorizedUsersList(authList, true);
-          isAuthorized = window.isUserAuthorizedByAdmin(normEmail);
-        }
-      }
-    } catch(sbErr) {
-      console.warn("[Supabase] Cloud auth check failed:", sbErr);
-    }
-  }
-
-  // Fallback to Google Apps Script sync verify if still not verified
-  if (!isAuthorized && typeof GOOGLE_SCRIPT_URL !== 'undefined') {
-    try {
-      if (typeof showFloatingToast === 'function') {
-        showFloatingToast(`🔄 Checking cloud access for ${normEmail}...`, "info", 2000);
-      }
-      const syncUrl = `${GOOGLE_SCRIPT_URL}?action=sync&auth=${encodeURIComponent(typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : '')}&token=${encodeURIComponent(typeof API_SECRET_TOKEN !== 'undefined' ? API_SECRET_TOKEN : '')}&_t=${Date.now()}`;
-      const res = await fetch(syncUrl, { redirect: 'follow', cache: 'no-store' });
-      if (res.ok) {
-        const text = await res.text();
-        const data = JSON.parse(text);
-        let cloudSettings = data ? (data.settings || data.globalSettings) : null;
-        if (typeof cloudSettings === 'string') {
-          try { cloudSettings = JSON.parse(cloudSettings); } catch(_) {}
-        }
-        if (cloudSettings && typeof cloudSettings === 'object') {
-          if (typeof globalSettings !== 'undefined') {
-             globalSettings = cloudSettings;
-             try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(_) {}
-          }
-          let authList = cloudSettings.authorizedUsers || cloudSettings.authorized_users;
-          if (authList) {
-            // Filter out banned emails from cloud data before saving
-            if (Array.isArray(authList)) {
-              authList = authList.filter(u => !(u && u.email && typeof window.isEmailBanned === 'function' && window.isEmailBanned(u.email)));
-            }
-            window.saveAuthorizedUsersList(authList, true);
-            isAuthorized = window.isUserAuthorizedByAdmin(normEmail);
-          }
-        }
-      }
-    } catch(e) {
-      console.warn("Cloud auth check failed:", e);
-    }
-  }
-
+  // 4. CHECK AUTHORIZATION
+  const isAuthorized = isMainAdmin || (typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(normEmail));
   if (!isAuthorized) {
     if (errBlock) {
       errBlock.innerHTML = `
@@ -21157,7 +21155,7 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
             <i class="fa-solid fa-lock"></i> Access Denied
           </div>
           <div style="font-size: 11.5px; color: #cbd5e1;">
-            Google account <strong style="color: #fca5a5;">${escapeHtml(normEmail)}</strong> is not authorized. Access is strictly restricted to <strong style="color: #38bdf8;">${escapeHtml(window.AUTHORIZED_LOGIN_EMAIL)}</strong>.
+            Google account <strong style="color: #fca5a5;">${escapeHtml(normEmail)}</strong> is not authorized to access store records.
           </div>
         </div>
       `;
@@ -21166,49 +21164,15 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
     return false;
   }
 
-  const usersList = window.getAuthorizedUsersList();
+  const usersList = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
   const matchedUser = isMainAdmin
-    ? { email: window.AUTHORIZED_LOGIN_EMAIL, name: displayName || "Jagan (Main Admin)", role: "super_admin", status: "active" }
-    : usersList.find(u => (u.email || "").toLowerCase().trim() === normEmail && u.status === "active");
+    ? { email: normEmail, name: displayName || "Jagan Kandukuri (Main Admin)", role: "super_admin", status: "active", isMainAdmin: true }
+    : (usersList.find(u => (u.email || "").toLowerCase().trim() === normEmail) || { email: normEmail, name: displayName || normEmail.split("@")[0], role: "admin", status: "active" });
 
-  if (!matchedUser) {
-    if (errBlock) {
-      errBlock.innerHTML = `
-        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
-          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
-            <i class="fa-solid fa-lock"></i> User Record Not Found
-          </div>
-          <div style="font-size: 11.5px; color: #cbd5e1;">
-            Account <strong style="color: #fca5a5;">${escapeHtml(normEmail)}</strong> is not registered.
-          </div>
-        </div>
-      `;
-      errBlock.classList.remove("hidden");
-    }
-    return false;
-  }
+  const role = isMainAdmin ? "super_admin" : (matchedUser.role || "admin");
+  const name = displayName || matchedUser.name || (isMainAdmin ? "Jagan Kandukuri (Main Admin)" : normEmail.split("@")[0]);
 
-  if (matchedUser.status === "suspended") {
-    if (errBlock) {
-      errBlock.innerHTML = `
-        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
-          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
-            <i class="fa-solid fa-user-lock"></i> Account Suspended
-          </div>
-          <div style="font-size: 11.5px; color: #cbd5e1;">
-            Your account (<strong style="color: #fca5a5;">${escapeHtml(normEmail)}</strong>) has been paused by the Main Administrator. Access is blocked.
-          </div>
-        </div>
-      `;
-      errBlock.classList.remove("hidden");
-    }
-    return false;
-  }
-
-  const role = matchedUser.role || (isMainAdmin ? "super_admin" : "customer");
-  const name = displayName || matchedUser.name || normEmail.split("@")[0];
-
-  // Store PERSISTENT real-world session
+  // Store persistent session
   if (typeof window.savePersistentAuthSession === 'function') {
     window.savePersistentAuthSession({
       email: normEmail,
@@ -21218,7 +21182,9 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
     });
   }
 
-  window.updateUserLastLogin(normEmail);
+  if (typeof window.updateUserLastLogin === 'function') {
+    window.updateUserLastLogin(normEmail);
+  }
 
   sessionStorage.removeItem("is_demo_mode");
   localStorage.removeItem("is_demo_mode");
@@ -21231,11 +21197,11 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
 
   unlockSystemSilently(true);
   AppSecurity.recordSuccessfulLogin(normEmail, `Google Identity (${role})`);
-  window.applyRolePermissions(role);
+  if (typeof window.applyRolePermissions === 'function') {
+    window.applyRolePermissions(role);
+  }
 
   if (errBlock) errBlock.classList.add("hidden");
-
-  const roleName = role === 'super_admin' ? 'Main Admin' : (role === 'admin' ? 'Administrator' : (role === 'customer' ? 'Customer' : 'Billing Staff'));
   return true;
 };
 
