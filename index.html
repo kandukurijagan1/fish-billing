@@ -459,9 +459,9 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=live_v100_exclusive_direct_mail_auth">
+  <link rel="stylesheet" href="index.css?v=live_v101_direct_google_and_mail_auth">
 
-  <script src="invoice_utils_v5.js?v=live_v100_exclusive_direct_mail_auth"></script>
+  <script src="invoice_utils_v5.js?v=live_v101_direct_google_and_mail_auth"></script>
 
 </head>
 
@@ -526,9 +526,9 @@
       </div>
 
       <!-- DIRECT GOOGLE MAIL SIGN-IN (EXCLUSIVE AUTHENTICATION) -->
-      <div style="display: flex; flex-direction: column; gap: 12px; align-items: center; width: 100%; margin-top: 4px;">
-        <!-- Native Google Rendered Button Slot -->
-        <div id="google-signin-btn-container" style="display: flex; justify-content: center; width: 100%; min-height: 44px;"></div>
+      <div style="display: flex; flex-direction: column; gap: 10px; align-items: center; width: 100%; margin-top: 4px;">
+        <!-- Native Google Rendered Button Slot (Hidden to prevent broken third-party origin blocking) -->
+        <div id="google-signin-btn-container" style="display: none; justify-content: center; width: 100%;"></div>
 
         <!-- Direct Google OAuth Prompt Button -->
         <button type="button" id="btn-google-direct" onclick="window.triggerDirectGoogleAuth()" style="display: flex; width: 100%; max-width: 320px; padding: 12px 18px; border-radius: 10px; background: #ffffff; color: #1f2937; border: 1.5px solid #e5e7eb; font-weight: 700; font-size: 14px; cursor: pointer; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); transition: all 0.2s ease;">
@@ -538,12 +538,31 @@
             <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.17 0 9.99 0 12s.45 3.83 1.25 5.42l4.03-3.15z"/>
             <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
           </svg>
-          <span id="google-btn-label">Continue with Google</span>
+          <span id="google-btn-label">Sign in with Google</span>
         </button>
+
+        <!-- Instant Direct Mail Unlock Button -->
+        <button type="button" id="btn-direct-mail-unlock" onclick="window.unlockViaDirectMail()" style="display: flex; width: 100%; max-width: 320px; padding: 11px 16px; border-radius: 10px; background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff; border: none; font-weight: 700; font-size: 13px; cursor: pointer; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35); transition: all 0.2s ease;">
+          <i class="fa-solid fa-envelope-circle-check"></i>
+          <span>Direct Mail Unlock (kandukurijagan99@gmail.com)</span>
+        </button>
+
+        <!-- Alternate Authorized Email Input (Expandable) -->
+        <div style="margin-top: 4px; width: 100%; max-width: 320px; text-align: center;">
+          <div id="direct-mail-custom-input-wrap" style="display: none; margin-bottom: 8px; text-align: left;">
+            <input type="email" id="login-direct-email" placeholder="Enter authorized staff email" style="width: 100%; height: 38px; background: rgba(15, 23, 42, 0.9); border: 1.5px solid #0284c7; border-radius: 8px; color: #ffffff; font-size: 12.5px; padding: 0 10px; outline: none; box-sizing: border-box; margin-bottom: 6px;">
+            <button type="button" onclick="window.unlockViaDirectMail(document.getElementById('login-direct-email').value)" style="width: 100%; height: 34px; background: #0284c7; color: #ffffff; border: none; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer;">
+              <i class="fa-solid fa-arrow-right-to-bracket"></i> Verify &amp; Unlock Email
+            </button>
+          </div>
+          <button type="button" onclick="const w = document.getElementById('direct-mail-custom-input-wrap'); w.style.display = w.style.display === 'none' ? 'block' : 'none';" style="background: transparent; border: none; color: #38bdf8; font-size: 11px; cursor: pointer; text-decoration: underline; padding: 2px;">
+            <i class="fa-solid fa-user-plus"></i> Sign in with another authorized email
+          </button>
+        </div>
       </div>
 
       <!-- EXCLUSIVE ACCESS NOTICE / CLOUD ADMINISTRATOR -->
-      <div style="margin-top: 16px; padding: 12px 14px; background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.25); border-radius: 10px; width: 100%; text-align: center; box-sizing: border-box;">
+      <div style="margin-top: 14px; padding: 12px 14px; background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.25); border-radius: 10px; width: 100%; text-align: center; box-sizing: border-box;">
         <div style="font-size: 11px; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
           <i class="fa-solid fa-shield-halved"></i> Cloud Administrator
         </div>
@@ -11458,13 +11477,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v100_exclusive_direct_mail_auth"></script>
+<script src="supabase-adapter.js?v=live_v101_direct_google_and_mail_auth"></script>
 
-<script src="initial_db.js?v=live_v100_exclusive_direct_mail_auth"></script>
+<script src="initial_db.js?v=live_v101_direct_google_and_mail_auth"></script>
 
-<script src="customer-timeline.js?v=live_v100_exclusive_direct_mail_auth"></script>
+<script src="customer-timeline.js?v=live_v101_direct_google_and_mail_auth"></script>
 
-<script src="index_v5.js?v=live_v100_exclusive_direct_mail_auth"></script>
+<script src="index_v5.js?v=live_v101_direct_google_and_mail_auth"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->

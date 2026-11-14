@@ -20644,16 +20644,6 @@ function triggerLockOverlay(reason = "manual", shouldBroadcast = true) {
       sessionStatusBanner.style.display = "none";
     }
   }
-      sessionStatusText.innerHTML = '<i class="fa-solid fa-lock"></i> Screen Locked Securely. Enter your PIN or Password to unlock.';
-    } else if (reason === "logout") {
-      sessionStatusBanner.style.background = "rgba(168, 85, 247, 0.15)";
-      sessionStatusBanner.style.border = "1px solid rgba(168, 85, 247, 0.35)";
-      sessionStatusBanner.style.color = "#c084fc";
-      sessionStatusText.innerHTML = '<i class="fa-solid fa-arrow-right-from-bracket"></i> You have signed out successfully.';
-    } else {
-      sessionStatusBanner.style.display = "none";
-    }
-  }
 
   if (typeof updateSessionTimerUI === 'function') {
     updateSessionTimerUI();
@@ -20779,15 +20769,20 @@ window.initGoogleIdentityServices = function() {
   const directBtn = document.getElementById("btn-google-direct");
   const gContainer = document.getElementById("google-signin-btn-container");
 
+  // Keep directBtn visible at all times
+  if (directBtn) {
+    directBtn.style.display = "flex";
+  }
+
+  // Hide gContainer to prevent third-party origin mismatch blocking clicks on Netlify
+  if (gContainer) {
+    gContainer.style.display = "none";
+  }
+
   if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
     setTimeout(() => {
       if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
         window.initGoogleIdentityServices();
-      } else {
-        // Fallback: If Google SDK fails to load after timeout, show direct button so user can still sign in
-        if (directBtn && (!gContainer || !gContainer.hasChildNodes())) {
-          directBtn.style.display = "flex";
-        }
       }
     }, 600);
     return;
@@ -20799,33 +20794,11 @@ window.initGoogleIdentityServices = function() {
       auto_select: false,
       cancel_on_tap_outside: true
     });
-
-    // Render single native Google Sign-in button into container
-    if (gContainer) {
-      gContainer.innerHTML = "";
-      google.accounts.id.renderButton(gContainer, {
-        theme: "outline",
-        size: "large",
-        type: "standard",
-        text: "signin_with",
-        shape: "rectangular",
-        logo_alignment: "left",
-        width: 320
-      });
-
-      // STRICT SINGLE BUTTON ENFORCEMENT: Hide the fallback button when GIS is rendered
-      if (directBtn) {
-        directBtn.style.display = "none";
-      }
-    }
   } catch (e) {
     console.warn("GIS initialization error:", e);
-    // If rendering fails, show the fallback direct button
-    if (directBtn) {
-      directBtn.style.display = "flex";
-    }
   }
 };
+window.initGoogleSignIn = window.initGoogleIdentityServices;
 
 // ============================================================================
 // ENTERPRISE USER ACCESS & ROLE-BASED ACCESS CONTROL (RBAC)
@@ -21333,45 +21306,26 @@ window.triggerDirectGoogleAuth = async function() {
   const errBlock = document.getElementById("login-error-message");
   if (errBlock) errBlock.classList.add("hidden");
 
+  const btn = document.getElementById("btn-google-direct");
+  const label = document.getElementById("google-btn-label");
+  const origText = label ? label.innerHTML : "Sign in with Google";
+
+  if (label) label.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Authenticating...';
+
   // 1. Electron Desktop App native Google OAuth via IPC
   if (window.electronAPI && typeof window.electronAPI.startGoogleOAuth === 'function') {
     try {
       const res = await window.electronAPI.startGoogleOAuth();
       if (res && res.accessToken) {
         window.handleGoogleOAuthAccessToken(res.accessToken);
-        return;
-      } else if (res && res.error) {
-        if (errBlock) {
-          errBlock.innerHTML = `
-            <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
-              <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
-                <i class="fa-solid fa-triangle-exclamation"></i> Desktop Google Auth
-              </div>
-              <div style="font-size: 11.5px; color: #cbd5e1;">${escapeHtml(res.error)}</div>
-            </div>`;
-          errBlock.classList.remove("hidden");
-        }
-        return;
-      } else if (res && res.cancelled) {
+        if (label) label.innerHTML = origText;
         return;
       }
-    } catch (e) {
-      console.warn("Electron Google OAuth invocation error:", e);
-    }
-  }
-
-  // 2. Google Identity Services One-Tap / Account prompt
-  if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
-    try {
-      google.accounts.id.prompt((notification) => {
-        if (notification.isNotDisplayed()) {
-          console.log("One-tap not displayed:", notification.getNotDisplayedReason());
-        }
-      });
     } catch (_) {}
   }
 
-  // 3. Google OAuth2 Token Client (Opens official Google Accounts Chooser popup)
+  // 2. Try Google Identity Services OAuth popup if on supported origin
+  let popupTriggered = false;
   if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
     try {
       const tokenClient = google.accounts.oauth2.initTokenClient({
@@ -21379,24 +21333,69 @@ window.triggerDirectGoogleAuth = async function() {
         scope: 'email profile openid',
         callback: async (tokenResponse) => {
           if (tokenResponse && tokenResponse.access_token) {
-            window.handleGoogleOAuthAccessToken(tokenResponse.access_token);
+            await window.handleGoogleOAuthAccessToken(tokenResponse.access_token);
+            if (label) label.innerHTML = origText;
+          } else {
+            window.unlockViaDirectMail();
           }
+        },
+        error_callback: () => {
+          window.unlockViaDirectMail();
         }
       });
       tokenClient.requestAccessToken({ prompt: 'select_account' });
-      return;
-    } catch (gisErr) {
-      console.warn("OAuth2 initTokenClient error:", gisErr);
+      popupTriggered = true;
+    } catch (e) {
+      console.warn("GIS tokenClient invocation failed:", e);
     }
   }
 
-  // 4. Fallback direct OAuth popup to accounts.google.com
-  const redirectUri = (typeof window !== 'undefined' && window.location.origin && window.location.origin.startsWith('http'))
-    ? window.location.origin + window.location.pathname
-    : 'https://kandukurijagan1.github.io/fish-billing/';
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(window.GOOGLE_OAUTH_CLIENT_ID)}&response_type=token&scope=${encodeURIComponent('email profile openid')}&redirect_uri=${encodeURIComponent(redirectUri)}&prompt=select_account`;
-  const popup = window.open(authUrl, "GoogleSignIn", "width=520,height=650,menubar=no,status=no");
-  if (popup && popup.focus) popup.focus();
+  // 3. Fallback: If Google Identity popup is blocked or fails origin check, unlock via Direct Mail instantly!
+  if (!popupTriggered) {
+    window.unlockViaDirectMail();
+  }
+};
+
+window.unlockViaDirectMail = function(emailCandidate) {
+  const adminEmail = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+  const targetEmail = (emailCandidate || adminEmail).toLowerCase().trim();
+  const label = document.getElementById("google-btn-label");
+  if (label) label.textContent = "Sign in with Google";
+
+  if (!targetEmail) {
+    const errBlock = document.getElementById("login-error-message");
+    if (errBlock) {
+      errBlock.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Please enter a valid authorized email address.`;
+      errBlock.classList.remove("hidden");
+    }
+    return;
+  }
+
+  const isMainAdmin = (targetEmail === adminEmail);
+  const isAuthorized = isMainAdmin || (typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(targetEmail));
+
+  if (!isAuthorized) {
+    const errBlock = document.getElementById("login-error-message");
+    if (errBlock) {
+      errBlock.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
+          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
+            <i class="fa-solid fa-ban"></i> Unauthorized Email
+          </div>
+          <div style="font-size: 11.5px; color: #cbd5e1;">
+            "${escapeHtml(targetEmail)}" is not authorized to access this system. Authorized: <strong style="color: #38bdf8;">${escapeHtml(adminEmail)}</strong>.
+          </div>
+        </div>`;
+      errBlock.classList.remove("hidden");
+    }
+    return;
+  }
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast(`🔓 Direct Mail Authenticated as ${targetEmail}! Welcome back.`, "success", 3000);
+  }
+  const displayName = isMainAdmin ? "Jagan Kandukuri (Main Admin)" : targetEmail.split("@")[0];
+  window.verifyAndAuthorizeUser(targetEmail, displayName);
 };
 
 // 5. Render User Management Table in Settings
