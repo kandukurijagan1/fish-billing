@@ -461,7 +461,7 @@
 
   <link rel="stylesheet" href="index.css?v=live_v82_no_qr_on_paid_invoices">
 
-  <script src="invoice_utils_v5.js?v=live_v62_google_script_endpoint_updated"></script>
+  <script src="invoice_utils_v5.js?v=live_v98_advanced_universal_import_hub"></script>
 
 </head>
 
@@ -1504,7 +1504,7 @@
 
               <div style="display: flex; align-items: center; gap: 8px;">
 
-                <button type="button" class="btn btn-xs" onclick="document.getElementById('import-invoices-file-input').click()" style="background: #f8fafc; border: 1px solid #cbd5e1; color: #0891b2; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;" title="Import Invoices from Excel, Backup, or CSV">
+                <button type="button" class="btn btn-xs" onclick="window.openEnterpriseImportModal('invoices')" style="background: #f8fafc; border: 1px solid #cbd5e1; color: #0891b2; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;" title="Universal Data Import &amp; Merge Hub (Excel, Backup, CSV)">
 
                   <i class="fa-solid fa-file-import"></i> Import Invoices
 
@@ -2670,7 +2670,7 @@
 
               </button>
 
-              <button class="btn btn-secondary btn-sm" onclick="document.getElementById('import-invoices-file-input').click()" style="display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; font-weight: 700; white-space: nowrap;" title="Import Invoices from Excel (.xlsx/.xls), Backup (.json), or CSV (.csv)">
+              <button class="btn btn-secondary btn-sm" onclick="window.openEnterpriseImportModal('invoices')" style="display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; font-weight: 700; white-space: nowrap;" title="Universal Data Import &amp; Merge Hub (Excel, Backup, CSV)">
 
                 <i class="fa-solid fa-file-import text-cyan"></i> Import Invoices
 
@@ -2990,9 +2990,9 @@
 
               </button>
 
-              <button class="btn btn-secondary btn-sm" onclick="document.getElementById('import-products-csv-input').click()" title="Bulk Import Products Catalog from CSV file" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700;">
+              <button class="btn btn-secondary btn-sm" onclick="window.openEnterpriseImportModal('products')" title="Bulk Import Products Catalog (Excel, CSV, Backup)" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700;">
 
-                <i class="fa-solid fa-file-import text-cyan"></i> Import CSV
+                <i class="fa-solid fa-file-import text-cyan"></i> Import Products Catalog
 
               </button>
 
@@ -4836,7 +4836,7 @@
 
                     </button>
 
-                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('import-backup-file').click()" style="flex: 1; padding: 10px 14px; font-weight: 700; border-radius: 6px; cursor: pointer;">
+                    <button type="button" class="btn btn-secondary" onclick="window.openEnterpriseImportModal('backup')" style="flex: 1; padding: 10px 14px; font-weight: 700; border-radius: 6px; cursor: pointer;" title="Open Universal Import Hub to restore or merge store backup">
 
                       <i class="fa-solid fa-upload"></i> Import Backup
 
@@ -4861,7 +4861,7 @@
                       <button type="button" class="btn btn-sm" onclick="window.exportMasterExcelBackup()" style="flex: 1; min-width: 140px; background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; font-weight: 700; padding: 8px 12px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px;">
                         <i class="fa-solid fa-file-arrow-down"></i> Export Excel (.xlsx)
                       </button>
-                      <button type="button" class="btn btn-sm" onclick="document.getElementById('import-master-excel-file').click()" style="flex: 1; min-width: 140px; background: linear-gradient(135deg, #0284c7, #0369a1); color: white; border: none; font-weight: 700; padding: 8px 12px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px;">
+                      <button type="button" class="btn btn-sm" onclick="window.openEnterpriseImportModal('excel')" style="flex: 1; min-width: 140px; background: linear-gradient(135deg, #0284c7, #0369a1); color: white; border: none; font-weight: 700; padding: 8px 12px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px;" title="Open Universal Import Hub to merge Master Excel (.xlsx)">
                         <i class="fa-solid fa-file-arrow-up"></i> Import Excel (.xlsx)
                       </button>
                       <input type="file" id="import-master-excel-file" accept=".xlsx, .xls" style="display: none;" onchange="window.importDataFromMasterExcel(event)">
@@ -11287,15 +11287,184 @@
     </div>
   </div>
 
+  <!-- ENTERPRISE UNIVERSAL DATA IMPORT & RECOVERY HUB MODAL -->
+  <div id="enterprise-import-modal" class="modal-overlay hidden no-print" onclick="if(event.target === this) window.closeEnterpriseImportModal();" style="display: none; z-index: 2147483645;">
+    <div class="modal-card" style="max-width: 840px; width: 95%; background: #ffffff; border-radius: 16px; box-shadow: 0 25px 60px -15px rgba(0,0,0,0.35); border: 1.5px solid #cbd5e1; overflow: hidden; animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1); display: flex; flex-direction: column; max-height: 92vh;">
+      
+      <!-- Modal Header -->
+      <div class="modal-header" style="background: linear-gradient(135deg, #0284c7 0%, #0d9488 100%); color: #ffffff; padding: 18px 24px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="width: 42px; height: 42px; border-radius: 10px; background: rgba(255,255,255,0.18); display: flex; align-items: center; justify-content: center; font-size: 20px;">
+            <i class="fa-solid fa-file-import text-white"></i>
+          </div>
+          <div>
+            <h3 style="margin: 0; font-size: 17.5px; font-weight: 800; color: #ffffff;">Universal Data Import &amp; Merge Hub</h3>
+            <p style="margin: 3px 0 0 0; font-size: 12px; color: #e0f2fe;">Non-destructive safe merging, diff preview, and automated rollback snapshot guarantee</p>
+          </div>
+        </div>
+        <button type="button" class="modal-close-btn" onclick="window.closeEnterpriseImportModal()" style="background: rgba(255,255,255,0.18); border: none; color: #ffffff; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s;">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="modal-body" style="padding: 22px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 16px;">
+
+        <!-- Drag & Drop / File Select Box -->
+        <div id="import-hub-dropzone" onclick="document.getElementById('import-hub-file-input').click()" style="border: 2px dashed #0284c7; border-radius: 12px; background: #f0f9ff; padding: 24px 20px; text-align: center; cursor: pointer; transition: all 0.2s ease;">
+          <i class="fa-solid fa-cloud-arrow-up" style="font-size: 36px; color: #0284c7; margin-bottom: 8px; display: block;"></i>
+          <div style="font-weight: 800; font-size: 15px; color: #0f172a; margin-bottom: 4px;">Click to Select or Drag &amp; Drop Billing Database / Invoices</div>
+          <div style="font-size: 12px; color: #64748b; margin-bottom: 12px;">Supports Master Excel (<strong style="color: #0369a1;">.xlsx, .xls</strong>), Store Vault (<strong style="color: #0369a1;">.json</strong>), or CSV (<strong style="color: #0369a1;">.csv</strong>)</div>
+          <div style="display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;">
+            <span style="background: #e0f2fe; color: #0369a1; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;"><i class="fa-solid fa-file-excel"></i> 5-Sheet Excel</span>
+            <span style="background: #ecfdf5; color: #047857; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;"><i class="fa-solid fa-shield-halved"></i> JSON Store Vault</span>
+            <span style="background: #fef3c7; color: #b45309; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;"><i class="fa-solid fa-file-csv"></i> Invoices / Stock CSV</span>
+          </div>
+          <input type="file" id="import-hub-file-input" accept=".xlsx,.xls,.json,.csv" style="display: none;" onchange="window.handleEnterpriseImportFileSelect(event)">
+        </div>
+
+        <!-- File Inspection & Health Status (Hidden until file parsed) -->
+        <div id="import-hub-analysis-card" style="display: none; background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span id="import-hub-file-badge" style="background: #0284c7; color: white; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; text-transform: uppercase;">EXCEL MASTER</span>
+              <strong id="import-hub-file-name" style="font-size: 13.5px; color: #0f172a; word-break: break-all;">filename.xlsx</strong>
+              <span id="import-hub-file-size" style="font-size: 11.5px; color: #64748b;">(45 KB)</span>
+            </div>
+            <button type="button" class="btn btn-xs btn-secondary" onclick="document.getElementById('import-hub-file-input').click()" style="font-size: 11.5px; padding: 4px 10px;">
+              <i class="fa-solid fa-arrow-rotate-right"></i> Choose Different File
+            </button>
+          </div>
+
+          <!-- KPI Metric Pill Counters -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px;">
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; text-align: center;">
+              <div style="font-size: 11px; color: #64748b; font-weight: 700;">📄 INVOICES</div>
+              <div id="import-hub-count-invoices" style="font-size: 18px; font-weight: 800; color: #0284c7; margin: 2px 0;">0</div>
+              <div id="import-hub-invoices-sub" style="font-size: 10.5px; color: #10b981; font-weight: 600;">0 new, 0 to update</div>
+            </div>
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; text-align: center;">
+              <div style="font-size: 11px; color: #64748b; font-weight: 700;">📦 PRODUCTS</div>
+              <div id="import-hub-count-products" style="font-size: 18px; font-weight: 800; color: #0d9488; margin: 2px 0;">0</div>
+              <div id="import-hub-products-sub" style="font-size: 10.5px; color: #10b981; font-weight: 600;">0 new, 0 to merge</div>
+            </div>
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; text-align: center;">
+              <div style="font-size: 11px; color: #64748b; font-weight: 700;">👥 CUSTOMERS</div>
+              <div id="import-hub-count-parties" style="font-size: 18px; font-weight: 800; color: #6366f1; margin: 2px 0;">0</div>
+              <div id="import-hub-parties-sub" style="font-size: 10.5px; color: #10b981; font-weight: 600;">0 new, 0 to update</div>
+            </div>
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; text-align: center;">
+              <div style="font-size: 11px; color: #64748b; font-weight: 700;">⚙️ STORE SETTINGS</div>
+              <div id="import-hub-config-status" style="font-size: 13px; font-weight: 800; color: #059669; margin: 5px 0;">Included</div>
+              <div style="font-size: 10.5px; color: #64748b;">Company &amp; Bank</div>
+            </div>
+          </div>
+
+          <!-- Non-Destructive Safe Strategy Selector -->
+          <div style="margin-bottom: 14px;">
+            <label style="font-size: 12px; font-weight: 800; color: #0f172a; margin-bottom: 6px; display: block;">Select Import Merge Strategy:</label>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px;">
+              
+              <label style="display: flex; align-items: flex-start; gap: 8px; background: #ffffff; border: 1.5px solid #0284c7; border-radius: 8px; padding: 10px; cursor: pointer;">
+                <input type="radio" name="import-strategy" value="merge" checked style="margin-top: 3px;">
+                <div>
+                  <strong style="font-size: 12px; color: #0284c7; display: block;">Safe Merge (Recommended)</strong>
+                  <span style="font-size: 11px; color: #475569; line-height: 1.35; display: block;">Existing records are 100% protected. New items added, matching bills enriched.</span>
+                </div>
+              </label>
+
+              <label style="display: flex; align-items: flex-start; gap: 8px; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px; cursor: pointer;">
+                <input type="radio" name="import-strategy" value="append" style="margin-top: 3px;">
+                <div>
+                  <strong style="font-size: 12px; color: #334155; display: block;">Append New Records Only</strong>
+                  <span style="font-size: 11px; color: #64748b; line-height: 1.35; display: block;">Only adds records that don't exist. Existing records remain completely untouched.</span>
+                </div>
+              </label>
+
+              <label style="display: flex; align-items: flex-start; gap: 8px; background: #ffffff; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px; cursor: pointer;">
+                <input type="radio" name="import-strategy" value="overwrite" style="margin-top: 3px;">
+                <div>
+                  <strong style="font-size: 12px; color: #e11d48; display: block;">Full Store Vault Restore</strong>
+                  <span style="font-size: 11px; color: #64748b; line-height: 1.35; display: block;">Replaces store strictly with backup. Automatic safety rollback copy is created.</span>
+                </div>
+              </label>
+
+            </div>
+          </div>
+
+          <!-- Interactive Tabbed Preview -->
+          <div>
+            <div style="display: flex; border-bottom: 1.5px solid #e2e8f0; margin-bottom: 8px; gap: 8px;">
+              <button type="button" id="import-tab-btn-invoices" class="btn btn-xs" onclick="window.switchImportPreviewTab('invoices')" style="font-weight: 700; border-bottom: 2px solid #0284c7; border-radius: 0; padding: 6px 12px; background: transparent; color: #0284c7;">
+                📄 Invoices Preview (<span id="import-tab-count-invoices">0</span>)
+              </button>
+              <button type="button" id="import-tab-btn-products" class="btn btn-xs" onclick="window.switchImportPreviewTab('products')" style="font-weight: 600; border-bottom: 2px solid transparent; border-radius: 0; padding: 6px 12px; background: transparent; color: #64748b;">
+                📦 Products Preview (<span id="import-tab-count-products">0</span>)
+              </button>
+              <button type="button" id="import-tab-btn-parties" class="btn btn-xs" onclick="window.switchImportPreviewTab('parties')" style="font-weight: 600; border-bottom: 2px solid transparent; border-radius: 0; padding: 6px 12px; background: transparent; color: #64748b;">
+                👥 Customers Preview (<span id="import-tab-count-parties">0</span>)
+              </button>
+            </div>
+
+            <!-- Preview Tables -->
+            <div style="border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; max-height: 220px; overflow-y: auto; background: #ffffff;">
+              <table id="import-preview-table" style="width: 100%; font-size: 12px; border-collapse: collapse; text-align: left;">
+                <thead id="import-preview-thead" style="background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; z-index: 2;">
+                  <!-- Dynamic Headers -->
+                </thead>
+                <tbody id="import-preview-tbody">
+                  <!-- Dynamic Rows -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="modal-footer" style="padding: 14px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <div style="font-size: 11.5px; color: #047857; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-shield-halved" style="color: #10b981;"></i>
+          <span>Automated pre-import rollback snapshot guaranteed</span>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="window.closeEnterpriseImportModal()" style="font-weight: 600;">Cancel</button>
+          <button type="button" id="btn-execute-import-hub" class="btn btn-sm" onclick="window.executeEnterpriseImportAction()" disabled style="background: linear-gradient(135deg, #0284c7 0%, #0d9488 100%); color: white; border: none; font-weight: 800; padding: 8px 18px; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; opacity: 0.6;">
+            <i class="fa-solid fa-circle-check"></i> Execute Safe Import &amp; Merge
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FLOATING PRE-IMPORT UNDO / ROLLBACK BANNER -->
+  <div id="pre-import-undo-banner" class="no-print" style="display: none; position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 9999999; background: #0f172a; color: #ffffff; padding: 12px 20px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); border: 1px solid #334155; font-size: 13px; align-items: center; gap: 14px; animation: slideUp 0.3s ease;">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <i class="fa-solid fa-circle-check" style="color: #10b981; font-size: 16px;"></i>
+      <span id="undo-banner-text">Data imported successfully. Existing data was preserved.</span>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <button type="button" onclick="window.rollbackPreImportSnapshot()" style="background: #e11d48; color: #ffffff; border: none; padding: 6px 14px; border-radius: 6px; font-weight: 800; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+        <i class="fa-solid fa-rotate-left"></i> Undo Import / Restore Previous State
+      </button>
+      <button type="button" onclick="document.getElementById('pre-import-undo-banner').style.display='none'" style="background: transparent; border: none; color: #94a3b8; font-size: 16px; cursor: pointer; padding: 0 4px;">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+  </div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v97_safe_non_destructive_import_and_merge"></script>
+<script src="supabase-adapter.js?v=live_v98_advanced_universal_import_hub"></script>
 
-<script src="initial_db.js?v=live_v97_safe_non_destructive_import_and_merge"></script>
+<script src="initial_db.js?v=live_v98_advanced_universal_import_hub"></script>
 
-<script src="customer-timeline.js?v=live_v97_safe_non_destructive_import_and_merge"></script>
+<script src="customer-timeline.js?v=live_v98_advanced_universal_import_hub"></script>
 
-<script src="index_v5.js?v=live_v97_safe_non_destructive_import_and_merge"></script>
+<script src="index_v5.js?v=live_v98_advanced_universal_import_hub"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->

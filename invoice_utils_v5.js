@@ -232,11 +232,163 @@
     return cleanPrefix + nextNum.toString().padStart(maxPadding, '0');
   }
 
+  function mergeInvoicesNonDestructively(existingList, incomingList) {
+    const existing = Array.isArray(existingList) ? existingList : [];
+    const incoming = Array.isArray(incomingList) ? incomingList : [];
+    if (incoming.length === 0) return existing.slice();
+    if (existing.length === 0) return incoming.slice();
+
+    const map = new Map();
+    existing.forEach(inv => {
+      if (!inv) return;
+      const rawNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || inv.id || '').trim();
+      const normNo = rawNo.replace(/^#/, '').trim().toLowerCase();
+      const key = normNo || rawNo;
+      if (key) map.set(key, JSON.parse(JSON.stringify(inv)));
+    });
+
+    incoming.forEach(newInv => {
+      if (!newInv) return;
+      const rawNo = String(newInv.invoiceNo || (newInv.details && newInv.details.invoiceNo) || newInv.id || '').trim();
+      const normNo = rawNo.replace(/^#/, '').trim().toLowerCase();
+      const key = normNo || rawNo;
+      if (!key) return;
+
+      if (!map.has(key)) {
+        map.set(key, JSON.parse(JSON.stringify(newInv)));
+      } else {
+        const oldInv = map.get(key);
+        const oldItems = Array.isArray(oldInv.items) ? oldInv.items.length : (Array.isArray(oldInv.details?.items) ? oldInv.details.items.length : (oldInv.itemsCount || 0));
+        const newItems = Array.isArray(newInv.items) ? newInv.items.length : (Array.isArray(newInv.details?.items) ? newInv.details.items.length : (newInv.itemsCount || 0));
+        const oldTotal = Number(oldInv.total || oldInv.grandTotal || oldInv.details?.total || 0);
+        const newTotal = Number(newInv.total || newInv.grandTotal || newInv.details?.total || 0);
+
+        if (newItems > oldItems || (newItems === oldItems && newTotal > oldTotal)) {
+          const merged = Object.assign({}, oldInv, newInv);
+          merged.items = (newInv.items && newInv.items.length > 0) ? newInv.items : oldInv.items;
+          merged.details = Object.assign({}, oldInv.details || {}, newInv.details || {});
+          if (newInv.details?.items && newInv.details.items.length > 0) {
+            merged.details.items = newInv.details.items;
+          } else if (oldInv.details?.items && oldInv.details.items.length > 0) {
+            merged.details.items = oldInv.details.items;
+          }
+          map.set(key, merged);
+        } else {
+          const merged = Object.assign({}, newInv, oldInv);
+          if (newInv.paymentStatus && newInv.paymentStatus !== 'Unpaid') {
+            merged.paymentStatus = newInv.paymentStatus;
+            if (merged.details) merged.details.paymentStatus = newInv.paymentStatus;
+          }
+          if (newInv.paidAmount !== undefined && Number(newInv.paidAmount) > Number(oldInv.paidAmount || 0)) {
+            merged.paidAmount = newInv.paidAmount;
+            merged.balanceDue = newInv.balanceDue;
+            if (merged.details) {
+              merged.details.paidAmount = newInv.paidAmount;
+              merged.details.balanceDue = newInv.balanceDue;
+            }
+          }
+          map.set(key, merged);
+        }
+      }
+    });
+
+    return Array.from(map.values());
+  }
+
+  function mergeProductsNonDestructively(existingList, incomingList) {
+    const existing = Array.isArray(existingList) ? existingList : [];
+    const incoming = Array.isArray(incomingList) ? incomingList : [];
+    if (incoming.length === 0) return existing.slice();
+    if (existing.length === 0) return incoming.slice();
+
+    const map = new Map();
+    const getKey = p => {
+      if (!p) return '';
+      const desc = String(p.description || p.name || '').trim().toLowerCase();
+      const barcode = String(p.barcode || '').trim().toLowerCase();
+      const id = String(p.id || '').trim().toLowerCase();
+      return desc || barcode || id;
+    };
+
+    existing.forEach(p => {
+      const k = getKey(p);
+      if (k) map.set(k, JSON.parse(JSON.stringify(p)));
+    });
+
+    incoming.forEach(p => {
+      const k = getKey(p);
+      if (!k) return;
+      if (!map.has(k)) {
+        map.set(k, JSON.parse(JSON.stringify(p)));
+      } else {
+        const oldProd = map.get(k);
+        const merged = Object.assign({}, oldProd, p);
+        if ((p.stock === 0 || p.stock === undefined || p.stock === null) && oldProd.stock > 0) {
+          merged.stock = oldProd.stock;
+          merged.totalValue = oldProd.totalValue;
+          merged.status = oldProd.status;
+        }
+        map.set(k, merged);
+      }
+    });
+
+    return Array.from(map.values());
+  }
+
+  function mergePartiesNonDestructively(existingList, incomingList) {
+    const existing = Array.isArray(existingList) ? existingList : [];
+    const incoming = Array.isArray(incomingList) ? incomingList : [];
+    if (incoming.length === 0) return existing.slice();
+    if (existing.length === 0) return incoming.slice();
+
+    const map = new Map();
+    const getKey = p => {
+      if (!p) return '';
+      const name = String(p.name || p.company || '').trim().toLowerCase();
+      const phone = String(p.phone || '').trim().replace(/[^0-9]/g, '');
+      const id = String(p.id || '').trim().toLowerCase();
+      return name || phone || id;
+    };
+
+    existing.forEach(p => {
+      const k = getKey(p);
+      if (k) map.set(k, JSON.parse(JSON.stringify(p)));
+    });
+
+    incoming.forEach(p => {
+      const k = getKey(p);
+      if (!k) return;
+      if (!map.has(k)) {
+        map.set(k, JSON.parse(JSON.stringify(p)));
+      } else {
+        const oldParty = map.get(k);
+        const merged = Object.assign({}, oldParty);
+        if (p.phone && !oldParty.phone) merged.phone = p.phone;
+        if (p.gstin && !oldParty.gstin) merged.gstin = p.gstin;
+        if (p.address && !oldParty.address) merged.address = p.address;
+        if (p.email) merged.email = p.email;
+        if (p.state && !oldParty.state) merged.state = p.state;
+        if (p.stateCode && !oldParty.stateCode) merged.stateCode = p.stateCode;
+        if (p.city && !oldParty.city) merged.city = p.city;
+        map.set(k, merged);
+      }
+    });
+
+    return Array.from(map.values());
+  }
+
   global.InvoiceUtils = {
     roundToTwo,
     calculateInvoiceBreakdown,
     calculatePaymentSummary,
     getInvoicePaidAndBalance,
-    getNextInvoiceNumber
+    getNextInvoiceNumber,
+    mergeInvoicesNonDestructively,
+    mergeProductsNonDestructively,
+    mergePartiesNonDestructively
   };
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = global.InvoiceUtils;
+  }
 })(typeof window !== 'undefined' ? window : globalThis);

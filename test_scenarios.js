@@ -355,6 +355,53 @@ async function runAllTests() {
   const initialDb = JSON.parse(fs.readFileSync('initial_db.json', 'utf8'));
   assert(initialDb && Array.isArray(initialDb.products), 'initial_db.json includes products catalog');
 
+  // --- TEST CASE 8: Enterprise Non-Destructive Safe Merge & Import Protections ---
+  console.log('\n👉 TEST CASE 8: Verifying Non-Destructive Safe Merge & Zero Data Loss Guarantee...');
+  const InvoiceUtils = require('./invoice_utils_v5.js');
+
+  // 1. Invoice Merge Protection: Existing invoices must NEVER be wiped when importing partial backup
+  const existingStoreInvoices = [
+    { invoiceNo: 'EST-0002', total: 52500, paidAmount: 2500, balanceDue: 50000, items: [{ description: 'Aqua Boost', quantity: 50 }] },
+    { invoiceNo: '0001', total: 10500, paidAmount: 10500, balanceDue: 0, items: [{ description: 'Oxygen Booster', quantity: 10 }] }
+  ];
+  const incomingBackupInvoices = [
+    { invoiceNo: 'EST-0002', total: 0, items: [] }, // Incoming partial/empty duplicate
+    { invoiceNo: '0002', total: 15000, paidAmount: 15000, balanceDue: 0, items: [{ description: 'Probiotic Feed', quantity: 20 }] }
+  ];
+
+  const mergedInvoices = InvoiceUtils.mergeInvoicesNonDestructively(existingStoreInvoices, incomingBackupInvoices);
+  assert(mergedInvoices.length === 3, 'Merged invoices count is 3 (2 existing preserved + 1 new appended)');
+  const est002 = mergedInvoices.find(i => i.invoiceNo === 'EST-0002');
+  assert(est002 && est002.total === 52500 && est002.items.length === 1, 'Existing invoice #EST-0002 data & items are 100% preserved (not downgraded to 0 items)');
+  const inv001 = mergedInvoices.find(i => i.invoiceNo === '0001');
+  assert(inv001 && inv001.total === 10500, 'Existing invoice #0001 was NOT erased or affected');
+
+  // 2. Product Stock Merge Protection: Existing stock preserved when incoming has 0 or unassigned stock
+  const existingProds = [
+    { id: 'PRD-1', description: 'Aqua Boost 1L', stock: 45, price: 950, totalValue: 42750, status: 'In Stock' }
+  ];
+  const incomingProds = [
+    { id: 'PRD-1', description: 'Aqua Boost 1L', stock: 0, price: 1000 },
+    { id: 'PRD-2', description: 'Mineral Mix 5kg', stock: 25, price: 650 }
+  ];
+  const mergedProds = InvoiceUtils.mergeProductsNonDestructively(existingProds, incomingProds);
+  assert(mergedProds.length === 2, 'Merged products count is 2 (1 existing updated + 1 new added)');
+  const prod1 = mergedProds.find(p => p.id === 'PRD-1');
+  assert(prod1 && prod1.stock === 45, 'Existing product stock 45 preserved when incoming file has stock 0');
+
+  // 3. Customer Ledger Merge Protection: Existing customer details preserved
+  const existingParties = [
+    { id: 'P-1', name: 'JAGAN', phone: '9876543210', balance: 50000, gstin: '37AAAAA0000A1Z5' }
+  ];
+  const incomingParties = [
+    { id: 'P-1', name: 'JAGAN', phone: '', email: 'jagan@example.com' },
+    { id: 'P-2', name: 'DEVI FISHERIES', phone: '9123456789' }
+  ];
+  const mergedParties = InvoiceUtils.mergePartiesNonDestructively(existingParties, incomingParties);
+  assert(mergedParties.length === 2, 'Merged parties count is 2 (existing preserved + new added)');
+  const jagan = mergedParties.find(p => p.name === 'JAGAN');
+  assert(jagan && jagan.phone === '9876543210' && jagan.email === 'jagan@example.com', 'Existing customer phone and ledger preserved while enriching new email');
+
   console.log('\n====================================================');
   console.log(`🏁 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('====================================================\n');

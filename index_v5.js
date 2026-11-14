@@ -16409,6 +16409,13 @@ window.importProductsFromCSV = function(event) {
   const file = event.target?.files?.[0];
   if (!file) return;
 
+  if (typeof window.openEnterpriseImportModal === 'function' && typeof window.handleEnterpriseImportFile === 'function') {
+    window.openEnterpriseImportModal('products');
+    window.handleEnterpriseImportFile(file);
+    if (event.target) event.target.value = "";
+    return;
+  }
+
   window._isRestoringData = true;
   localStorage.setItem("is_imported_data", "true");
   localStorage.setItem("has_real_data", "true");
@@ -23319,6 +23326,13 @@ window.importDataFromMasterExcel = async function(event) {
   const file = event.target?.files?.[0];
   if (!file) return;
 
+  if (typeof window.openEnterpriseImportModal === 'function' && typeof window.handleEnterpriseImportFile === 'function') {
+    window.openEnterpriseImportModal('excel');
+    window.handleEnterpriseImportFile(file);
+    if (event.target) event.target.value = "";
+    return;
+  }
+
   // Auto-route JSON backups picked in the Excel picker
   const fileName = (file.name || "").toLowerCase();
   if (fileName.endsWith(".json")) {
@@ -24571,6 +24585,13 @@ window.importDataBackupJSON = function(event) {
   const file = event.target?.files?.[0];
   if (!file) return;
 
+  if (typeof window.openEnterpriseImportModal === 'function' && typeof window.handleEnterpriseImportFile === 'function') {
+    window.openEnterpriseImportModal('backup');
+    window.handleEnterpriseImportFile(file);
+    if (event.target) event.target.value = "";
+    return;
+  }
+
   // Auto-route Excel workbooks picked in the JSON backup picker
   const fileName = (file.name || "").toLowerCase();
   if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
@@ -24749,6 +24770,13 @@ window.importInvoicesFromHistory = function(event) {
   const file = event.target?.files?.[0];
   if (!file) return;
 
+  if (typeof window.openEnterpriseImportModal === 'function' && typeof window.handleEnterpriseImportFile === 'function') {
+    window.openEnterpriseImportModal('invoices');
+    window.handleEnterpriseImportFile(file);
+    if (event.target) event.target.value = "";
+    return;
+  }
+
   const fileName = file.name.toLowerCase();
   
   if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
@@ -24926,6 +24954,1396 @@ window.importInvoicesFromHistory = function(event) {
 
   showFloatingToast("⚠️ Unsupported file format. Please upload an Excel (.xlsx/.xls), Backup (.json), or CSV (.csv) file.", "warning", 5000);
   if (event.target) event.target.value = "";
+};
+
+// ============================================================================
+// ENTERPRISE UNIVERSAL DATA IMPORT, DIFF PREVIEW & SAFE RECOVERY HUB
+// Guaranteed Non-Destructive Safe Merging, Diff Analysis, and Automated Rollback Snapshot
+// ============================================================================
+
+window._pendingImportBundle = null;
+window._activeImportPreviewTab = 'invoices';
+
+window.parseGenericBillingCsv = function(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return { products: [], parties: [], invoices: [] };
+
+  const parseCsvLine = (line) => {
+    const result = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"' || char === "'") {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(cur.trim().replace(/^["']|["']$/g, ''));
+        cur = '';
+      } else {
+        cur += char;
+      }
+    }
+    result.push(cur.trim().replace(/^["']|["']$/g, ''));
+    return result;
+  };
+
+  const headers = parseCsvLine(lines[0]).map(h => h.toLowerCase().trim());
+  const headerStr = headers.join(" ");
+
+  const hasInvoice = headerStr.includes("invoice") || headerStr.includes("bill") || (headerStr.includes("customer") && headerStr.includes("total"));
+  const hasProduct = headerStr.includes("product") || headerStr.includes("item") || (headerStr.includes("description") && (headerStr.includes("price") || headerStr.includes("rate") || headerStr.includes("stock")));
+  const hasCustomer = headerStr.includes("customer") || headerStr.includes("party") || headerStr.includes("client");
+
+  const invoices = [];
+  const products = [];
+  const parties = [];
+
+  if (hasInvoice) {
+    const invNoIdx = headers.findIndex(h => h.includes('invoice') || h.includes('bill') || h === 'no' || h === 'id');
+    const dateIdx = headers.findIndex(h => h.includes('date'));
+    const custIdx = headers.findIndex(h => h.includes('customer') || h.includes('party') || h.includes('buyer') || h.includes('client'));
+    const totalIdx = headers.findIndex(h => h.includes('total') || h.includes('amount') || h.includes('grand'));
+    const statusIdx = headers.findIndex(h => h.includes('status'));
+    const modeIdx = headers.findIndex(h => h.includes('mode'));
+    const itemsIdx = headers.findIndex(h => h.includes('item') || h.includes('qty'));
+
+    for (let i = 1; i < lines.length; i++) {
+      const row = parseCsvLine(lines[i]);
+      if (!row || row.length === 0) continue;
+      const rawNo = (invNoIdx !== -1 && row[invNoIdx]) ? row[invNoIdx].trim() : `INV-${Date.now()}-${i}`;
+      if (!rawNo) continue;
+      const cleanNo = rawNo.replace(/^#/, '');
+      const invDate = (dateIdx !== -1 && row[dateIdx]) ? row[dateIdx].trim() : new Date().toISOString().split('T')[0];
+      const custName = (custIdx !== -1 && row[custIdx]) ? row[custIdx].trim() : "Valued Customer";
+      const rawTotal = (totalIdx !== -1 && row[totalIdx]) ? parseFloat(row[totalIdx].replace(/[^0-9.-]/g, '')) : 0;
+      const totalAmt = !isNaN(rawTotal) ? rawTotal : 0;
+      const status = (statusIdx !== -1 && row[statusIdx]) ? row[statusIdx].trim() : "Paid";
+      const mode = (modeIdx !== -1 && row[modeIdx]) ? row[modeIdx].trim() : "Cash";
+      const itemsCount = (itemsIdx !== -1 && row[itemsIdx]) ? parseInt(row[itemsIdx].replace(/[^0-9]/g, ''), 10) || 1 : 1;
+      const isEst = cleanNo.startsWith("EST-") || status.toLowerCase().includes("quotation") || status.toLowerCase().includes("estimate");
+
+      invoices.push({
+        id: `inv_csv_${Date.now()}_${i}`,
+        invoiceNo: cleanNo,
+        invoiceDate: invDate,
+        date: invDate,
+        customerName: custName,
+        customerPhone: "",
+        itemsCount: itemsCount,
+        total: totalAmt,
+        grandTotal: totalAmt,
+        totalAmount: totalAmt,
+        subtotal: totalAmt,
+        taxable: totalAmt,
+        paidAmount: status.toLowerCase() === 'paid' ? totalAmt : 0,
+        balanceDue: status.toLowerCase() === 'paid' ? 0 : totalAmt,
+        paymentStatus: status,
+        paymentMode: mode,
+        isEstimate: isEst,
+        items: [{
+          productId: "PRD-CSV-01",
+          description: "Imported CSV Items",
+          quantity: itemsCount,
+          unit: "NOS",
+          rate: itemsCount > 0 ? (totalAmt / itemsCount) : totalAmt,
+          amount: totalAmt
+        }],
+        details: {
+          id: `inv_csv_${Date.now()}_${i}`,
+          invoiceNo: cleanNo,
+          invoiceDate: invDate,
+          date: invDate,
+          invoiceType: isEst ? "Quotation" : "Bill of Supply",
+          isEstimate: isEst,
+          customerName: custName,
+          paymentStatus: status,
+          paymentMode: mode,
+          paidAmount: status.toLowerCase() === 'paid' ? totalAmt : 0,
+          balanceDue: status.toLowerCase() === 'paid' ? 0 : totalAmt,
+          buyer: { name: custName, phone: "", address: "", gstin: "", state: "Andhra Pradesh", stateCode: "37" },
+          items: [{
+            productId: "PRD-CSV-01",
+            description: "Imported CSV Items",
+            quantity: itemsCount,
+            unit: "NOS",
+            rate: itemsCount > 0 ? (totalAmt / itemsCount) : totalAmt,
+            amount: totalAmt
+          }],
+          taxable: totalAmt,
+          total: totalAmt
+        }
+      });
+    }
+  } else if (hasProduct) {
+    const idxDesc = headers.findIndex(h => h.includes('description') || h.includes('name') || h.includes('product') || h.includes('item'));
+    const idxHsn = headers.findIndex(h => h.includes('hsn'));
+    const idxPack = headers.findIndex(h => h.includes('pack') || h.includes('size'));
+    const idxUnit = headers.findIndex(h => h.includes('unit'));
+    const idxRate = headers.findIndex(h => h.includes('rate') || h.includes('price') || h.includes('mrp'));
+    const idxStock = headers.findIndex(h => h.includes('stock') || h.includes('qty') || h.includes('quantity'));
+    const idxBarcode = headers.findIndex(h => h.includes('barcode') || h.includes('code'));
+
+    for (let i = 1; i < lines.length; i++) {
+      const row = parseCsvLine(lines[i]);
+      if (!row || row.length === 0) continue;
+      const desc = (idxDesc !== -1 && row[idxDesc]) ? row[idxDesc].trim() : `Product ${i}`;
+      if (!desc) continue;
+      const rate = (idxRate !== -1 && row[idxRate]) ? parseFloat(row[idxRate].replace(/[^0-9.-]/g, '')) || 0 : 0;
+      const stock = (idxStock !== -1 && row[idxStock]) ? parseInt(row[idxStock].replace(/[^0-9]/g, ''), 10) || 0 : 0;
+      products.push({
+        id: `prod_${Date.now()}_${i}`,
+        description: desc,
+        hsn: (idxHsn !== -1 && row[idxHsn]) ? row[idxHsn].trim() : "23099090",
+        packSize: (idxPack !== -1 && row[idxPack]) ? row[idxPack].trim() : "Standard",
+        unit: (idxUnit !== -1 && row[idxUnit]) ? row[idxUnit].trim() : "NOS",
+        rate: rate,
+        price: rate,
+        stock: stock,
+        totalValue: rate * stock,
+        status: stock > 0 ? "In Stock" : "Out of Stock",
+        barcode: (idxBarcode !== -1 && row[idxBarcode]) ? row[idxBarcode].trim() : "",
+        is_deleted: false
+      });
+    }
+  } else if (hasCustomer) {
+    const idxName = headers.findIndex(h => h.includes('name') || h.includes('customer') || h.includes('party'));
+    const idxPhone = headers.findIndex(h => h.includes('phone') || h.includes('mobile'));
+    const idxGstin = headers.findIndex(h => h.includes('gst'));
+    const idxAddress = headers.findIndex(h => h.includes('address'));
+    const idxCity = headers.findIndex(h => h.includes('city'));
+
+    for (let i = 1; i < lines.length; i++) {
+      const row = parseCsvLine(lines[i]);
+      if (!row || row.length === 0) continue;
+      const name = (idxName !== -1 && row[idxName]) ? row[idxName].trim() : `Customer ${i}`;
+      if (!name) continue;
+      parties.push({
+        id: `party_${Date.now()}_${i}`,
+        name: name,
+        phone: (idxPhone !== -1 && row[idxPhone]) ? row[idxPhone].trim() : "",
+        gstin: (idxGstin !== -1 && row[idxGstin]) ? row[idxGstin].trim() : "",
+        address: (idxAddress !== -1 && row[idxAddress]) ? row[idxAddress].trim() : "",
+        city: (idxCity !== -1 && row[idxCity]) ? row[idxCity].trim() : "",
+        state: "Andhra Pradesh",
+        stateCode: "37",
+        type: "receiver",
+        company: name,
+        is_deleted: false
+      });
+    }
+  }
+
+  return { invoices, products, parties };
+};
+
+window.parseMasterExcelWorkbookData = function(workbook) {
+  if (!workbook || !workbook.SheetNames) {
+    return { products: [], parties: [], invoices: [], settings: null };
+  }
+
+  const sheetNames = workbook.SheetNames || [];
+
+  function safeParseExcelNumber(val, defaultVal = 0) {
+    if (val === null || val === undefined || val === '') return defaultVal;
+    if (typeof val === 'number') return isNaN(val) ? defaultVal : val;
+    const cleaned = String(val).replace(/[₹$,\s]/g, '').trim();
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? defaultVal : num;
+  }
+
+  function formatExcelDate(val) {
+    if (!val) return new Date().toISOString().split('T')[0];
+    if (val instanceof Date) return val.toISOString().split('T')[0];
+    if (typeof val === 'number' && val > 10000 && val < 60000) {
+      const utc_days = Math.floor(val - 25569);
+      const utc_value = utc_days * 86400;
+      const date_info = new Date(utc_value * 1000);
+      return date_info.toISOString().split('T')[0];
+    }
+    const str = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.substring(0, 10);
+    if (/^\d{1,2}[-\/]\d{1,2}[-\/]\d{4}/.test(str)) {
+      const parts = str.split(/[-\/]/);
+      if (parts[2].length === 4) {
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+    const d = new Date(str);
+    return !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+  }
+
+  function getVal(row, aliases, defaultVal = "") {
+    if (!row || typeof row !== 'object') return defaultVal;
+    const keys = Object.keys(row);
+    for (const alias of aliases) {
+      const normAlias = String(alias).toLowerCase().replace(/[^a-z0-9]/g, '');
+      for (const key of keys) {
+        const normKey = String(key).toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normKey === normAlias || (normAlias.length >= 3 && normKey.includes(normAlias))) {
+          const v = row[key];
+          if (v !== undefined && v !== null && String(v).trim() !== "") {
+            return v;
+          }
+        }
+      }
+    }
+    return defaultVal;
+  }
+
+  function findSheetByHeaderOrName(nameKeywords, headerKeywords) {
+    for (let i = 0; i < sheetNames.length; i++) {
+      const sName = sheetNames[i].toLowerCase();
+      if (nameKeywords.some(kw => sName.includes(kw))) return sheetNames[i];
+    }
+    for (let i = 0; i < sheetNames.length; i++) {
+      try {
+        const sheet = workbook.Sheets[sheetNames[i]];
+        if (!sheet) continue;
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, range: 0, defval: "" });
+        if (rows && rows.length > 0) {
+          const headerRow = (rows[0] || []).map(c => String(c).toLowerCase().trim());
+          const matchCount = headerKeywords.filter(kw => headerRow.some(h => h.includes(kw))).length;
+          if (matchCount >= 2 || (headerKeywords.length === 1 && matchCount === 1)) {
+            return sheetNames[i];
+          }
+        }
+      } catch(err) {}
+    }
+    return null;
+  }
+
+  const prodSheetName = findSheetByHeaderOrName(
+    ["stock", "product", "inventory", "item"],
+    ["selling price", "cost rate", "hsn", "stock", "description", "item", "product", "rate", "price"]
+  );
+
+  const custSheetName = findSheetByHeaderOrName(
+    ["customer", "part", "client", "buyer"],
+    ["customer", "party", "client", "billing address", "phone", "state code", "gstin"]
+  );
+
+  const itemsSheetName = findSheetByHeaderOrName(
+    ["line", "item"],
+    ["item description", "total item amount", "taxable value", "pack size", "quantity"]
+  );
+
+  const paySheetName = findSheetByHeaderOrName(
+    ["payment", "ledger", "installment"],
+    ["installment", "payment date", "remaining balance", "payment mode", "amount paid"]
+  );
+
+  const invSheetName = findSheetByHeaderOrName(
+    ["invoices_summary", "invoice_master", "bills", "sales", "invoice"],
+    ["invoice number", "taxable subtotal", "document type", "grand total", "round off", "balance due"]
+  ) || (sheetNames.find(s => s.toLowerCase().includes("invoice") && !s.toLowerCase().includes("item")));
+
+  let singleSheetProds = [];
+  let singleSheetCusts = [];
+  let singleSheetInvs = [];
+  let singleSheetItems = [];
+  let singleSheetPays = [];
+
+  if (sheetNames.length === 1 && (!prodSheetName && !custSheetName && !invSheetName)) {
+    try {
+      const sheet = workbook.Sheets[sheetNames[0]];
+      const rawGrid = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+      let curSection = null;
+      let curHeaders = [];
+
+      for (let r = 0; r < rawGrid.length; r++) {
+        const row = rawGrid[r];
+        if (!row || row.length === 0 || row.every(c => String(c).trim() === "")) continue;
+        const rowStr = row.map(c => String(c).toLowerCase().trim()).join(" , ");
+
+        if (rowStr.includes("description") && (rowStr.includes("selling price") || rowStr.includes("stock") || rowStr.includes("product id"))) {
+          curSection = "products";
+          curHeaders = row.map(c => String(c).trim());
+          continue;
+        }
+        if ((rowStr.includes("customer / business name") || rowStr.includes("customer name")) && (rowStr.includes("customer id") || rowStr.includes("billing address") || rowStr.includes("phone"))) {
+          curSection = "customers";
+          curHeaders = row.map(c => String(c).trim());
+          continue;
+        }
+        if (rowStr.includes("invoice number") && (rowStr.includes("document type") || rowStr.includes("taxable subtotal") || rowStr.includes("grand total"))) {
+          curSection = "invoices";
+          curHeaders = row.map(c => String(c).trim());
+          continue;
+        }
+        if (rowStr.includes("invoice number") && (rowStr.includes("item description") || rowStr.includes("pack size") || rowStr.includes("total item amount"))) {
+          curSection = "items";
+          curHeaders = row.map(c => String(c).trim());
+          continue;
+        }
+        if (rowStr.includes("installment no") || (rowStr.includes("invoice number") && rowStr.includes("amount paid") && rowStr.includes("payment mode"))) {
+          curSection = "payments";
+          curHeaders = row.map(c => String(c).trim());
+          continue;
+        }
+
+        if (curSection && curHeaders.length > 0) {
+          const rowObj = {};
+          curHeaders.forEach((h, colIdx) => {
+            if (h) rowObj[h] = row[colIdx];
+          });
+          if (curSection === "products") singleSheetProds.push(rowObj);
+          else if (curSection === "customers") singleSheetCusts.push(rowObj);
+          else if (curSection === "invoices") singleSheetInvs.push(rowObj);
+          else if (curSection === "items") singleSheetItems.push(rowObj);
+          else if (curSection === "payments") singleSheetPays.push(rowObj);
+        }
+      }
+    } catch(e) {}
+  }
+
+  if (sheetNames.length === 1 && singleSheetProds.length === 0 && singleSheetCusts.length === 0 && singleSheetInvs.length === 0) {
+    try {
+      const sRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetNames[0]], { defval: "" });
+      if (sRows && sRows.length > 0) {
+        const firstRow = sRows[0];
+        const hasProdKeys = Object.keys(firstRow).some(k => /rate|price|product|item|description/i.test(k));
+        const hasInvKeys = Object.keys(firstRow).some(k => /invoice|bill|subtotal|grand total/i.test(k));
+        const hasCustKeys = Object.keys(firstRow).some(k => /customer|party|client/i.test(k));
+        if (hasInvKeys) singleSheetInvs = sRows;
+        else if (hasProdKeys) singleSheetProds = sRows;
+        else if (hasCustKeys) singleSheetCusts = sRows;
+      }
+    } catch(e) {}
+  }
+
+  // 1. Parse Products
+  let rawProds = prodSheetName ? XLSX.utils.sheet_to_json(workbook.Sheets[prodSheetName], { defval: "" }) : singleSheetProds;
+  const importedProducts = (rawProds || []).map((row, idx) => {
+    const desc = String(getVal(row, ["Product Description", "Description", "Product Name", "Name", "Item Name", "Item Description"], `Product ${idx + 1}`)).trim();
+    const pid = String(getVal(row, ["Product ID", "Item ID", "ID", "Code"], `PRD-${Date.now()}-${idx}`)).trim();
+    const hsn = String(getVal(row, ["HSN Code", "HSN", "SAC", "HSN/SAC"], "23099090")).trim();
+    const pack = String(getVal(row, ["Pack Size", "Packaging", "Size", "Weight"], "Standard")).trim();
+    const unit = String(getVal(row, ["Unit", "UOM", "Unit of Measure"], "NOS")).trim();
+    const rate = safeParseExcelNumber(getVal(row, ["Selling Price (₹)", "Selling Price", "Rate (₹)", "Rate", "Price", "MRP"], 0));
+    const cost = safeParseExcelNumber(getVal(row, ["Cost Rate (₹)", "Cost Price", "Cost Rate", "Purchase Price"], Math.round(rate * 0.8)));
+    const disc = safeParseExcelNumber(getVal(row, ["Default Discount %", "Discount %", "Discount"], 0));
+    const stock = safeParseExcelNumber(getVal(row, ["Current Stock Units", "Stock Units", "Stock", "Quantity", "Qty"], 100));
+    const barcode = String(getVal(row, ["Barcode", "Barcode Number", "UPC", "EAN"], "")).trim();
+    const status = String(getVal(row, ["Stock Status", "Status"], (stock > 0 ? "In Stock" : "Out of Stock"))).trim();
+    return {
+      id: pid,
+      description: desc,
+      hsn: hsn,
+      packSize: pack,
+      unit: unit,
+      rate: rate,
+      costPrice: cost,
+      discount: disc,
+      price: rate,
+      stock: stock,
+      totalValue: Math.round(rate * stock),
+      status: status,
+      barcode: barcode,
+      is_deleted: false,
+      updatedAt: new Date().toISOString()
+    };
+  }).filter(p => p.description && p.description !== 'Unnamed Item');
+
+  // 2. Parse Customers
+  let rawCusts = custSheetName ? XLSX.utils.sheet_to_json(workbook.Sheets[custSheetName], { defval: "" }) : singleSheetCusts;
+  const importedParties = (rawCusts || []).map((row, idx) => {
+    const name = String(getVal(row, ["Customer / Business Name", "Customer Name", "Customer", "Party Name", "Party", "Client Name", "Name"], `Customer ${idx + 1}`)).trim();
+    const cid = String(getVal(row, ["Customer ID", "Party ID", "ID"], `party-${Date.now()}-${idx}`)).trim();
+    const phone = String(getVal(row, ["Phone / Mobile Number", "Phone", "Mobile", "Contact"], "")).trim();
+    const email = String(getVal(row, ["Email Address", "Email"], "")).trim();
+    const gstin = String(getVal(row, ["GSTIN / Tax ID", "GSTIN", "GST No", "GST"], "")).trim();
+    const address = String(getVal(row, ["Billing Address", "Address", "Street"], "")).trim();
+    const city = String(getVal(row, ["City / District", "City", "District"], "")).trim();
+    const state = String(getVal(row, ["State Name", "State"], "Andhra Pradesh")).trim();
+    const stateCode = String(getVal(row, ["State Code", "StateCode"], "37")).trim();
+    const type = String(getVal(row, ["Customer Type", "Type"], "receiver")).trim();
+    return {
+      id: cid,
+      name: name,
+      phone: phone,
+      email: email,
+      gstin: gstin,
+      address: address,
+      city: city,
+      state: state,
+      stateCode: stateCode,
+      type: type,
+      company: name,
+      is_deleted: false,
+      updatedAt: new Date().toISOString()
+    };
+  }).filter(pt => pt.name && pt.name !== 'Unnamed Customer');
+
+  // 3. Parse Line Items
+  const itemsByInvoiceNo = new Map();
+  let rawItems = itemsSheetName ? XLSX.utils.sheet_to_json(workbook.Sheets[itemsSheetName], { defval: "" }) : singleSheetItems;
+  (rawItems || []).forEach(row => {
+    const rawInvNo = String(getVal(row, ["Invoice Number", "Invoice No", "Invoice #", "Bill Number", "Bill No"], "")).trim();
+    if (!rawInvNo) return;
+    const cleanInvNo = rawInvNo.replace(/^#/, '');
+    const desc = String(getVal(row, ["Item Description", "Description", "Item", "Product"], "")).trim();
+    const qty = safeParseExcelNumber(getVal(row, ["Quantity", "Qty"], 1));
+    const rate = safeParseExcelNumber(getVal(row, ["Unit Rate (₹)", "Rate (₹)", "Rate", "Price"], 0));
+    const amt = safeParseExcelNumber(getVal(row, ["Total Item Amount (₹)", "Total (₹)", "Amount (₹)", "Amount"], qty * rate));
+    const hsn = String(getVal(row, ["HSN Code", "HSN"], "310590")).trim();
+    const pack = String(getVal(row, ["Pack Size", "Pack"], "")).trim();
+    const unit = String(getVal(row, ["Unit", "UOM"], "NOS")).trim();
+    const pid = String(getVal(row, ["Product ID", "Item ID"], `PRD-${Date.now()}`)).trim();
+
+    const itemObj = {
+      productId: pid,
+      description: desc,
+      hsn: hsn,
+      packSize: pack,
+      unit: unit,
+      quantity: qty,
+      rate: rate,
+      amount: amt
+    };
+
+    [cleanInvNo, rawInvNo, cleanInvNo.toLowerCase()].forEach(k => {
+      if (!itemsByInvoiceNo.has(k)) itemsByInvoiceNo.set(k, []);
+      itemsByInvoiceNo.get(k).push(itemObj);
+    });
+  });
+
+  // 4. Parse Payments
+  const paymentsByInvoiceNo = new Map();
+  let rawPays = paySheetName ? XLSX.utils.sheet_to_json(workbook.Sheets[paySheetName], { defval: "" }) : singleSheetPays;
+  (rawPays || []).forEach(row => {
+    const rawInvNo = String(getVal(row, ["Invoice Number", "Invoice No", "Invoice #", "Bill Number", "Bill No"], "")).trim();
+    if (!rawInvNo) return;
+    const cleanInvNo = rawInvNo.replace(/^#/, '');
+    const payObj = {
+      id: String(getVal(row, ["Payment Record ID", "Payment ID", "ID"], `pay_${Date.now()}`)).trim(),
+      installmentNo: safeParseExcelNumber(getVal(row, ["Installment No", "Installment #"], 1)),
+      date: formatExcelDate(getVal(row, ["Payment Date", "Date"], new Date())),
+      amount: safeParseExcelNumber(getVal(row, ["Amount Paid (₹)", "Amount Paid", "Amount"], 0)),
+      mode: String(getVal(row, ["Payment Mode", "Mode"], "UPI / Online")).trim(),
+      reference: String(getVal(row, ["Reference / UTR / Cheque No", "Reference", "UTR", "Transaction ID"], "")).trim(),
+      note: String(getVal(row, ["Notes / Remarks", "Note", "Remarks"], "")).trim(),
+      balanceAfter: safeParseExcelNumber(getVal(row, ["Remaining Balance (₹)", "Remaining Balance", "Balance After"], 0))
+    };
+    [cleanInvNo, rawInvNo, cleanInvNo.toLowerCase()].forEach(k => {
+      if (!paymentsByInvoiceNo.has(k)) paymentsByInvoiceNo.set(k, []);
+      paymentsByInvoiceNo.get(k).push(payObj);
+    });
+  });
+
+  // 5. Parse Invoices
+  let rawInvs = invSheetName ? XLSX.utils.sheet_to_json(workbook.Sheets[invSheetName], { defval: "" }) : singleSheetInvs;
+  const importedInvoices = (rawInvs || []).map((row, idx) => {
+    const rawInvNo = String(getVal(row, ["Invoice Number", "Invoice No", "Invoice #", "Bill Number", "Bill No"], `INV-${Date.now()}-${idx}`)).trim();
+    const cleanInvNo = rawInvNo.replace(/^#/, '');
+    const invDate = formatExcelDate(getVal(row, ["Invoice Date", "Date", "Bill Date"], new Date()));
+    const custName = String(getVal(row, ["Customer Name", "Customer", "Party Name", "Party", "Client"], "Cash Customer")).trim();
+    const custPhone = String(getVal(row, ["Customer Phone", "Phone", "Mobile", "Contact"], "")).trim();
+    const gstin = String(getVal(row, ["Customer GSTIN", "GSTIN", "GST No", "GST"], "")).trim();
+    const docType = String(getVal(row, ["Document Type", "Type"], (cleanInvNo.startsWith("EST-") ? "Bill of Supply" : "Tax Invoice"))).trim();
+    const isEstimate = Boolean(cleanInvNo.startsWith("EST-") || docType.toLowerCase().includes("estimate") || docType.toLowerCase().includes("quotation"));
+
+    const gTotal = safeParseExcelNumber(getVal(row, ["Grand Total (₹)", "Grand Total", "Total (₹)", "Total Amount", "Total"], 0));
+    const paid = safeParseExcelNumber(getVal(row, ["Amount Paid on Invoice Date (₹)", "Amount Paid", "Paid Amount", "Paid"], 0));
+    const bal = safeParseExcelNumber(getVal(row, ["Balance Due (₹)", "Remaining Balance", "Balance Due", "Balance"], Math.max(0, gTotal - paid)));
+    const subtotal = safeParseExcelNumber(getVal(row, ["Taxable Subtotal (₹)", "Taxable Subtotal", "Subtotal"], gTotal));
+    const cgst = safeParseExcelNumber(getVal(row, ["CGST Amount (₹)", "CGST"], 0));
+    const sgst = safeParseExcelNumber(getVal(row, ["SGST Amount (₹)", "SGST"], 0));
+    const igst = safeParseExcelNumber(getVal(row, ["IGST Amount (₹)", "IGST"], 0));
+    const roundOff = safeParseExcelNumber(getVal(row, ["Round Off (₹)", "Round Off"], 0));
+    const status = String(getVal(row, ["Payment Status", "Status"], (bal <= 0.01 ? "Paid" : (paid > 0 ? "Partial" : "Credit"))));
+    const mode = String(getVal(row, ["Payment Mode", "Mode", "Method"], "UPI / Online"));
+    const lastPay = formatExcelDate(getVal(row, ["Last Payment Date", "Payment Date"], invDate));
+
+    const items = itemsByInvoiceNo.get(cleanInvNo) || itemsByInvoiceNo.get(rawInvNo) || itemsByInvoiceNo.get(cleanInvNo.toLowerCase()) || [
+      {
+        productId: "PRD-EXCEL-01",
+        description: "Items per Excel Master",
+        quantity: 1,
+        unit: "NOS",
+        rate: subtotal,
+        amount: subtotal
+      }
+    ];
+
+    const paymentHistory = paymentsByInvoiceNo.get(cleanInvNo) || paymentsByInvoiceNo.get(rawInvNo) || paymentsByInvoiceNo.get(cleanInvNo.toLowerCase()) || (paid > 0 ? [{
+      id: `pay_${Date.now()}_${idx}`,
+      installmentNo: 1,
+      date: invDate,
+      amount: paid,
+      mode: mode,
+      reference: "Upfront Bill Settlement",
+      note: "Initial settlement",
+      balanceAfter: bal
+    }] : []);
+
+    const uniqueId = String(row["id"] || row["ID"] || (cleanInvNo.startsWith("inv_") ? cleanInvNo : `inv_${Date.now()}_${idx}`));
+    const randSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const qrToken = `Q-${cleanInvNo}-${Date.now().toString(36).slice(-4).toUpperCase()}${randSuffix}`;
+    const invTs = new Date(invDate).getTime() || Date.now();
+
+    return {
+      id: uniqueId,
+      qrToken: qrToken,
+      invoiceNo: cleanInvNo,
+      invoiceDate: invDate,
+      date: invDate,
+      customerName: custName,
+      customerPhone: custPhone,
+      phone: custPhone,
+      buyer: { name: custName, phone: custPhone, gstin: gstin },
+      consignee: { name: custName, phone: custPhone, gstin: gstin },
+      items: items,
+      itemsCount: items.length,
+      taxable: subtotal,
+      subtotal: subtotal,
+      cgst: cgst,
+      sgst: sgst,
+      igst: igst,
+      taxAmount: cgst + sgst + igst,
+      roundOff: roundOff,
+      total: gTotal,
+      grandTotal: gTotal,
+      totalAmount: gTotal,
+      paidAmount: paid,
+      balanceDue: bal,
+      balanceAmount: bal,
+      paymentStatus: status,
+      paymentMode: mode,
+      isEstimate: isEstimate,
+      _ts: invTs,
+      lastPaymentTime: lastPay,
+      paymentHistory: paymentHistory,
+      isDeleted: false,
+      details: {
+        id: uniqueId,
+        invoiceNo: cleanInvNo,
+        invoiceDate: invDate,
+        date: invDate,
+        docType: docType,
+        isEstimate: isEstimate,
+        buyer: { name: custName, phone: custPhone, gstin: gstin },
+        items: items,
+        total: gTotal,
+        grandTotal: gTotal,
+        subtotal: subtotal,
+        taxable: subtotal,
+        paidAmount: paid,
+        balanceDue: bal,
+        paymentStatus: status,
+        paymentMode: mode,
+        paymentHistory: paymentHistory
+      }
+    };
+  });
+
+  return { products: importedProducts, parties: importedParties, invoices: importedInvoices, settings: null };
+};
+
+window.openEnterpriseImportModal = function(targetMode) {
+  targetMode = targetMode || 'all';
+  const modal = document.getElementById('enterprise-import-modal');
+  if (!modal) return;
+
+  modal.classList.remove('hidden');
+  modal.style.display = 'flex';
+
+  window._pendingImportBundle = null;
+  window._activeImportPreviewTab = (targetMode === 'products') ? 'products' : ((targetMode === 'parties' || targetMode === 'customers') ? 'parties' : 'invoices');
+
+  const fileInput = document.getElementById('import-hub-file-input');
+  if (fileInput) fileInput.value = '';
+
+  const dropzone = document.getElementById('import-hub-dropzone');
+  const card = document.getElementById('import-hub-analysis-card');
+  const executeBtn = document.getElementById('btn-execute-import-hub');
+
+  if (dropzone) dropzone.style.display = 'block';
+  if (card) card.style.display = 'none';
+  if (executeBtn) {
+    executeBtn.disabled = true;
+    executeBtn.style.opacity = '0.5';
+    executeBtn.style.cursor = 'not-allowed';
+  }
+
+  // Setup drag-and-drop on dropzone
+  if (dropzone && !dropzone._dragInitialized) {
+    dropzone._dragInitialized = true;
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropzone.addEventListener(eventName, function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.style.borderColor = '#0d9488';
+        dropzone.style.background = '#f0fdfa';
+      }, false);
+    });
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropzone.addEventListener(eventName, function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.style.borderColor = '#0284c7';
+        dropzone.style.background = '#f0f9ff';
+      }, false);
+    });
+    dropzone.addEventListener('drop', function(e) {
+      const dt = e.dataTransfer;
+      const files = dt ? dt.files : null;
+      if (files && files.length > 0) {
+        window.handleEnterpriseImportFile(files[0]);
+      }
+    }, false);
+  }
+};
+
+window.closeEnterpriseImportModal = function() {
+  const modal = document.getElementById('enterprise-import-modal');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+  }
+  window._pendingImportBundle = null;
+};
+
+window.handleEnterpriseImportFileSelect = function(event) {
+  const file = event.target?.files?.[0];
+  if (!file) return;
+  window.handleEnterpriseImportFile(file);
+};
+
+window.handleEnterpriseImportFile = async function(file) {
+  if (!file) return;
+  const fileName = (file.name || "").toLowerCase();
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast("⏳ Analyzing file structure and health schema...", "info", 2500);
+  }
+
+  try {
+    let importedInvoices = [];
+    let importedProducts = [];
+    let importedParties = [];
+    let importedSettings = null;
+    let fileTypeBadge = "BILLING FILE";
+
+    if (fileName.endsWith('.json')) {
+      fileTypeBadge = "STORE JSON VAULT";
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data || typeof data !== 'object') {
+        throw new Error("Invalid JSON backup structure.");
+      }
+      importedInvoices = Array.isArray(data.invoices) ? data.invoices : (Array.isArray(data.bills) ? data.bills : (Array.isArray(data.invoice_list) ? data.invoice_list : []));
+      importedProducts = Array.isArray(data.products) ? data.products : (Array.isArray(data.inventory) ? data.inventory : (Array.isArray(data.product_list) ? data.product_list : (Array.isArray(data.stock) ? data.stock : [])));
+      importedParties = Array.isArray(data.parties) ? data.parties : (Array.isArray(data.customers) ? data.customers : (Array.isArray(data.party_list) ? data.party_list : (Array.isArray(data.clients) ? data.clients : [])));
+      importedSettings = data.settings || data.global_settings || data.config || null;
+    }
+    else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+      fileTypeBadge = "EXCEL 5-SHEET MASTER";
+      if (typeof XLSX === 'undefined') {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+          s.onload = resolve;
+          s.onerror = () => {
+            const s2 = document.createElement("script");
+            s2.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+            s2.onload = resolve;
+            s2.onerror = reject;
+            document.head.appendChild(s2);
+          };
+          document.head.appendChild(s);
+        });
+      }
+
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array', cellDates: true });
+      const parsed = window.parseMasterExcelWorkbookData(workbook);
+      importedInvoices = parsed.invoices || [];
+      importedProducts = parsed.products || [];
+      importedParties = parsed.parties || [];
+      importedSettings = parsed.settings || null;
+    }
+    else if (fileName.endsWith('.csv')) {
+      fileTypeBadge = "CSV DATASET";
+      const text = await file.text();
+      const parsedCsv = window.parseGenericBillingCsv(text);
+      importedInvoices = parsedCsv.invoices || [];
+      importedProducts = parsedCsv.products || [];
+      importedParties = parsedCsv.parties || [];
+    }
+    else {
+      throw new Error("Unsupported format. Please select an Excel (.xlsx, .xls), JSON (.json), or CSV (.csv) file.");
+    }
+
+    // Deduplicate incoming invoices
+    if (typeof window.deduplicateInvoicesList === 'function' && importedInvoices.length > 0) {
+      importedInvoices = window.deduplicateInvoicesList(importedInvoices);
+    }
+
+    // Auto-synthesize products & customers referenced in invoices
+    if (importedInvoices.length > 0) {
+      const pMap = new Set(importedProducts.map(p => String(p.description || p.name || '').trim().toLowerCase()));
+      const cMap = new Set(importedParties.map(c => String(c.name || c.company || '').trim().toLowerCase()));
+
+      importedInvoices.forEach(inv => {
+        const cName = String(inv.customerName || (inv.buyer && inv.buyer.name) || '').trim();
+        if (cName && !cMap.has(cName.toLowerCase())) {
+          cMap.add(cName.toLowerCase());
+          importedParties.push({
+            id: `party_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+            name: cName,
+            phone: String(inv.customerPhone || (inv.buyer && inv.buyer.phone) || '').trim(),
+            company: cName,
+            state: 'Andhra Pradesh',
+            stateCode: '37',
+            type: 'receiver'
+          });
+        }
+        const items = Array.isArray(inv.items) ? inv.items : (Array.isArray(inv.details?.items) ? inv.details.items : []);
+        items.forEach(it => {
+          const desc = String(it.description || '').trim();
+          if (desc && !pMap.has(desc.toLowerCase())) {
+            pMap.add(desc.toLowerCase());
+            importedProducts.push({
+              id: it.productId || `prod_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+              description: desc,
+              hsn: it.hsn || "23099090",
+              packSize: it.packSize || "Standard",
+              unit: it.unit || "NOS",
+              rate: it.rate || 0,
+              price: it.rate || 0,
+              stock: 100,
+              status: "In Stock"
+            });
+          }
+        });
+      });
+    }
+
+    // Load active store records
+    const activeInvoices = (Array.isArray(window.invoicesDb) && window.invoicesDb.length > 0) ? window.invoicesDb : (JSON.parse(localStorage.getItem("invoices") || "[]") || []);
+    const activeProducts = (Array.isArray(window.productsDb) && window.productsDb.length > 0) ? window.productsDb : (JSON.parse(localStorage.getItem("products") || "[]") || []);
+    const activeParties = (Array.isArray(window.partiesDb) && window.partiesDb.length > 0) ? window.partiesDb : (JSON.parse(localStorage.getItem("parties") || "[]") || []);
+
+    // Compute Invoices diff
+    const activeInvMap = new Map();
+    activeInvoices.forEach(inv => {
+      const rawNo = String(inv.invoiceNo || inv.details?.invoiceNo || inv.id || '').trim();
+      const normNo = rawNo.replace(/^#/, '').toLowerCase();
+      if (normNo) activeInvMap.set(normNo, inv);
+      if (rawNo) activeInvMap.set(rawNo.toLowerCase(), inv);
+    });
+
+    const newInvoices = [];
+    const updateInvoices = [];
+    importedInvoices.forEach(inv => {
+      const rawNo = String(inv.invoiceNo || inv.details?.invoiceNo || inv.id || '').trim();
+      const normNo = rawNo.replace(/^#/, '').toLowerCase();
+      if ((normNo && activeInvMap.has(normNo)) || (rawNo && activeInvMap.has(rawNo.toLowerCase()))) {
+        updateInvoices.push(inv);
+      } else {
+        newInvoices.push(inv);
+      }
+    });
+    const keptInvoices = activeInvoices.filter(inv => {
+      const rawNo = String(inv.invoiceNo || inv.details?.invoiceNo || inv.id || '').trim();
+      const normNo = rawNo.replace(/^#/, '').toLowerCase();
+      return !importedInvoices.some(imp => {
+        const impRaw = String(imp.invoiceNo || imp.details?.invoiceNo || imp.id || '').trim();
+        const impNorm = impRaw.replace(/^#/, '').toLowerCase();
+        return (normNo && impNorm && normNo === impNorm) || (rawNo && impRaw && rawNo.toLowerCase() === impRaw.toLowerCase());
+      });
+    });
+
+    // Compute Products diff
+    const activeProdMap = new Map();
+    activeProducts.forEach(p => {
+      const desc = String(p.description || p.name || '').trim().toLowerCase();
+      const barcode = String(p.barcode || '').trim().toLowerCase();
+      if (desc) activeProdMap.set(desc, p);
+      if (barcode) activeProdMap.set(barcode, p);
+    });
+    const newProducts = [];
+    const updateProducts = [];
+    importedProducts.forEach(p => {
+      const desc = String(p.description || p.name || '').trim().toLowerCase();
+      const barcode = String(p.barcode || '').trim().toLowerCase();
+      if ((desc && activeProdMap.has(desc)) || (barcode && activeProdMap.has(barcode))) {
+        updateProducts.push(p);
+      } else {
+        newProducts.push(p);
+      }
+    });
+    const keptProducts = activeProducts.filter(p => {
+      const desc = String(p.description || p.name || '').trim().toLowerCase();
+      const barcode = String(p.barcode || '').trim().toLowerCase();
+      return !importedProducts.some(imp => {
+        const impDesc = String(imp.description || imp.name || '').trim().toLowerCase();
+        const impBarcode = String(imp.barcode || '').trim().toLowerCase();
+        return (desc && impDesc && desc === impDesc) || (barcode && impBarcode && barcode === impBarcode);
+      });
+    });
+
+    // Compute Parties diff
+    const activePartyMap = new Map();
+    activeParties.forEach(pt => {
+      const name = String(pt.name || pt.company || '').trim().toLowerCase();
+      const phone = String(pt.phone || '').replace(/[^0-9]/g, '');
+      if (name) activePartyMap.set(name, pt);
+      if (phone && phone.length >= 7) activePartyMap.set(phone, pt);
+    });
+    const newParties = [];
+    const updateParties = [];
+    importedParties.forEach(pt => {
+      const name = String(pt.name || pt.company || '').trim().toLowerCase();
+      const phone = String(pt.phone || '').replace(/[^0-9]/g, '');
+      if ((name && activePartyMap.has(name)) || (phone && phone.length >= 7 && activePartyMap.has(phone))) {
+        updateParties.push(pt);
+      } else {
+        newParties.push(pt);
+      }
+    });
+    const keptParties = activeParties.filter(pt => {
+      const name = String(pt.name || pt.company || '').trim().toLowerCase();
+      const phone = String(pt.phone || '').replace(/[^0-9]/g, '');
+      return !importedParties.some(imp => {
+        const impName = String(imp.name || imp.company || '').trim().toLowerCase();
+        const impPhone = String(imp.phone || '').replace(/[^0-9]/g, '');
+        return (name && impName && name === impName) || (phone && impPhone && phone === impPhone);
+      });
+    });
+
+    // Store bundle
+    window._pendingImportBundle = {
+      file: file,
+      fileName: file.name,
+      fileSize: (file.size < 1024 * 1024 ? Math.round(file.size / 1024) + ' KB' : (file.size / (1024 * 1024)).toFixed(1) + ' MB'),
+      fileType: fileTypeBadge,
+      invoices: importedInvoices,
+      products: importedProducts,
+      parties: importedParties,
+      settings: importedSettings,
+      diff: {
+        newInvoices, updateInvoices, keptInvoices,
+        newProducts, updateProducts, keptProducts,
+        newParties, updateParties, keptParties
+      }
+    };
+
+    // Update UI elements
+    const card = document.getElementById('import-hub-analysis-card');
+    const badge = document.getElementById('import-hub-file-badge');
+    const nameEl = document.getElementById('import-hub-file-name');
+    const sizeEl = document.getElementById('import-hub-file-size');
+
+    if (badge) badge.textContent = fileTypeBadge;
+    if (nameEl) nameEl.textContent = file.name;
+    if (sizeEl) sizeEl.textContent = `(${window._pendingImportBundle.fileSize})`;
+
+    const invCountEl = document.getElementById('import-hub-count-invoices');
+    const invSubEl = document.getElementById('import-hub-invoices-sub');
+    if (invCountEl) invCountEl.textContent = String(importedInvoices.length);
+    if (invSubEl) invSubEl.innerHTML = `<span style="color:#047857;font-weight:700;">+${newInvoices.length} New</span>, <span style="color:#b45309;">~${updateInvoices.length} Update</span>, <span style="color:#0369a1;">=${keptInvoices.length} Kept</span>`;
+
+    const prodCountEl = document.getElementById('import-hub-count-products');
+    const prodSubEl = document.getElementById('import-hub-products-sub');
+    if (prodCountEl) prodCountEl.textContent = String(importedProducts.length);
+    if (prodSubEl) prodSubEl.innerHTML = `<span style="color:#047857;font-weight:700;">+${newProducts.length} New</span>, <span style="color:#b45309;">~${updateProducts.length} Merge</span>, <span style="color:#0369a1;">=${keptProducts.length} Kept</span>`;
+
+    const partyCountEl = document.getElementById('import-hub-count-parties');
+    const partySubEl = document.getElementById('import-hub-parties-sub');
+    if (partyCountEl) partyCountEl.textContent = String(importedParties.length);
+    if (partySubEl) partySubEl.innerHTML = `<span style="color:#047857;font-weight:700;">+${newParties.length} New</span>, <span style="color:#b45309;">~${updateParties.length} Update</span>, <span style="color:#0369a1;">=${keptParties.length} Kept</span>`;
+
+    const cfgEl = document.getElementById('import-hub-config-status');
+    if (cfgEl) {
+      cfgEl.textContent = importedSettings ? "Included" : "None in file";
+      cfgEl.style.color = importedSettings ? "#047857" : "#64748b";
+    }
+
+    const tabInvCount = document.getElementById('import-tab-count-invoices');
+    const tabProdCount = document.getElementById('import-tab-count-products');
+    const tabPartyCount = document.getElementById('import-tab-count-parties');
+    if (tabInvCount) tabInvCount.textContent = String(importedInvoices.length);
+    if (tabProdCount) tabProdCount.textContent = String(importedProducts.length);
+    if (tabPartyCount) tabPartyCount.textContent = String(importedParties.length);
+
+    if (card) card.style.display = 'block';
+
+    const executeBtn = document.getElementById('btn-execute-import-hub');
+    if (executeBtn) {
+      executeBtn.disabled = false;
+      executeBtn.style.opacity = '1';
+      executeBtn.style.cursor = 'pointer';
+    }
+
+    // Default tab
+    if (importedInvoices.length > 0) {
+      window.switchImportPreviewTab('invoices');
+    } else if (importedProducts.length > 0) {
+      window.switchImportPreviewTab('products');
+    } else if (importedParties.length > 0) {
+      window.switchImportPreviewTab('parties');
+    } else {
+      window.switchImportPreviewTab('invoices');
+    }
+
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`📊 File parsed: ${importedInvoices.length} Invoices, ${importedProducts.length} Products, ${importedParties.length} Customers ready for safe review!`, "success", 4000);
+    }
+  } catch (err) {
+    console.error("Enterprise Import parse error:", err);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Error parsing file: " + err.message, "error", 6000);
+    }
+  }
+};
+
+window.switchImportPreviewTab = function(tabName) {
+  window._activeImportPreviewTab = tabName;
+  const bundle = window._pendingImportBundle;
+
+  const btnInv = document.getElementById('import-tab-btn-invoices');
+  const btnProd = document.getElementById('import-tab-btn-products');
+  const btnParty = document.getElementById('import-tab-btn-parties');
+
+  if (btnInv) {
+    btnInv.style.borderBottom = (tabName === 'invoices') ? '2px solid #0284c7' : '2px solid transparent';
+    btnInv.style.color = (tabName === 'invoices') ? '#0284c7' : '#64748b';
+  }
+  if (btnProd) {
+    btnProd.style.borderBottom = (tabName === 'products') ? '2px solid #0284c7' : '2px solid transparent';
+    btnProd.style.color = (tabName === 'products') ? '#0284c7' : '#64748b';
+  }
+  if (btnParty) {
+    btnParty.style.borderBottom = (tabName === 'parties') ? '2px solid #0284c7' : '2px solid transparent';
+    btnParty.style.color = (tabName === 'parties') ? '#0284c7' : '#64748b';
+  }
+
+  const thead = document.getElementById('import-preview-thead');
+  const tbody = document.getElementById('import-preview-tbody');
+  if (!thead || !tbody) return;
+
+  thead.innerHTML = '';
+  tbody.innerHTML = '';
+
+  const safeStr = (s) => (typeof escapeHtml === 'function' ? escapeHtml(s) : String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
+
+  if (!bundle) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:20px;color:#94a3b8;">No file loaded yet.</td></tr>';
+    return;
+  }
+
+  const diff = bundle.diff || {};
+
+  if (tabName === 'invoices') {
+    thead.innerHTML = `
+      <tr>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Action</th>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Invoice #</th>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Date</th>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Customer</th>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Items</th>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Total (₹)</th>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Status</th>
+      </tr>`;
+
+    if (!bundle.invoices || bundle.invoices.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:24px;color:#64748b;font-style:italic;">No invoices found in this file. Active invoices in your store (${(window.invoicesDb || []).length}) will remain 100% untouched.</td></tr>`;
+      return;
+    }
+
+    const rowsHtml = bundle.invoices.slice(0, 100).map(inv => {
+      const invNo = String(inv.invoiceNo || inv.details?.invoiceNo || inv.id || 'N/A').replace(/^#/, '');
+      const isNew = diff.newInvoices && diff.newInvoices.includes(inv);
+      const actionBadge = isNew 
+        ? `<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 800;">+ NEW</span>`
+        : `<span style="background: #fef3c7; color: #b45309; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 800;">~ MERGE</span>`;
+
+      const custName = inv.customerName || (inv.buyer && inv.buyer.name) || 'Cash Customer';
+      const dateStr = inv.date || inv.invoiceDate || '-';
+      const itemsCount = inv.items ? inv.items.length : (inv.itemsCount || 1);
+      const totalNum = Number(inv.total || inv.grandTotal || 0);
+      const totalFmt = totalNum.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+      const payStatus = inv.paymentStatus || 'Paid';
+
+      return `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 7px 10px;">${actionBadge}</td>
+          <td style="padding: 7px 10px; font-weight: 800; color: #0284c7;">#${safeStr(invNo)}</td>
+          <td style="padding: 7px 10px; color: #475569;">${safeStr(dateStr)}</td>
+          <td style="padding: 7px 10px; font-weight: 600; color: #0f172a;">${safeStr(custName)}</td>
+          <td style="padding: 7px 10px; color: #64748b;">${itemsCount}</td>
+          <td style="padding: 7px 10px; font-weight: 700; color: #0f172a;">₹${totalFmt}</td>
+          <td style="padding: 7px 10px;"><span style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700;">${safeStr(payStatus)}</span></td>
+        </tr>`;
+    }).join('');
+
+    tbody.innerHTML = rowsHtml;
+  }
+  else if (tabName === 'products') {
+    thead.innerHTML = `
+      <tr>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Action</th>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Product Description</th>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">HSN</th>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Pack / Unit</th>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Selling Rate (₹)</th>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Stock</th>
+      </tr>`;
+
+    if (!bundle.products || bundle.products.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:#64748b;font-style:italic;">No products found in this file. Active catalog (${(window.productsDb || []).length} products) will remain 100% untouched.</td></tr>`;
+      return;
+    }
+
+    const rowsHtml = bundle.products.slice(0, 100).map(p => {
+      const isNew = diff.newProducts && diff.newProducts.includes(p);
+      const actionBadge = isNew 
+        ? `<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 800;">+ NEW</span>`
+        : `<span style="background: #fef3c7; color: #b45309; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 800;">~ MERGE</span>`;
+
+      const desc = p.description || p.name || 'Unnamed Item';
+      const hsn = p.hsn || '-';
+      const pack = p.packSize || p.unit || 'NOS';
+      const rate = Number(p.rate || p.price || 0).toLocaleString('en-IN');
+      const stock = (p.stock !== undefined && p.stock !== null) ? p.stock : '-';
+
+      return `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 7px 10px;">${actionBadge}</td>
+          <td style="padding: 7px 10px; font-weight: 700; color: #0f172a;">${safeStr(desc)}</td>
+          <td style="padding: 7px 10px; color: #64748b;">${safeStr(hsn)}</td>
+          <td style="padding: 7px 10px; color: #475569;">${safeStr(pack)}</td>
+          <td style="padding: 7px 10px; font-weight: 700; color: #0f172a;">₹${rate}</td>
+          <td style="padding: 7px 10px; font-weight: 700; color: #047857;">${stock}</td>
+        </tr>`;
+    }).join('');
+
+    tbody.innerHTML = rowsHtml;
+  }
+  else if (tabName === 'parties') {
+    thead.innerHTML = `
+      <tr>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Action</th>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Customer / Business Name</th>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Phone</th>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">GSTIN</th>
+        <th style="padding: 8px 10px; font-weight: 700; color: #475569;">Location</th>
+      </tr>`;
+
+    if (!bundle.parties || bundle.parties.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:24px;color:#64748b;font-style:italic;">No customer records in this file. Active customers (${(window.partiesDb || []).length}) will remain 100% untouched.</td></tr>`;
+      return;
+    }
+
+    const rowsHtml = bundle.parties.slice(0, 100).map(pt => {
+      const isNew = diff.newParties && diff.newParties.includes(pt);
+      const actionBadge = isNew 
+        ? `<span style="background: #ecfdf5; color: #047857; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 800;">+ NEW</span>`
+        : `<span style="background: #fef3c7; color: #b45309; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 800;">~ MERGE</span>`;
+
+      const name = pt.name || pt.company || 'Unnamed Customer';
+      const phone = pt.phone || '-';
+      const gstin = pt.gstin || '-';
+      const loc = [pt.city, pt.state].filter(Boolean).join(', ') || 'Andhra Pradesh';
+
+      return `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding: 7px 10px;">${actionBadge}</td>
+          <td style="padding: 7px 10px; font-weight: 700; color: #0f172a;">${safeStr(name)}</td>
+          <td style="padding: 7px 10px; color: #475569;">${safeStr(phone)}</td>
+          <td style="padding: 7px 10px; color: #64748b; font-family: monospace;">${safeStr(gstin)}</td>
+          <td style="padding: 7px 10px; color: #475569;">${safeStr(loc)}</td>
+        </tr>`;
+    }).join('');
+
+    tbody.innerHTML = rowsHtml;
+  }
+};
+
+window.executeEnterpriseImportAction = async function() {
+  const bundle = window._pendingImportBundle;
+  if (!bundle) {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("⚠️ Please select a valid file to import first.", "warning", 4000);
+    }
+    return;
+  }
+
+  const strategyEl = document.querySelector('input[name="import-strategy"]:checked');
+  const strategy = strategyEl ? strategyEl.value : 'merge';
+
+  if (strategy === 'overwrite') {
+    const ok = confirm("⚠️ FULL STORE RESTORE SELECTED:\n\nThis will replace your current store records with the records in the backup file.\n\n(An automatic pre-import safety rollback snapshot will be taken first so you can undo at any time).\n\nDo you want to proceed?");
+    if (!ok) return;
+  }
+
+  const btn = document.getElementById('btn-execute-import-hub');
+  const origBtnText = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Executing Safe Import...`;
+  }
+
+  try {
+    // 1. Take synchronous pre-import rollback snapshot
+    const activeInvoices = (Array.isArray(window.invoicesDb) && window.invoicesDb.length > 0) ? window.invoicesDb : (JSON.parse(localStorage.getItem("invoices") || "[]") || []);
+    const activeProducts = (Array.isArray(window.productsDb) && window.productsDb.length > 0) ? window.productsDb : (JSON.parse(localStorage.getItem("products") || "[]") || []);
+    const activeParties = (Array.isArray(window.partiesDb) && window.partiesDb.length > 0) ? window.partiesDb : (JSON.parse(localStorage.getItem("parties") || "[]") || []);
+    const activeSettings = window.globalSettings ? JSON.parse(JSON.stringify(window.globalSettings)) : (JSON.parse(localStorage.getItem("settings") || "{}") || {});
+
+    const snapshot = {
+      timestamp: Date.now(),
+      displayTime: new Date().toLocaleTimeString(),
+      invoices: JSON.parse(JSON.stringify(activeInvoices)),
+      products: JSON.parse(JSON.stringify(activeProducts)),
+      parties: JSON.parse(JSON.stringify(activeParties)),
+      settings: JSON.parse(JSON.stringify(activeSettings))
+    };
+    try {
+      localStorage.setItem("pre_import_rollback_snapshot", JSON.stringify(snapshot));
+    } catch(e) {}
+
+    // 2. Clear any old tombstones for incoming invoices
+    try {
+      ["deleted_party_ids", "deleted_invoice_ids", "cancelled_invoices",
+       "database_history_cleared", "database_history_cleared_at",
+       "products_cleared", "deleted_product_ids", "deleted_customer_ids"].forEach(k => {
+        localStorage.removeItem(k);
+      });
+      window.databaseHistoryClearedAt = 0;
+    } catch(e) {}
+
+    bundle.invoices.forEach(inv => {
+      if (typeof window.clearInvoiceTombstone === 'function') {
+        window.clearInvoiceTombstone(inv.invoiceNo, inv.id);
+      }
+    });
+
+    // 3. Apply Selected Merge Strategy
+    let mergedInvoices = [];
+    let mergedProducts = [];
+    let mergedParties = [];
+
+    if (strategy === 'merge') {
+      // SAFE NON-DESTRUCTIVE MERGE: Preserves existing records, enriches matching, appends new
+      mergedInvoices = window.mergeInvoicesNonDestructively(activeInvoices, bundle.invoices);
+      mergedProducts = window.mergeProductsNonDestructively(activeProducts, bundle.products);
+      mergedParties = window.mergePartiesNonDestructively(activeParties, bundle.parties);
+    }
+    else if (strategy === 'append') {
+      // APPEND NEW ONLY: Keep all active records 100% as-is; only append records that don't exist
+      const invKeys = new Set(activeInvoices.map(i => String(i.invoiceNo || i.details?.invoiceNo || i.id || '').replace(/^#/, '').toLowerCase()));
+      const prodKeys = new Set(activeProducts.map(p => String(p.description || p.name || '').trim().toLowerCase()));
+      const partyKeys = new Set(activeParties.map(pt => String(pt.name || pt.company || '').trim().toLowerCase()));
+
+      mergedInvoices = activeInvoices.slice();
+      bundle.invoices.forEach(inv => {
+        const k = String(inv.invoiceNo || inv.details?.invoiceNo || inv.id || '').replace(/^#/, '').toLowerCase();
+        if (k && !invKeys.has(k)) {
+          invKeys.add(k);
+          mergedInvoices.push(inv);
+        }
+      });
+
+      mergedProducts = activeProducts.slice();
+      bundle.products.forEach(p => {
+        const k = String(p.description || p.name || '').trim().toLowerCase();
+        if (k && !prodKeys.has(k)) {
+          prodKeys.add(k);
+          mergedProducts.push(p);
+        }
+      });
+
+      mergedParties = activeParties.slice();
+      bundle.parties.forEach(pt => {
+        const k = String(pt.name || pt.company || '').trim().toLowerCase();
+        if (k && !partyKeys.has(k)) {
+          partyKeys.add(k);
+          mergedParties.push(pt);
+        }
+      });
+    }
+    else if (strategy === 'overwrite') {
+      // FULL RESTORE
+      mergedInvoices = bundle.invoices.length > 0 ? bundle.invoices : activeInvoices;
+      mergedProducts = bundle.products.length > 0 ? bundle.products : activeProducts;
+      mergedParties = bundle.parties.length > 0 ? bundle.parties : activeParties;
+    }
+
+    // Settings merge
+    if (bundle.settings && typeof bundle.settings === 'object') {
+      globalSettings = Object.assign({}, activeSettings, bundle.settings);
+      if (bundle.settings.company) globalSettings.company = Object.assign({}, activeSettings.company || {}, bundle.settings.company);
+      if (bundle.settings.bank) globalSettings.bank = Object.assign({}, activeSettings.bank || {}, bundle.settings.bank);
+      localStorage.setItem("settings", JSON.stringify(globalSettings));
+      localStorage.setItem("global_settings", JSON.stringify(globalSettings));
+      window.globalSettings = globalSettings;
+    }
+
+    // 4. Update memory & LocalStorage
+    invoicesDb = mergedInvoices;
+    productsDb = mergedProducts;
+    partiesDb = mergedParties;
+    window.invoicesDb = invoicesDb;
+    window.productsDb = productsDb;
+    window.partiesDb = partiesDb;
+
+    localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+    localStorage.setItem("invoices_db", JSON.stringify(invoicesDb));
+    localStorage.setItem("products", JSON.stringify(productsDb));
+    localStorage.setItem("products_db", JSON.stringify(productsDb));
+    localStorage.setItem("parties", JSON.stringify(partiesDb));
+    localStorage.setItem("parties_db", JSON.stringify(partiesDb));
+    localStorage.setItem("parties_seeded", "true");
+    localStorage.setItem("is_imported_data", "true");
+    localStorage.setItem("has_real_data", "true");
+
+    // 5. Update IndexedDB
+    if (window.TurboIndexedDB) {
+      if (typeof window.TurboIndexedDB.saveAllInvoices === 'function') window.TurboIndexedDB.saveAllInvoices(invoicesDb);
+      if (typeof window.TurboIndexedDB.saveAllProducts === 'function') window.TurboIndexedDB.saveAllProducts(productsDb);
+      if (typeof window.TurboIndexedDB.saveAllParties === 'function') window.TurboIndexedDB.saveAllParties(partiesDb);
+    }
+
+    // 6. Push to Supabase Cloud
+    if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+      try {
+        if (productsDb.length > 0) window.SupabaseDB.saveAllProducts(productsDb).catch(console.warn);
+        if (partiesDb.length > 0) window.SupabaseDB.saveAllCustomers(partiesDb).catch(console.warn);
+        if (invoicesDb.length > 0) window.SupabaseDB.bulkUpsertInvoices(invoicesDb).catch(console.warn);
+      } catch(err) {
+        console.warn("[Enterprise Import] Supabase sync note:", err);
+      }
+    }
+
+    // 7. Rebuild fast indexes
+    if (window.TurboDataStore && typeof window.TurboDataStore.rebuildIndexes === 'function') {
+      window.TurboDataStore.rebuildIndexes();
+    }
+
+    // 8. Refresh all UI views
+    if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+    if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
+    if (typeof renderHistoryTableRows === 'function') renderHistoryTableRows(invoicesDb);
+    if (typeof loadProductsDatabaseTable === 'function') loadProductsDatabaseTable();
+    if (typeof renderProductsList === 'function') renderProductsList(productsDb);
+    if (typeof updateProductsKpiSummary === 'function') updateProductsKpiSummary();
+    if (typeof loadPartiesDatabaseLists === 'function') loadPartiesDatabaseLists();
+    if (typeof renderPartiesLists === 'function') renderPartiesLists(partiesDb);
+    if (typeof renderPartiesTable === 'function') renderPartiesTable();
+    if (typeof window.renderCustomersDirectoryView === 'function') window.renderCustomersDirectoryView();
+    if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+    if (typeof autoSuggestInvoiceNo === 'function') autoSuggestInvoiceNo(true);
+    if (elements && elements.historyCount) elements.historyCount.textContent = String(invoicesDb.length);
+
+    // 9. Close modal
+    window.closeEnterpriseImportModal();
+
+    // 10. Success feedback
+    const toastMsg = `✅ Import & Safe Merge Successful! Current Store: ${invoicesDb.length} Invoices, ${productsDb.length} Products, ${partiesDb.length} Customers.`;
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(toastMsg, "success", 7000);
+    }
+
+    // 11. Trigger Floating 1-Click Rollback / Undo Banner
+    const banner = document.getElementById('pre-import-undo-banner');
+    const bannerText = document.getElementById('undo-banner-text');
+    if (banner) {
+      if (bannerText) {
+        bannerText.textContent = `Data imported safely. ${snapshot.invoices.length} existing invoices preserved. (Rollback snapshot created at ${snapshot.displayTime})`;
+      }
+      banner.style.display = 'flex';
+    }
+  } catch(err) {
+    console.error("Execute import error:", err);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("❌ Import failed: " + err.message, "error", 6000);
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = origBtnText;
+    }
+  }
+};
+
+window.rollbackPreImportSnapshot = function() {
+  try {
+    const rawSnap = localStorage.getItem("pre_import_rollback_snapshot");
+    if (!rawSnap) {
+      if (typeof showFloatingToast === 'function') {
+        showFloatingToast("⚠️ No pre-import rollback snapshot available to restore.", "warning", 4000);
+      }
+      return;
+    }
+
+    const snap = JSON.parse(rawSnap);
+    invoicesDb = Array.isArray(snap.invoices) ? snap.invoices : [];
+    productsDb = Array.isArray(snap.products) ? snap.products : [];
+    partiesDb = Array.isArray(snap.parties) ? snap.parties : [];
+    if (snap.settings) {
+      globalSettings = snap.settings;
+      localStorage.setItem("settings", JSON.stringify(globalSettings));
+      localStorage.setItem("global_settings", JSON.stringify(globalSettings));
+      window.globalSettings = globalSettings;
+    }
+
+    window.invoicesDb = invoicesDb;
+    window.productsDb = productsDb;
+    window.partiesDb = partiesDb;
+
+    localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+    localStorage.setItem("invoices_db", JSON.stringify(invoicesDb));
+    localStorage.setItem("products", JSON.stringify(productsDb));
+    localStorage.setItem("products_db", JSON.stringify(productsDb));
+    localStorage.setItem("parties", JSON.stringify(partiesDb));
+    localStorage.setItem("parties_db", JSON.stringify(partiesDb));
+
+    if (window.TurboIndexedDB) {
+      if (typeof window.TurboIndexedDB.saveAllInvoices === 'function') window.TurboIndexedDB.saveAllInvoices(invoicesDb);
+      if (typeof window.TurboIndexedDB.saveAllProducts === 'function') window.TurboIndexedDB.saveAllProducts(productsDb);
+      if (typeof window.TurboIndexedDB.saveAllParties === 'function') window.TurboIndexedDB.saveAllParties(partiesDb);
+    }
+
+    if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
+      try {
+        if (productsDb.length > 0) window.SupabaseDB.saveAllProducts(productsDb).catch(console.warn);
+        if (partiesDb.length > 0) window.SupabaseDB.saveAllCustomers(partiesDb).catch(console.warn);
+        if (invoicesDb.length > 0) window.SupabaseDB.bulkUpsertInvoices(invoicesDb).catch(console.warn);
+      } catch(err) {}
+    }
+
+    // Refresh UI
+    if (typeof populateBillingSelectors === 'function') populateBillingSelectors();
+    if (typeof loadInvoicesHistoryTable === 'function') loadInvoicesHistoryTable();
+    if (typeof renderHistoryTableRows === 'function') renderHistoryTableRows(invoicesDb);
+    if (typeof loadProductsDatabaseTable === 'function') loadProductsDatabaseTable();
+    if (typeof renderProductsList === 'function') renderProductsList(productsDb);
+    if (typeof updateProductsKpiSummary === 'function') updateProductsKpiSummary();
+    if (typeof loadPartiesDatabaseLists === 'function') loadPartiesDatabaseLists();
+    if (typeof renderPartiesLists === 'function') renderPartiesLists(partiesDb);
+    if (typeof renderPartiesTable === 'function') renderPartiesTable();
+    if (typeof window.renderCustomersDirectoryView === 'function') window.renderCustomersDirectoryView();
+    if (typeof updateDashboardOverview === 'function') updateDashboardOverview();
+    if (typeof autoSuggestInvoiceNo === 'function') autoSuggestInvoiceNo(true);
+    if (elements && elements.historyCount) elements.historyCount.textContent = String(invoicesDb.length);
+
+    // Hide banner
+    const banner = document.getElementById('pre-import-undo-banner');
+    if (banner) banner.style.display = 'none';
+
+    localStorage.removeItem("pre_import_rollback_snapshot");
+
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`↩️ Import Undone! All store records reverted to state before import (${invoicesDb.length} Invoices, ${productsDb.length} Products).`, "info", 6000);
+    }
+  } catch(err) {
+    console.error("Rollback error:", err);
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("❌ Rollback failed: " + err.message, "error", 5000);
+    }
+  }
 };
 
 // --- UNIVERSAL MODAL BACKDROP AND ESCAPE-KEY DISMISS ---
