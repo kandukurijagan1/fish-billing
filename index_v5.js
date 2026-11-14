@@ -1395,9 +1395,8 @@ TurboDataStore.rebuildIndexes();
           const cId = String(c.id || "").trim().toLowerCase();
           const cNo = String(c.invoiceNo || "").trim().toLowerCase().replace(/^#/, '');
           const cTok = String(c.token || "").trim().toLowerCase();
-          const cNum = parseInt(cNo, 10);
           if (invId && (cId === invId || cId.replace(/^inv_/, '') === invId.replace(/^inv_/, ''))) return true;
-          if (cleanNo && (cNo === cleanNo || (!isNaN(cNum) && !isNaN(numNo) && cNum === numNo))) return true;
+          if (cleanNo && cNo === cleanNo) return true;
           if (qrToken && cTok && cTok === qrToken) return true;
           return false;
         });
@@ -1407,39 +1406,28 @@ TurboDataStore.rebuildIndexes();
 
     if (!tombstones || tombstones.length === 0) return false;
 
-    // 2. Check tombstones (by explicit ID, prefixed ID, or invoice number)
+    // 2. Check tombstones (by explicit ID or exact full invoice number string, never loose integer coercion)
     for (let i = 0; i < tombstones.length; i++) {
       const t = String(tombstones[i] || "").trim().toLowerCase();
       if (!t) continue;
       const cleanT = t.replace(/^#/, '').replace(/^inv_/, '');
-      const numT = parseInt(cleanT, 10);
 
       // Match by exact ID or prefixed ID
       if (invId && (invId === t || invId === `inv_${cleanT}` || invId.replace(/^inv_/, '') === cleanT)) return true;
 
-      // Match by invoice number if present in tombstones
+      // Match by exact invoice number if present in tombstones
       if (cleanNo && (cleanNo === cleanT || invNo === t || invNo === `#${cleanT}` || `inv_${cleanNo}` === t)) return true;
-      if (!isNaN(numNo) && !isNaN(numT) && numNo === numT) return true;
     }
     return false;
   };
 
-  window.filterOutDeletedInvoices = function(invoices) {
+  // Dedicated Intra-Dataset Deduplication (keeps richer record with items and positive total, never drops unique invoices)
+  window.deduplicateInvoicesList = function(invoices) {
     if (!Array.isArray(invoices)) return [];
-    const tombstones = typeof window.getDeletedInvoiceTombstones === 'function' ? window.getDeletedInvoiceTombstones() : [];
-    
-    const valid = invoices.filter(inv => {
-      if (!inv) return false;
-      if (typeof window.isInvoiceDeleted === 'function' && window.isInvoiceDeleted(inv, tombstones)) {
-        return false;
-      }
-      return true;
-    });
-
-    // Deduplicate ghost bills with identical invoice numbers (keep richer record with items and positive total)
     const map = new Map();
-    valid.forEach(inv => {
-      const rawNo = String(inv.invoiceNo || inv.id || '').trim();
+    invoices.forEach(inv => {
+      if (!inv) return;
+      const rawNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || inv.id || '').trim();
       const normNo = rawNo.replace(/^#/, '').trim().toLowerCase();
       const key = normNo || rawNo;
       if (!key) return;
@@ -1457,6 +1445,21 @@ TurboDataStore.rebuildIndexes();
       }
     });
     return Array.from(map.values());
+  };
+
+  window.filterOutDeletedInvoices = function(invoices) {
+    if (!Array.isArray(invoices)) return [];
+    const tombstones = typeof window.getDeletedInvoiceTombstones === 'function' ? window.getDeletedInvoiceTombstones() : [];
+    
+    const valid = invoices.filter(inv => {
+      if (!inv) return false;
+      if (typeof window.isInvoiceDeleted === 'function' && window.isInvoiceDeleted(inv, tombstones)) {
+        return false;
+      }
+      return true;
+    });
+
+    return window.deduplicateInvoicesList(valid);
   };
 
   // XSS Defense Helper
@@ -6259,10 +6262,29 @@ window.loadAllDatabases = function loadAllDatabases() {
     const hasCleared = (typeof localStorage !== "undefined" && (localStorage.getItem("database_history_cleared") === "true" || !!localStorage.getItem("database_history_cleared_at")));
     if (hasCleared) {
       invoicesDb = Array.isArray(invLocal) ? invLocal : [];
-    } else if (Array.isArray(invLocal)) {
+    } else if (Array.isArray(invLocal) && invLocal.length > 0) {
       invoicesDb = invLocal;
+      // Self-heal: If local storage only has partial invoices (e.g. only #EST-0002) and bootstrap snapshot has historical records, merge missing ones
+      if (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.invoices) && INITIAL_BOOTSTRAP_SNAPSHOT.invoices.length > 0) {
+        const localNos = new Set(invoicesDb.map(i => String(i.invoiceNo || i.id || '').replace(/^#/, '').toLowerCase()));
+        let added = false;
+        INITIAL_BOOTSTRAP_SNAPSHOT.invoices.forEach(snapInv => {
+          const sNo = String(snapInv.invoiceNo || snapInv.id || '').replace(/^#/, '').toLowerCase();
+          if (sNo && !localNos.has(sNo)) {
+            invoicesDb.push(snapInv);
+            localNos.add(sNo);
+            added = true;
+          }
+        });
+        if (added) {
+          try {
+            localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+            localStorage.setItem("invoices_db", JSON.stringify(invoicesDb));
+          } catch(e) {}
+        }
+      }
     } else if (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.invoices) && INITIAL_BOOTSTRAP_SNAPSHOT.invoices.length > 0) {
-      invoicesDb = INITIAL_BOOTSTRAP_SNAPSHOT.invoices;
+      invoicesDb = JSON.parse(JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.invoices));
     } else {
       invoicesDb = [];
     }
@@ -16909,22 +16931,28 @@ window.editSavedInvoice = function(id) {
     return;
   }
 
-  const inv = invoicesDb.find(i => i.id === id);
+  const cleanTargetId = String(id || '').trim();
+  const inv = (invoicesDb || []).find(i => String(i.id || '').trim() === cleanTargetId || String(i.invoiceNo || '').trim() === cleanTargetId || String(i.invoiceNo || '').replace(/^#/, '').trim() === cleanTargetId.replace(/^#/, ''));
   if (inv) {
-    currentInvoice = JSON.parse(JSON.stringify(inv.details));
-    currentInvoice.id = inv.id;
-    currentInvoice.qrToken = inv.qrToken || (inv.details && inv.details.qrToken) || "";
+    const details = inv.details || inv;
+    currentInvoice = JSON.parse(JSON.stringify(details || {}));
+    currentInvoice.id = inv.id || cleanTargetId;
+    currentInvoice.qrToken = inv.qrToken || (details && details.qrToken) || "";
     currentInvoice.isEditing = true;
+    currentInvoice.invoiceNo = currentInvoice.invoiceNo || inv.invoiceNo || "";
+    currentInvoice.invoiceDate = currentInvoice.invoiceDate || inv.invoiceDate || inv.date || "";
+    currentInvoice.invoiceType = currentInvoice.invoiceType || (inv.isEstimate ? "Quotation" : "Bill of Supply");
+    currentInvoice.isEstimate = Boolean(inv.isEstimate || currentInvoice.isEstimate || String(currentInvoice.invoiceNo).startsWith("EST-"));
     
     // Safety check default structures
     if (!currentInvoice.buyer) {
-      currentInvoice.buyer = { name: "", address: "", gstin: "", phone: "", state: "Andhra Pradesh", stateCode: "37" };
+      currentInvoice.buyer = inv.buyer ? JSON.parse(JSON.stringify(inv.buyer)) : { name: inv.customerName || "", address: "", gstin: "", phone: inv.customerPhone || "", state: "Andhra Pradesh", stateCode: "37" };
     }
     if (!currentInvoice.consignee) {
-      currentInvoice.consignee = { name: "", address: "", gstin: "", state: "Andhra Pradesh", stateCode: "37" };
+      currentInvoice.consignee = inv.consignee ? JSON.parse(JSON.stringify(inv.consignee)) : { name: inv.customerName || "", address: "", gstin: "", phone: inv.customerPhone || "", state: "Andhra Pradesh", stateCode: "37" };
     }
     if (!currentInvoice.items) {
-      currentInvoice.items = [];
+      currentInvoice.items = Array.isArray(inv.items) ? JSON.parse(JSON.stringify(inv.items)) : [];
     }
 
     switchTab("billing");
@@ -23691,9 +23719,9 @@ window.importDataFromMasterExcel = async function(event) {
         });
       }
 
-      // Deduplicate invoices to drop ghost duplicates
-      if (typeof window.filterOutDeletedInvoices === 'function') {
-        importedInvoices = window.filterOutDeletedInvoices(importedInvoices);
+      // Deduplicate invoices to drop ghost duplicates within the uploaded file itself
+      if (typeof window.deduplicateInvoicesList === 'function') {
+        importedInvoices = window.deduplicateInvoicesList(importedInvoices);
       }
 
       // Catalog safety: Retain active catalog or seed standard catalog if Excel had 0 products
@@ -24421,9 +24449,9 @@ window.importDataBackupJSON = function(event) {
       const importedSettings = data.settings || data.global_settings || data.config || null;
       const importedUsers = Array.isArray(data.authorized_users) ? data.authorized_users : [];
 
-      // Deduplicate invoices to eliminate duplicate ghost drafts (e.g. empty #EST-0002)
-      if (typeof window.filterOutDeletedInvoices === 'function') {
-        importedInvoices = window.filterOutDeletedInvoices(importedInvoices);
+      // Deduplicate invoices to eliminate duplicate ghost drafts within the uploaded file itself
+      if (typeof window.deduplicateInvoicesList === 'function') {
+        importedInvoices = window.deduplicateInvoicesList(importedInvoices);
       }
 
       // Catalog safety: Retain active catalog or seed standard catalog if imported JSON had 0 products
@@ -24557,6 +24585,201 @@ window.importDataBackupJSON = function(event) {
     }
   };
   reader.readAsText(file);
+};
+
+// ============================================================================
+// UNIVERSAL INVOICE IMPORT ENGINE (XLSX / XLS / JSON / CSV)
+// Directly accessible from Invoice History and GST Billing toolbars
+// ============================================================================
+window.importInvoicesFromHistory = function(event) {
+  const file = event.target?.files?.[0];
+  if (!file) return;
+
+  const fileName = file.name.toLowerCase();
+  
+  if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+    if (typeof window.importDataFromMasterExcel === 'function') {
+      window.importDataFromMasterExcel(event);
+    }
+    return;
+  }
+
+  if (fileName.endsWith('.json')) {
+    if (typeof window.importDataBackupJSON === 'function') {
+      window.importDataBackupJSON(event);
+    }
+    return;
+  }
+
+  if (fileName.endsWith('.csv')) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const text = e.target.result;
+        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        if (lines.length < 2) {
+          showFloatingToast("⚠️ The selected CSV file is empty or missing headers.", "warning", 4000);
+          return;
+        }
+
+        const headers = lines[0].split(',').map(h => h.replace(/^["']|["']$/g, '').trim().toLowerCase());
+        const invNoIdx = headers.findIndex(h => h.includes('invoice') || h.includes('bill') || h === 'no' || h === 'id');
+        const dateIdx = headers.findIndex(h => h.includes('date'));
+        const custIdx = headers.findIndex(h => h.includes('customer') || h.includes('party') || h.includes('buyer') || h.includes('client'));
+        const totalIdx = headers.findIndex(h => h.includes('total') || h.includes('amount') || h.includes('grand'));
+        const statusIdx = headers.findIndex(h => h.includes('status'));
+        const modeIdx = headers.findIndex(h => h.includes('mode'));
+        const itemsIdx = headers.findIndex(h => h.includes('item') || h.includes('qty'));
+
+        const newInvs = [];
+        for (let i = 1; i < lines.length; i++) {
+          const row = [];
+          let insideQuotes = false;
+          let entry = '';
+          for (let c = 0; c < lines[i].length; c++) {
+            const char = lines[i][c];
+            if (char === '"' || char === "'") {
+              insideQuotes = !insideQuotes;
+            } else if (char === ',' && !insideQuotes) {
+              row.push(entry.trim());
+              entry = '';
+            } else {
+              entry += char;
+            }
+          }
+          row.push(entry.trim());
+
+          const rawNo = (invNoIdx !== -1 && row[invNoIdx]) ? row[invNoIdx].replace(/^["']|["']$/g, '').trim() : `INV-${Date.now()}-${i}`;
+          if (!rawNo) continue;
+          const cleanNo = rawNo.replace(/^#/, '');
+          const invDate = (dateIdx !== -1 && row[dateIdx]) ? row[dateIdx].replace(/^["']|["']$/g, '').trim() : new Date().toISOString().split('T')[0];
+          const custName = (custIdx !== -1 && row[custIdx]) ? row[custIdx].replace(/^["']|["']$/g, '').trim() : "Valued Customer";
+          const rawTotal = (totalIdx !== -1 && row[totalIdx]) ? parseFloat(row[totalIdx].replace(/[^0-9.-]/g, '')) : 0;
+          const totalAmt = !isNaN(rawTotal) ? rawTotal : 0;
+          const status = (statusIdx !== -1 && row[statusIdx]) ? row[statusIdx].replace(/^["']|["']$/g, '').trim() : "Paid";
+          const mode = (modeIdx !== -1 && row[modeIdx]) ? row[modeIdx].replace(/^["']|["']$/g, '').trim() : "Cash";
+          const itemsCount = (itemsIdx !== -1 && row[itemsIdx]) ? parseInt(row[itemsIdx].replace(/[^0-9]/g, ''), 10) || 1 : 1;
+
+          const isEst = cleanNo.startsWith("EST-") || status.toLowerCase().includes("quotation") || status.toLowerCase().includes("estimate");
+          const invObj = {
+            id: `inv_csv_${Date.now()}_${i}`,
+            invoiceNo: cleanNo,
+            invoiceDate: invDate,
+            date: invDate,
+            customerName: custName,
+            customerPhone: "",
+            itemsCount: itemsCount,
+            total: totalAmt,
+            grandTotal: totalAmt,
+            totalAmount: totalAmt,
+            subtotal: totalAmt,
+            taxable: totalAmt,
+            paidAmount: status.toLowerCase() === 'paid' ? totalAmt : 0,
+            balanceDue: status.toLowerCase() === 'paid' ? 0 : totalAmt,
+            paymentStatus: status,
+            paymentMode: mode,
+            isEstimate: isEst,
+            items: [
+              {
+                productId: "PRD-CSV-01",
+                description: "Imported CSV Items",
+                quantity: itemsCount,
+                unit: "NOS",
+                rate: itemsCount > 0 ? (totalAmt / itemsCount) : totalAmt,
+                amount: totalAmt
+              }
+            ],
+            details: {
+              id: `inv_csv_${Date.now()}_${i}`,
+              invoiceNo: cleanNo,
+              invoiceDate: invDate,
+              date: invDate,
+              invoiceType: isEst ? "Quotation" : "Bill of Supply",
+              isEstimate: isEst,
+              customerName: custName,
+              paymentStatus: status,
+              paymentMode: mode,
+              paidAmount: status.toLowerCase() === 'paid' ? totalAmt : 0,
+              balanceDue: status.toLowerCase() === 'paid' ? 0 : totalAmt,
+              buyer: { name: custName, phone: "", address: "", gstin: "", state: "Andhra Pradesh", stateCode: "37" },
+              consignee: { name: custName, phone: "", address: "", gstin: "", state: "Andhra Pradesh", stateCode: "37" },
+              items: [
+                {
+                  productId: "PRD-CSV-01",
+                  description: "Imported CSV Items",
+                  quantity: itemsCount,
+                  unit: "NOS",
+                  rate: itemsCount > 0 ? (totalAmt / itemsCount) : totalAmt,
+                  amount: totalAmt
+                }
+              ],
+              taxable: totalAmt,
+              cgst: 0,
+              sgst: 0,
+              igst: 0,
+              roundOff: 0,
+              total: totalAmt
+            }
+          };
+          newInvs.push(invObj);
+        }
+
+        if (newInvs.length === 0) {
+          showFloatingToast("⚠️ No invoice records could be parsed from the CSV file.", "warning", 4000);
+          return;
+        }
+
+        if (!confirm(`📄 RESTORE ${newInvs.length} INVOICES FROM CSV?\n\nClick OK to merge and restore these invoices into your Invoice History.`)) {
+          if (event.target) event.target.value = "";
+          return;
+        }
+
+        if (!Array.isArray(invoicesDb)) invoicesDb = [];
+        const existingMap = new Map();
+        invoicesDb.forEach(inv => {
+          const k = String(inv.invoiceNo || inv.id || '').replace(/^#/, '').toLowerCase();
+          if (k) existingMap.set(k, inv);
+        });
+
+        newInvs.forEach(newInv => {
+          const k = String(newInv.invoiceNo || newInv.id || '').replace(/^#/, '').toLowerCase();
+          if (k) {
+            existingMap.set(k, newInv);
+            if (typeof window.clearInvoiceTombstone === 'function') {
+              window.clearInvoiceTombstone(newInv.invoiceNo, newInv.id);
+            }
+          }
+        });
+
+        invoicesDb = Array.from(existingMap.values());
+        window.invoicesDb = invoicesDb;
+        localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+        localStorage.setItem("invoices_db", JSON.stringify(invoicesDb));
+        localStorage.removeItem("deleted_invoice_ids");
+        localStorage.removeItem("cancelled_invoices");
+        localStorage.removeItem("database_history_cleared");
+
+        if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllInvoices === 'function') {
+          window.TurboIndexedDB.saveAllInvoices(invoicesDb);
+        }
+
+        if (typeof renderHistoryTableRows === 'function') renderHistoryTableRows(invoicesDb);
+        if (typeof window.filterInvoicesByStatus === 'function') window.filterInvoicesByStatus();
+        if (elements && elements.historyCount) elements.historyCount.textContent = String(invoicesDb.length);
+        showFloatingToast(`✔ Successfully imported ${newInvs.length} Invoices from CSV! Total in history: ${invoicesDb.length}`, "success", 6000);
+        if (event.target) event.target.value = "";
+      } catch (err) {
+        console.error("CSV import error:", err);
+        showFloatingToast(`❌ Failed to import CSV: ${err.message}`, "error", 5000);
+        if (event.target) event.target.value = "";
+      }
+    };
+    reader.readAsText(file);
+    return;
+  }
+
+  showFloatingToast("⚠️ Unsupported file format. Please upload an Excel (.xlsx/.xls), Backup (.json), or CSV (.csv) file.", "warning", 5000);
+  if (event.target) event.target.value = "";
 };
 
 // --- UNIVERSAL MODAL BACKDROP AND ESCAPE-KEY DISMISS ---

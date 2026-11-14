@@ -1,7 +1,656 @@
 {
   "version": "1.0.0",
   "generatedAt": "2026-09-20T18:04:28.789Z",
-  "invoices": [],
+  "invoices": [
+    {
+      "id": "inv_1788969299973_728",
+      "invoiceNo": "0004",
+      "invoiceDate": "2026-09-09",
+      "customerName": "DEVI FISHERIES LIMITED",
+      "itemsCount": 1,
+      "total": 2070,
+      "details": {
+        "id": "inv_1788969299973_728",
+        "invoiceType": "Bill of Supply",
+        "headerLogo": "ganesha",
+        "invoiceNo": "0004",
+        "invoiceDate": "2026-09-09",
+        "paymentDate": "2026-09-09",
+        "buyerOrderNo": "65tgyhj",
+        "buyerOrderDate": "2026-09-09",
+        "transportMode": "tyguhj",
+        "destination": "Andhra Pradesh",
+        "supplyStateCode": "37",
+        "paymentStatus": "Paid",
+        "paymentMode": "UPI / QR",
+        "paidAmount": 2070,
+        "balancePaid": 0,
+        "balanceDue": 0,
+        "buyer": {
+          "name": "DEVI FISHERIES LIMITED",
+          "address": "LANKEVANIDIBBA\nREPALLE MANDAL\nGUNTUR\nAndhra Pradesh - 522264, India",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "9063190739"
+        },
+        "consignee": {
+          "name": "DEVI FISHERIES LIMITED",
+          "address": "LANKEVANIDIBBA\nREPALLE MANDAL\nGUNTUR\nAndhra Pradesh - 522264, India",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "9063190739"
+        },
+        "items": [
+          {
+            "id": "1788969297800",
+            "baleNo": "1",
+            "description": "RALLIMIN ADV + 15 KGS",
+            "hsn": "23099090",
+            "packSize": "20 KG",
+            "quantity": 1,
+            "unit": "Bucket",
+            "rate": 3600,
+            "gstRate": 0,
+            "discount": 42.5,
+            "amount": 2070
+          }
+        ],
+        "taxable": 2070,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "roundOff": 0,
+        "total": 2070
+      }
+    },
+    {
+      "id": "inv_1788975524151_277",
+      "invoiceNo": "0006",
+      "invoiceDate": "2026-09-09",
+      "customerName": "DEVI FISHERIES LIMITED",
+      "itemsCount": 2,
+      "total": 528,
+      "details": {
+        "id": "inv_1788975524151_277",
+        "invoiceType": "Bill of Supply",
+        "headerLogo": "ganesha",
+        "invoiceNo": "0006",
+        "invoiceDate": "2026-09-09",
+        "paymentDate": "2026-09-09",
+        "buyerOrderNo": "65tgyhj",
+        "buyerOrderDate": "2026-09-09",
+        "transportMode": "tyguhj",
+        "destination": "Andhra Pradesh",
+        "supplyStateCode": "37",
+        "paymentStatus": "Paid",
+        "paymentMode": "UPI / QR",
+        "paidAmount": 528,
+        "balancePaid": 0,
+        "balanceDue": 0,
+        "buyer": {
+          "name": "DEVI FISHERIES LIMITED",
+          "address": "",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "8688572332"
+        },
+        "consignee": {
+          "name": "DEVI FISHERIES LIMITED",
+          "address": "",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "8688572332"
+        },
+        "items": [
+          {
+            "id": "1788975519382",
+            "baleNo": "1",
+            "description": "ZEOLITE POWDER 25KG BAG",
+            "hsn": "11112222",
+            "packSize": "25 KG",
+            "quantity": 1,
+            "unit": "Bag",
+            "rate": 450,
+            "gstRate": 0,
+            "discount": 5,
+            "amount": 427.5
+          },
+          {
+            "id": "1788975522422",
+            "baleNo": "2",
+            "description": "TEST PRODUCT PACK SIZE",
+            "hsn": "12345678",
+            "packSize": "6l",
+            "quantity": 1,
+            "unit": "Can",
+            "rate": 100,
+            "gstRate": 0,
+            "discount": 0,
+            "amount": 100
+          }
+        ],
+        "taxable": 527.5,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "roundOff": 0.5,
+        "total": 528
+      }
+    },
+    {
+      "id": "inv_1788979067280_919",
+      "invoiceNo": "0007",
+      "invoiceDate": "2026-09-09",
+      "customerName": "Konaiah Kandukuri",
+      "itemsCount": 3,
+      "total": 10455,
+      "details": {
+        "id": "inv_1788979067280_919",
+        "invoiceType": "Bill of Supply",
+        "headerLogo": "ganesha",
+        "invoiceNo": "0007",
+        "invoiceDate": "2026-09-09",
+        "paymentDate": "2026-09-09",
+        "buyerOrderNo": "65tgyhj",
+        "buyerOrderDate": "",
+        "transportMode": "",
+        "destination": "Andhra Pradesh",
+        "supplyStateCode": "37",
+        "paymentStatus": "Unpaid",
+        "paymentMode": "Bank Transfer",
+        "paidAmount": 0,
+        "balancePaid": 0,
+        "balanceDue": 10455,
+        "buyer": {
+          "name": "Konaiah Kandukuri",
+          "address": "Balijapalem Village varadaiah palem mandal tirupati district",
+          "gstin": "",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "8367047947"
+        },
+        "consignee": {
+          "name": "DEVI FISHERIES LIMITED",
+          "address": "LANKEVANIDIBBA\nREPALLE MANDAL\nGUNTUR\nAndhra Pradesh - 522264, India",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "8367047947"
+        },
+        "items": [
+          {
+            "id": "1788979028042",
+            "baleNo": "1",
+            "description": "TEST PRODUCT PACK SIZE",
+            "hsn": "12345678",
+            "packSize": "6l",
+            "quantity": 6,
+            "unit": "Can",
+            "rate": 100,
+            "gstRate": 0,
+            "discount": 0,
+            "amount": 600
+          },
+          {
+            "id": "1788979041120",
+            "baleNo": "2",
+            "description": "RALLIMIN ADV + 15 KGS",
+            "hsn": "23099090",
+            "packSize": "20 KG",
+            "quantity": 3,
+            "unit": "Bucket",
+            "rate": 3600,
+            "gstRate": 0,
+            "discount": 20,
+            "amount": 8640
+          },
+          {
+            "id": "1788979064325",
+            "baleNo": "3",
+            "description": "ZEOLITE POWDER 25KG BAG",
+            "hsn": "11112222",
+            "packSize": "25 KG",
+            "quantity": 3,
+            "unit": "Bag",
+            "rate": 450,
+            "gstRate": 0,
+            "discount": 10,
+            "amount": 1215
+          }
+        ],
+        "taxable": 10455,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "roundOff": 0,
+        "total": 10455,
+        "pdfUrl": "http://localhost:8000/invoices/Invoice_0007_Konaiah_Kandukuri.pdf"
+      }
+    },
+    {
+      "id": "0001",
+      "invoiceNo": "0001",
+      "invoiceDate": "2026-08-03",
+      "customerName": "DEVI FISHERIES LIMITED",
+      "itemsCount": 1,
+      "total": 2070,
+      "details": {
+        "invoiceType": "Bill of Supply",
+        "headerLogo": "ganesha",
+        "invoiceNo": "0001",
+        "invoiceDate": "2026-08-03",
+        "paymentDate": "2026-08-03",
+        "buyerOrderNo": "5687",
+        "buyerOrderDate": "2026-08-03",
+        "transportMode": "train",
+        "destination": "Andhra Pradesh",
+        "supplyStateCode": "37",
+        "paymentStatus": "Paid",
+        "paymentMode": "UPI / QR",
+        "paidAmount": 2070,
+        "balancePaid": 0,
+        "balanceDue": 0,
+        "buyer": {
+          "name": "DEVI FISHERIES LIMITED",
+          "address": "LANKEVANIDIBBA\nREPALLE MANDAL\nGUNTUR\nAndhra Pradesh - 522264, India",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": ""
+        },
+        "consignee": {
+          "name": "DEVI FISHERIES LIMITED",
+          "address": "LANKEVANIDIBBA\nREPALLE MANDAL\nGUNTUR\nAndhra Pradesh - 522264, India",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": ""
+        },
+        "items": [
+          {
+            "id": "1785752769413",
+            "baleNo": "1",
+            "description": "RALLIMIN ADV + 15 KGS",
+            "hsn": "23099090",
+            "packSize": "15 KG",
+            "quantity": 1,
+            "unit": "bucket",
+            "rate": 3600,
+            "gstRate": 0,
+            "discount": 42.5,
+            "amount": 2070
+          }
+        ],
+        "taxable": 2070,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "roundOff": 0,
+        "total": 2070
+      }
+    },
+    {
+      "id": "0002",
+      "invoiceNo": "0002",
+      "invoiceDate": "2026-08-03",
+      "customerName": "DEVI FISHERIES LIMITED",
+      "itemsCount": 1,
+      "total": 2070,
+      "details": {
+        "invoiceType": "Bill of Supply",
+        "headerLogo": "ganesha",
+        "invoiceNo": "0002",
+        "invoiceDate": "2026-08-03",
+        "paymentDate": "2026-08-03",
+        "buyerOrderNo": "678765",
+        "buyerOrderDate": "2026-08-03",
+        "transportMode": "train ",
+        "destination": "Andhra Pradesh",
+        "supplyStateCode": "37",
+        "paymentStatus": "Paid",
+        "paymentMode": "UPI / QR",
+        "paidAmount": 2070,
+        "balancePaid": 0,
+        "balanceDue": 0,
+        "buyer": {
+          "name": "DEVI FISHERIES LIMITED",
+          "address": "LANKEVANIDIBBA\nREPALLE MANDAL\nGUNTUR\nAndhra Pradesh - 522264, India",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "876556789"
+        },
+        "consignee": {
+          "name": "DEVI FISHERIES LIMITED",
+          "address": "LANKEVANIDIBBA\nREPALLE MANDAL\nGUNTUR\nAndhra Pradesh - 522264, India",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "23652378"
+        },
+        "items": [
+          {
+            "id": "1785754480337",
+            "baleNo": "1",
+            "description": "RALLIMIN ADV + 15 KGS",
+            "hsn": "23099090",
+            "packSize": "15 KG",
+            "quantity": 1,
+            "unit": "bucket",
+            "rate": 3600,
+            "gstRate": 0,
+            "discount": 42.5,
+            "amount": 2070
+          }
+        ],
+        "taxable": 2070,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "roundOff": 0,
+        "total": 2070
+      }
+    },
+    {
+      "id": "0003",
+      "invoiceNo": "0003",
+      "invoiceDate": "2026-08-03",
+      "customerName": "DEVI FISHERIES LIMITED",
+      "itemsCount": 1,
+      "total": 2070,
+      "details": {
+        "invoiceType": "Bill of Supply",
+        "headerLogo": "ganesha",
+        "invoiceNo": "0003",
+        "invoiceDate": "2026-08-03",
+        "paymentDate": "2026-08-03",
+        "buyerOrderNo": "689",
+        "buyerOrderDate": "2026-08-03",
+        "transportMode": "rfg",
+        "destination": "Andhra Pradesh",
+        "supplyStateCode": "37",
+        "paymentStatus": "Paid",
+        "paymentMode": "UPI / QR",
+        "paidAmount": 2070,
+        "balancePaid": 0,
+        "balanceDue": 0,
+        "buyer": {
+          "name": "DEVI FISHERIES LIMITED",
+          "address": "LANKEVANIDIBBA\nREPALLE MANDAL\nGUNTUR\nAndhra Pradesh - 522264, India",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "876556789"
+        },
+        "consignee": {
+          "name": "DEVI FISHERIES LIMITED",
+          "address": "LANKEVANIDIBBA\nREPALLE MANDAL\nGUNTUR\nAndhra Pradesh - 522264, India",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "23652378"
+        },
+        "items": [
+          {
+            "id": "1785754827694",
+            "baleNo": "1",
+            "description": "RALLIMIN ADV + 15 KGS",
+            "hsn": "23099090",
+            "packSize": "15 KG",
+            "quantity": 1,
+            "unit": "bucket",
+            "rate": 3600,
+            "gstRate": 0,
+            "discount": 42.5,
+            "amount": 2070
+          }
+        ],
+        "taxable": 2070,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "roundOff": 0,
+        "total": 2070
+      }
+    },
+    {
+      "id": "inv_1788969452505_13",
+      "invoiceNo": "0005",
+      "invoiceDate": "2026-09-09",
+      "customerName": "DEVI FISHERIES LIMITED",
+      "itemsCount": 1,
+      "total": 100,
+      "details": {
+        "id": "inv_1788969452505_13",
+        "invoiceType": "Bill of Supply",
+        "headerLogo": "ganesha",
+        "invoiceNo": "0005",
+        "invoiceDate": "2026-09-09",
+        "paymentDate": "2026-09-09",
+        "buyerOrderNo": "65tgyhj",
+        "buyerOrderDate": "2026-09-09",
+        "transportMode": "tyguhj",
+        "destination": "Andhra Pradesh",
+        "supplyStateCode": "37",
+        "paymentStatus": "Paid",
+        "paymentMode": "Cash",
+        "paidAmount": 100,
+        "balancePaid": 0,
+        "balanceDue": 0,
+        "buyer": {
+          "name": "DEVI FISHERIES LIMITED",
+          "address": "",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "08367047947"
+        },
+        "consignee": {
+          "name": "DEVI FISHERIES LIMITED",
+          "address": "",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "08367047947"
+        },
+        "items": [
+          {
+            "id": "1788969420150",
+            "baleNo": "1",
+            "description": "TEST PRODUCT PACK SIZE",
+            "hsn": "12345678",
+            "packSize": "6l",
+            "quantity": 1,
+            "unit": "Can",
+            "rate": 100,
+            "gstRate": 0,
+            "discount": 0,
+            "amount": 100
+          }
+        ],
+        "taxable": 100,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "roundOff": 0,
+        "total": 100,
+        "pdfUrl": "https://drive.google.com/file/d/1AagFLYnwjMDIbWFSyrPw35jjDaxSHRvX/view?usp=sharing"
+      },
+      "pdfUrl": "https://drive.google.com/file/d/1AagFLYnwjMDIbWFSyrPw35jjDaxSHRvX/view?usp=sharing"
+    },
+    {
+      "id": "inv_1789022651338_929",
+      "invoiceNo": "0008",
+      "invoiceDate": "2026-09-10",
+      "customerName": "Konaiah Kandukuri",
+      "itemsCount": 1,
+      "total": 428,
+      "details": {
+        "id": "inv_1789022651338_929",
+        "invoiceType": "Bill of Supply",
+        "headerLogo": "ganesha",
+        "invoiceNo": "0008",
+        "invoiceDate": "2026-09-10",
+        "buyerOrderNo": "65tgyhj",
+        "buyerOrderDate": "2026-09-10",
+        "transportMode": "tyguhj",
+        "destination": "Andhra Pradesh",
+        "supplyStateCode": "37",
+        "paymentStatus": "Paid",
+        "paymentMode": "UPI / QR",
+        "paidAmount": 428,
+        "balanceDue": 0,
+        "buyer": {
+          "name": "Konaiah Kandukuri",
+          "address": "",
+          "gstin": "",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "8367047947"
+        },
+        "consignee": {
+          "name": "DEVI FISHERIES LIMITED",
+          "address": "",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "8367047947"
+        },
+        "items": [
+          {
+            "id": "1789022649422",
+            "baleNo": "1",
+            "description": "ZEOLITE POWDER 25KG BAG",
+            "hsn": "11112222",
+            "packSize": "25 KG",
+            "quantity": 1,
+            "unit": "Bag",
+            "rate": 450,
+            "gstRate": 0,
+            "discount": 5,
+            "amount": 427.5
+          }
+        ],
+        "balancePaid": 0,
+        "paymentDate": "2026-09-09",
+        "supplyPlace": "Andhra Pradesh",
+        "taxable": 427.5,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "roundOff": 0.5,
+        "total": 428,
+        "pdfUrl": "https://drive.google.com/file/d/158DIxR8vCisAPHIM7mYkQ1FZ2b_7x6yn/view?usp=sharing"
+      },
+      "pdfUrl": "https://drive.google.com/file/d/158DIxR8vCisAPHIM7mYkQ1FZ2b_7x6yn/view?usp=sharing"
+    },
+    {
+      "id": "inv_1794412492685_est_0002",
+      "invoiceNo": "EST-0002",
+      "invoiceDate": "2026-11-11",
+      "date": "2026-11-11",
+      "customerName": "JAGAN",
+      "customerPhone": "+91 74166 05852",
+      "itemsCount": 1,
+      "total": 52500,
+      "grandTotal": 52500,
+      "totalAmount": 52500,
+      "subtotal": 52500,
+      "taxable": 52500,
+      "paidAmount": 2500,
+      "balanceDue": 50000,
+      "balanceAmount": 50000,
+      "paymentStatus": "Partial",
+      "paymentMode": "UPI / QR",
+      "isEstimate": true,
+      "buyer": {
+        "name": "JAGAN",
+        "address": "LANKEVANIDIBBA\nREPALLE MANDAL\nGUNTUR\nAndhra Pradesh - 522264, India",
+        "gstin": "37AAACD7852Q1ZZ",
+        "state": "Andhra Pradesh",
+        "stateCode": "37",
+        "phone": "+91 74166 05852"
+      },
+      "consignee": {
+        "name": "DEVI FISHERIES LIMITED",
+        "address": "LANKEVANIDIBBA\nREPALLE MANDAL\nGUNTUR\nAndhra Pradesh - 522264, India",
+        "gstin": "37AAACD7852Q1ZZ",
+        "state": "Andhra Pradesh",
+        "stateCode": "37",
+        "phone": "9063190739"
+      },
+      "items": [
+        {
+          "id": "item_1794412492685_01",
+          "baleNo": "1",
+          "description": "GEO CAR (25 KG)",
+          "hsn": "23099090",
+          "packSize": "25 KG",
+          "quantity": 15,
+          "unit": "Bucket",
+          "rate": 3500,
+          "gstRate": 0,
+          "discount": 0,
+          "amount": 52500
+        }
+      ],
+      "details": {
+        "id": "inv_1794412492685_est_0002",
+        "invoiceType": "Quotation",
+        "isEstimate": true,
+        "headerLogo": "ganesha",
+        "invoiceNo": "EST-0002",
+        "invoiceDate": "2026-11-11",
+        "paymentDate": "2026-11-11",
+        "paymentStatus": "Partial",
+        "paymentMode": "UPI / QR",
+        "paidAmount": 2500,
+        "balanceDue": 50000,
+        "balancePaid": 2500,
+        "buyer": {
+          "name": "JAGAN",
+          "address": "LANKEVANIDIBBA\nREPALLE MANDAL\nGUNTUR\nAndhra Pradesh - 522264, India",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "+91 74166 05852"
+        },
+        "consignee": {
+          "name": "DEVI FISHERIES LIMITED",
+          "address": "LANKEVANIDIBBA\nREPALLE MANDAL\nGUNTUR\nAndhra Pradesh - 522264, India",
+          "gstin": "37AAACD7852Q1ZZ",
+          "state": "Andhra Pradesh",
+          "stateCode": "37",
+          "phone": "9063190739"
+        },
+        "items": [
+          {
+            "id": "item_1794412492685_01",
+            "baleNo": "1",
+            "description": "GEO CAR (25 KG)",
+            "hsn": "23099090",
+            "packSize": "25 KG",
+            "quantity": 15,
+            "unit": "Bucket",
+            "rate": 3500,
+            "gstRate": 0,
+            "discount": 0,
+            "amount": 52500
+          }
+        ],
+        "taxable": 52500,
+        "cgst": 0,
+        "sgst": 0,
+        "igst": 0,
+        "roundOff": 0,
+        "total": 52500
+      }
+    }
+  ],
   "products": [
     {
       "id": "prod-101",
@@ -152,8 +801,8 @@
       "gstin": "37ACNFA4687Q1ZC",
       "type": "receiver",
       "company": "DEVI FISHERIES LIMITED",
-      "balance": 50000.0,
-      "openingBalance": 50000.0
+      "balance": 50000,
+      "openingBalance": 50000
     },
     {
       "id": "party-102",
@@ -166,8 +815,8 @@
       "stateCode": "37",
       "type": "receiver",
       "company": "Jagan Aquaculture Farm",
-      "balance": 0.0,
-      "openingBalance": 0.0
+      "balance": 0,
+      "openingBalance": 0
     }
   ],
   "settings": {

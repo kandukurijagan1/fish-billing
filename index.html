@@ -1504,6 +1504,12 @@
 
               <div style="display: flex; align-items: center; gap: 8px;">
 
+                <button type="button" class="btn btn-xs" onclick="document.getElementById('import-invoices-file-input').click()" style="background: #f8fafc; border: 1px solid #cbd5e1; color: #0891b2; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;" title="Import Invoices from Excel, Backup, or CSV">
+
+                  <i class="fa-solid fa-file-import"></i> Import Invoices
+
+                </button>
+
                 <button type="button" class="btn btn-xs" onclick="openBarcodeScannerModal()" style="background: #f8fafc; border: 1px solid #cbd5e1; color: #0891b2; padding: 6px 12px; border-radius: 6px; font-weight: 700; font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;" title="Scan product barcode with camera">
 
                   <i class="fa-solid fa-camera"></i> <i class="fa-solid fa-barcode"></i> Scan Barcode
@@ -2663,6 +2669,14 @@
                 <i class="fa-solid fa-file-csv text-emerald"></i> Export CSV
 
               </button>
+
+              <button class="btn btn-secondary btn-sm" onclick="document.getElementById('import-invoices-file-input').click()" style="display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; font-weight: 700; white-space: nowrap;" title="Import Invoices from Excel (.xlsx/.xls), Backup (.json), or CSV (.csv)">
+
+                <i class="fa-solid fa-file-import text-cyan"></i> Import Invoices
+
+              </button>
+
+              <input type="file" id="import-invoices-file-input" accept=".xlsx,.xls,.json,.csv" style="display: none;" onchange="window.importInvoicesFromHistory(event)">
 
               <button class="btn btn-primary btn-sm" onclick="quickPrintLatestInvoice()" title="Preview &amp; Print Latest Bill" style="display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; font-weight: 700; white-space: nowrap; background: linear-gradient(135deg, #0d9488 0%, #0284c7 100%); border: none; color: white; box-shadow: 0 2px 6px rgba(13,148,136,0.35); cursor: pointer;">
 
@@ -11275,13 +11289,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v95_robust_no_cors_backup_delivery"></script>
+<script src="supabase-adapter.js?v=live_v96_universal_invoice_import_and_history_restore"></script>
 
-<script src="initial_db.js?v=live_v95_robust_no_cors_backup_delivery"></script>
+<script src="initial_db.js?v=live_v96_universal_invoice_import_and_history_restore"></script>
 
-<script src="customer-timeline.js?v=live_v95_robust_no_cors_backup_delivery"></script>
+<script src="customer-timeline.js?v=live_v96_universal_invoice_import_and_history_restore"></script>
 
-<script src="index_v5.js?v=live_v95_robust_no_cors_backup_delivery"></script>
+<script src="index_v5.js?v=live_v96_universal_invoice_import_and_history_restore"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->
