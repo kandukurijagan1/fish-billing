@@ -1462,6 +1462,159 @@ TurboDataStore.rebuildIndexes();
     return window.deduplicateInvoicesList(valid);
   };
 
+  // ============================================================================
+  // NON-DESTRUCTIVE SAFE MERGE ENGINES
+  // Guarantees that importing data NEVER wipes out or negatively affects existing records
+  // ============================================================================
+
+  window.mergeInvoicesNonDestructively = function(existingList, incomingList) {
+    const existing = Array.isArray(existingList) ? existingList : [];
+    const incoming = Array.isArray(incomingList) ? incomingList : [];
+    if (incoming.length === 0) return existing.slice();
+    if (existing.length === 0) return window.deduplicateInvoicesList(incoming);
+
+    const map = new Map();
+    // 1. Preserve all existing active invoices in their entirety
+    existing.forEach(inv => {
+      if (!inv) return;
+      const rawNo = String(inv.invoiceNo || (inv.details && inv.details.invoiceNo) || inv.id || '').trim();
+      const normNo = rawNo.replace(/^#/, '').trim().toLowerCase();
+      const key = normNo || rawNo;
+      if (key) map.set(key, JSON.parse(JSON.stringify(inv)));
+    });
+
+    // 2. Merge incoming invoices without destroying existing ones
+    incoming.forEach(newInv => {
+      if (!newInv) return;
+      const rawNo = String(newInv.invoiceNo || (newInv.details && newInv.details.invoiceNo) || newInv.id || '').trim();
+      const normNo = rawNo.replace(/^#/, '').trim().toLowerCase();
+      const key = normNo || rawNo;
+      if (!key) return;
+
+      if (!map.has(key)) {
+        map.set(key, JSON.parse(JSON.stringify(newInv)));
+      } else {
+        const oldInv = map.get(key);
+        const oldItems = Array.isArray(oldInv.items) ? oldInv.items.length : (Array.isArray(oldInv.details?.items) ? oldInv.details.items.length : (oldInv.itemsCount || 0));
+        const newItems = Array.isArray(newInv.items) ? newInv.items.length : (Array.isArray(newInv.details?.items) ? newInv.details.items.length : (newInv.itemsCount || 0));
+        const oldTotal = Number(oldInv.total || oldInv.grandTotal || oldInv.details?.total || 0);
+        const newTotal = Number(newInv.total || newInv.grandTotal || newInv.details?.total || 0);
+
+        if (newItems > oldItems || (newItems === oldItems && newTotal > oldTotal)) {
+          const merged = Object.assign({}, oldInv, newInv);
+          merged.items = (newInv.items && newInv.items.length > 0) ? newInv.items : oldInv.items;
+          merged.details = Object.assign({}, oldInv.details || {}, newInv.details || {});
+          if (newInv.details?.items && newInv.details.items.length > 0) {
+            merged.details.items = newInv.details.items;
+          } else if (oldInv.details?.items && oldInv.details.items.length > 0) {
+            merged.details.items = oldInv.details.items;
+          }
+          map.set(key, merged);
+        } else {
+          const merged = Object.assign({}, newInv, oldInv);
+          if (newInv.paymentStatus && newInv.paymentStatus !== 'Unpaid') {
+            merged.paymentStatus = newInv.paymentStatus;
+            if (merged.details) merged.details.paymentStatus = newInv.paymentStatus;
+          }
+          if (newInv.paidAmount !== undefined && Number(newInv.paidAmount) > Number(oldInv.paidAmount || 0)) {
+            merged.paidAmount = newInv.paidAmount;
+            merged.balanceDue = newInv.balanceDue;
+            if (merged.details) {
+              merged.details.paidAmount = newInv.paidAmount;
+              merged.details.balanceDue = newInv.balanceDue;
+            }
+          }
+          map.set(key, merged);
+        }
+      }
+    });
+
+    return Array.from(map.values());
+  };
+
+  window.mergeProductsNonDestructively = function(existingList, incomingList) {
+    const existing = Array.isArray(existingList) ? existingList : [];
+    const incoming = Array.isArray(incomingList) ? incomingList : [];
+    if (incoming.length === 0) return existing.slice();
+    if (existing.length === 0) return incoming.slice();
+
+    const map = new Map();
+    const getKey = p => {
+      if (!p) return '';
+      const desc = String(p.description || p.name || '').trim().toLowerCase();
+      const barcode = String(p.barcode || '').trim().toLowerCase();
+      const id = String(p.id || '').trim().toLowerCase();
+      return desc || barcode || id;
+    };
+
+    existing.forEach(p => {
+      const k = getKey(p);
+      if (k) map.set(k, JSON.parse(JSON.stringify(p)));
+    });
+
+    incoming.forEach(p => {
+      const k = getKey(p);
+      if (!k) return;
+      if (!map.has(k)) {
+        map.set(k, JSON.parse(JSON.stringify(p)));
+      } else {
+        const oldProd = map.get(k);
+        const merged = Object.assign({}, oldProd, p);
+        // Retain existing stock if incoming stock is 0 or unassigned
+        if ((p.stock === 0 || p.stock === undefined || p.stock === null) && oldProd.stock > 0) {
+          merged.stock = oldProd.stock;
+          merged.totalValue = oldProd.totalValue;
+          merged.status = oldProd.status;
+        }
+        map.set(k, merged);
+      }
+    });
+
+    return Array.from(map.values());
+  };
+
+  window.mergePartiesNonDestructively = function(existingList, incomingList) {
+    const existing = Array.isArray(existingList) ? existingList : [];
+    const incoming = Array.isArray(incomingList) ? incomingList : [];
+    if (incoming.length === 0) return existing.slice();
+    if (existing.length === 0) return incoming.slice();
+
+    const map = new Map();
+    const getKey = p => {
+      if (!p) return '';
+      const name = String(p.name || p.company || '').trim().toLowerCase();
+      const phone = String(p.phone || '').trim().replace(/[^0-9]/g, '');
+      const id = String(p.id || '').trim().toLowerCase();
+      return name || phone || id;
+    };
+
+    existing.forEach(p => {
+      const k = getKey(p);
+      if (k) map.set(k, JSON.parse(JSON.stringify(p)));
+    });
+
+    incoming.forEach(p => {
+      const k = getKey(p);
+      if (!k) return;
+      if (!map.has(k)) {
+        map.set(k, JSON.parse(JSON.stringify(p)));
+      } else {
+        const oldParty = map.get(k);
+        const merged = Object.assign({}, oldParty);
+        if (p.phone && !oldParty.phone) merged.phone = p.phone;
+        if (p.gstin && !oldParty.gstin) merged.gstin = p.gstin;
+        if (p.address && !oldParty.address) merged.address = p.address;
+        if (p.email) merged.email = p.email;
+        if (p.state && !oldParty.state) merged.state = p.state;
+        if (p.stateCode && !oldParty.stateCode) merged.stateCode = p.stateCode;
+        if (p.city && !oldParty.city) merged.city = p.city;
+        map.set(k, merged);
+      }
+    });
+
+    return Array.from(map.values());
+  };
+
   // XSS Defense Helper
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
@@ -6266,17 +6419,9 @@ window.loadAllDatabases = function loadAllDatabases() {
       invoicesDb = invLocal;
       // Self-heal: If local storage only has partial invoices (e.g. only #EST-0002) and bootstrap snapshot has historical records, merge missing ones
       if (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.invoices) && INITIAL_BOOTSTRAP_SNAPSHOT.invoices.length > 0) {
-        const localNos = new Set(invoicesDb.map(i => String(i.invoiceNo || i.id || '').replace(/^#/, '').toLowerCase()));
-        let added = false;
-        INITIAL_BOOTSTRAP_SNAPSHOT.invoices.forEach(snapInv => {
-          const sNo = String(snapInv.invoiceNo || snapInv.id || '').replace(/^#/, '').toLowerCase();
-          if (sNo && !localNos.has(sNo)) {
-            invoicesDb.push(snapInv);
-            localNos.add(sNo);
-            added = true;
-          }
-        });
-        if (added) {
+        const beforeLen = invoicesDb.length;
+        invoicesDb = window.mergeInvoicesNonDestructively(invoicesDb, INITIAL_BOOTSTRAP_SNAPSHOT.invoices);
+        if (invoicesDb.length !== beforeLen) {
           try {
             localStorage.setItem("invoices", JSON.stringify(invoicesDb));
             localStorage.setItem("invoices_db", JSON.stringify(invoicesDb));
@@ -23748,11 +23893,13 @@ window.importDataFromMasterExcel = async function(event) {
         }
       }
 
-      const confirmMsg = `📊 RESTORE MASTER EXCEL DATABASE (.XLSX)?\n\n` +
-        `• 📦 Products & Stock: ${importedProducts.length}${prodsNote}\n` +
-        `• 👥 Customers & Ledgers: ${importedParties.length}${partiesNote}\n` +
-        `• 📄 Invoices & Line Items: ${importedInvoices.length}\n\n` +
-        `Click OK to restore these records and synchronize across Supabase Cloud.`;
+      const confirmMsg = `📊 IMPORT & MERGE MASTER EXCEL DATABASE (.XLSX)?\n\n` +
+        `• 📦 Products to merge: ${importedProducts.length}${prodsNote}\n` +
+        `• 👥 Customers to merge: ${importedParties.length}${partiesNote}\n` +
+        `• 📄 Invoices to merge: ${importedInvoices.length}\n\n` +
+        `🛡️ SAFE NON-DESTRUCTIVE IMPORT:\n` +
+        `Your existing active invoices, stock inventory, and customer ledgers will NOT be erased or affected.\n\n` +
+        `Click OK to merge these records into your store.`;
 
       if (!confirm(confirmMsg)) {
         if (event.target) event.target.value = "";
@@ -23784,51 +23931,48 @@ window.importDataFromMasterExcel = async function(event) {
         }
       });
 
-      // 1. Commit Products
-      if (importedProducts.length > 0) {
-        productsDb = importedProducts;
-        window.productsDb = productsDb;
-        localStorage.setItem("products", JSON.stringify(productsDb));
-        localStorage.setItem("products_db", JSON.stringify(productsDb));
-        if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllProducts === 'function') {
-          window.TurboIndexedDB.saveAllProducts(productsDb);
-        }
-        if (window.AaryanDB && typeof window.AaryanDB.saveAllProducts === 'function') {
-          window.AaryanDB.saveAllProducts(productsDb);
-        }
+      // 1. Commit Products (Non-Destructive Safe Merge: never wipes existing active catalog)
+      const existingProducts = (Array.isArray(productsDb) && productsDb.length > 0) ? productsDb : (JSON.parse(localStorage.getItem("products") || "[]") || []);
+      productsDb = window.mergeProductsNonDestructively(existingProducts, importedProducts);
+      window.productsDb = productsDb;
+      localStorage.setItem("products", JSON.stringify(productsDb));
+      localStorage.setItem("products_db", JSON.stringify(productsDb));
+      if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllProducts === 'function') {
+        window.TurboIndexedDB.saveAllProducts(productsDb);
+      }
+      if (window.AaryanDB && typeof window.AaryanDB.saveAllProducts === 'function') {
+        window.AaryanDB.saveAllProducts(productsDb);
       }
 
-      // 2. Commit Customers / Parties
-      if (importedParties.length > 0) {
-        partiesDb = importedParties;
-        window.partiesDb = partiesDb;
-        localStorage.setItem("parties", JSON.stringify(partiesDb));
-        localStorage.setItem("parties_db", JSON.stringify(partiesDb));
-        localStorage.setItem("parties_seeded", "true");
-        if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllParties === 'function') {
-          window.TurboIndexedDB.saveAllParties(partiesDb);
-        }
-        if (window.AaryanDB && typeof window.AaryanDB.saveAllParties === 'function') {
-          window.AaryanDB.saveAllParties(partiesDb);
-        }
+      // 2. Commit Customers / Parties (Non-Destructive Safe Merge: never wipes existing customers or balances)
+      const existingParties = (Array.isArray(partiesDb) && partiesDb.length > 0) ? partiesDb : (JSON.parse(localStorage.getItem("parties") || "[]") || []);
+      partiesDb = window.mergePartiesNonDestructively(existingParties, importedParties);
+      window.partiesDb = partiesDb;
+      localStorage.setItem("parties", JSON.stringify(partiesDb));
+      localStorage.setItem("parties_db", JSON.stringify(partiesDb));
+      localStorage.setItem("parties_seeded", "true");
+      if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllParties === 'function') {
+        window.TurboIndexedDB.saveAllParties(partiesDb);
+      }
+      if (window.AaryanDB && typeof window.AaryanDB.saveAllParties === 'function') {
+        window.AaryanDB.saveAllParties(partiesDb);
       }
 
-      // 3. Commit Invoices
-      if (importedInvoices.length > 0) {
-        invoicesDb = importedInvoices;
-        window.invoicesDb = invoicesDb;
-        localStorage.setItem("invoices", JSON.stringify(invoicesDb));
-        localStorage.setItem("invoices_db", JSON.stringify(invoicesDb));
-        if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllInvoices === 'function') {
-          window.TurboIndexedDB.saveAllInvoices(invoicesDb);
-        } else if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveInvoice === 'function') {
-          for (let i = 0; i < invoicesDb.length; i++) {
-            window.TurboIndexedDB.saveInvoice(invoicesDb[i]);
-          }
+      // 3. Commit Invoices (Non-Destructive Safe Merge: never wipes existing invoices)
+      const existingInvoices = (Array.isArray(invoicesDb) && invoicesDb.length > 0) ? invoicesDb : (JSON.parse(localStorage.getItem("invoices") || "[]") || []);
+      invoicesDb = window.mergeInvoicesNonDestructively(existingInvoices, importedInvoices);
+      window.invoicesDb = invoicesDb;
+      localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+      localStorage.setItem("invoices_db", JSON.stringify(invoicesDb));
+      if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveAllInvoices === 'function') {
+        window.TurboIndexedDB.saveAllInvoices(invoicesDb);
+      } else if (window.TurboIndexedDB && typeof window.TurboIndexedDB.saveInvoice === 'function') {
+        for (let i = 0; i < invoicesDb.length; i++) {
+          window.TurboIndexedDB.saveInvoice(invoicesDb[i]);
         }
-        if (window.AaryanDB && typeof window.AaryanDB.saveAllInvoices === 'function') {
-          window.AaryanDB.saveAllInvoices(invoicesDb);
-        }
+      }
+      if (window.AaryanDB && typeof window.AaryanDB.saveAllInvoices === 'function') {
+        window.AaryanDB.saveAllInvoices(invoicesDb);
       }
 
       if (window.TurboDataStore && typeof window.TurboDataStore.rebuildIndexes === 'function') {
@@ -24478,12 +24622,14 @@ window.importDataBackupJSON = function(event) {
         }
       }
 
-      const confirmMsg = `📦 RESTORE COMPLETE STORE BACKUP?\n\n` +
-        `• Invoices to restore: ${importedInvoices.length}\n` +
-        `• Products to restore: ${importedProducts.length}${prodsNote}\n` +
-        `• Parties / Customers to restore: ${importedParties.length}${partiesNote}\n` +
+      const confirmMsg = `📦 IMPORT & MERGE STORE BACKUP?\n\n` +
+        `• Invoices to merge: ${importedInvoices.length}\n` +
+        `• Products to merge: ${importedProducts.length}${prodsNote}\n` +
+        `• Parties / Customers to merge: ${importedParties.length}${partiesNote}\n` +
         `• Store Configuration: ${importedSettings ? 'Yes' : 'No'}\n\n` +
-        `Click OK to restore data and synchronize with Supabase Cloud.`;
+        `🛡️ SAFE NON-DESTRUCTIVE IMPORT:\n` +
+        `Your existing active invoices, stock inventory, and customer ledgers will NOT be erased or affected.\n\n` +
+        `Click OK to merge these records into your store.`;
 
       if (confirm(confirmMsg)) {
         window._isRestoringData = true;
@@ -24512,24 +24658,32 @@ window.importDataBackupJSON = function(event) {
           }
         });
 
-        invoicesDb = importedInvoices;
-        productsDb = importedProducts;
-        partiesDb = importedParties;
+        // Non-destructive safe merge: protect and preserve all existing data!
+        const existingInvoices = (Array.isArray(invoicesDb) && invoicesDb.length > 0) ? invoicesDb : (JSON.parse(localStorage.getItem("invoices") || "[]") || []);
+        const existingProducts = (Array.isArray(productsDb) && productsDb.length > 0) ? productsDb : (JSON.parse(localStorage.getItem("products") || "[]") || []);
+        const existingParties = (Array.isArray(partiesDb) && partiesDb.length > 0) ? partiesDb : (JSON.parse(localStorage.getItem("parties") || "[]") || []);
+
+        invoicesDb = window.mergeInvoicesNonDestructively(existingInvoices, importedInvoices);
+        productsDb = window.mergeProductsNonDestructively(existingProducts, importedProducts);
+        partiesDb = window.mergePartiesNonDestructively(existingParties, importedParties);
         window.invoicesDb = invoicesDb;
         window.productsDb = productsDb;
         window.partiesDb = partiesDb;
 
-        localStorage.setItem("invoices", JSON.stringify(importedInvoices));
-        localStorage.setItem("invoices_db", JSON.stringify(importedInvoices));
-        localStorage.setItem("products", JSON.stringify(importedProducts));
-        localStorage.setItem("products_db", JSON.stringify(importedProducts));
-        localStorage.setItem("parties", JSON.stringify(importedParties));
-        localStorage.setItem("parties_db", JSON.stringify(importedParties));
+        localStorage.setItem("invoices", JSON.stringify(invoicesDb));
+        localStorage.setItem("invoices_db", JSON.stringify(invoicesDb));
+        localStorage.setItem("products", JSON.stringify(productsDb));
+        localStorage.setItem("products_db", JSON.stringify(productsDb));
+        localStorage.setItem("parties", JSON.stringify(partiesDb));
+        localStorage.setItem("parties_db", JSON.stringify(partiesDb));
         localStorage.setItem("parties_seeded", "true");
-        if (importedSettings) {
-          localStorage.setItem("settings", JSON.stringify(importedSettings));
-          localStorage.setItem("global_settings", JSON.stringify(importedSettings));
-          window.globalSettings = importedSettings;
+        if (importedSettings && typeof importedSettings === 'object') {
+          globalSettings = Object.assign({}, globalSettings || {}, importedSettings);
+          if (importedSettings.company) globalSettings.company = Object.assign({}, globalSettings.company || {}, importedSettings.company);
+          if (importedSettings.bank) globalSettings.bank = Object.assign({}, globalSettings.bank || {}, importedSettings.bank);
+          localStorage.setItem("settings", JSON.stringify(globalSettings));
+          localStorage.setItem("global_settings", JSON.stringify(globalSettings));
+          window.globalSettings = globalSettings;
         }
 
         // Restore to IndexedDB
@@ -24729,33 +24883,25 @@ window.importInvoicesFromHistory = function(event) {
           return;
         }
 
-        if (!confirm(`📄 RESTORE ${newInvs.length} INVOICES FROM CSV?\n\nClick OK to merge and restore these invoices into your Invoice History.`)) {
+        if (!confirm(`📄 IMPORT & MERGE ${newInvs.length} INVOICES FROM CSV?\n\n🛡️ SAFE NON-DESTRUCTIVE IMPORT:\nYour existing invoices will NOT be erased or affected.\n\nClick OK to merge these invoices into your Invoice History.`)) {
           if (event.target) event.target.value = "";
           return;
         }
 
-        if (!Array.isArray(invoicesDb)) invoicesDb = [];
-        const existingMap = new Map();
-        invoicesDb.forEach(inv => {
-          const k = String(inv.invoiceNo || inv.id || '').replace(/^#/, '').toLowerCase();
-          if (k) existingMap.set(k, inv);
-        });
-
-        newInvs.forEach(newInv => {
-          const k = String(newInv.invoiceNo || newInv.id || '').replace(/^#/, '').toLowerCase();
-          if (k) {
-            existingMap.set(k, newInv);
-            if (typeof window.clearInvoiceTombstone === 'function') {
-              window.clearInvoiceTombstone(newInv.invoiceNo, newInv.id);
-            }
-          }
-        });
-
-        invoicesDb = Array.from(existingMap.values());
+        const existingInvoices = (Array.isArray(invoicesDb) && invoicesDb.length > 0) ? invoicesDb : (JSON.parse(localStorage.getItem("invoices") || "[]") || []);
+        invoicesDb = window.mergeInvoicesNonDestructively(existingInvoices, newInvs);
         window.invoicesDb = invoicesDb;
         localStorage.setItem("invoices", JSON.stringify(invoicesDb));
         localStorage.setItem("invoices_db", JSON.stringify(invoicesDb));
         localStorage.removeItem("deleted_invoice_ids");
+        localStorage.removeItem("cancelled_invoices");
+        localStorage.removeItem("database_history_cleared");
+
+        invoicesDb.forEach(inv => {
+          if (typeof window.clearInvoiceTombstone === 'function') {
+            window.clearInvoiceTombstone(inv.invoiceNo, inv.id);
+          }
+        });
         localStorage.removeItem("cancelled_invoices");
         localStorage.removeItem("database_history_cleared");
 
