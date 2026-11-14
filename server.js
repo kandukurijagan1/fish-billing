@@ -30,12 +30,12 @@ const server = http.createServer((req, res) => {
   let reqPath = req.url.split('?')[0];
 
   const reqOrigin = req.headers.origin || '';
-  const isTrustedOrigin = !reqOrigin || reqOrigin === 'null' ||
-    reqOrigin.includes('aaryanaqua.netlify.app') ||
-    reqOrigin.includes('aaryan-aqua-billing.netlify.app') ||
-    reqOrigin.includes('kandukurijagan1.github.io') ||
-    reqOrigin.includes('localhost') ||
-    reqOrigin.includes('127.0.0.1');
+  let originHost = '';
+  try { originHost = reqOrigin ? new URL(reqOrigin).hostname : ''; } catch (e) {}
+  const isTrustedOrigin = !reqOrigin || reqOrigin === 'null' || [
+    'aaryanaqua.netlify.app', 'aaryan-aqua-billing.netlify.app',
+    'kandukurijagan1.github.io', 'localhost', '127.0.0.1'
+  ].includes(originHost);
   const safeCorsOrigin = isTrustedOrigin ? (reqOrigin || '*') : 'https://aaryanaqua.netlify.app';
 
   // Cloud Health Check endpoint (for Render, Railway, Fly.io, Kubernetes, Docker)

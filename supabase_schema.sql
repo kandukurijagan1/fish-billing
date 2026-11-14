@@ -79,8 +79,21 @@ alter table public.products enable row level security;
 alter table public.customers enable row level security;
 alter table public.settings enable row level security;
 
--- Policies allowing authenticated & anon access (adjust as needed for your project's auth model)
-create policy "Allow all on invoices" on public.invoices for all using (true) with check (true);
-create policy "Allow all on products" on public.products for all using (true) with check (true);
-create policy "Allow all on customers" on public.customers for all using (true) with check (true);
-create policy "Allow all on settings" on public.settings for all using (true) with check (true);
+-- Never expose business records to the public anon key. The previous policies
+-- allowed anyone who could open the web app to read, alter, or delete every
+-- invoice, customer, product, and setting. Keep RLS enabled and explicitly
+-- revoke anonymous access. A production sync service must use a server-side
+-- service-role key or authenticated Supabase users with tenant-specific policies.
+drop policy if exists "Allow all on invoices" on public.invoices;
+drop policy if exists "Allow all on products" on public.products;
+drop policy if exists "Allow all on customers" on public.customers;
+drop policy if exists "Allow all on settings" on public.settings;
+
+revoke all on public.invoices from anon;
+revoke all on public.products from anon;
+revoke all on public.customers from anon;
+revoke all on public.settings from anon;
+
+-- Deliberately create no permissive policy here. With RLS enabled, all direct
+-- browser access is denied until a properly authenticated, tenant-scoped policy
+-- is installed. This is the safe default for financial and customer data.

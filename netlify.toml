@@ -8,6 +8,13 @@
   NETLIFY_SKIP_INSTALL = "true"
   NPM_FLAGS = "--no-audit --ignore-scripts"
 
+# Google Apps Script Cloud Backup Proxy (Eliminates all browser CORS and redirect blocks)
+[[redirects]]
+  from = "/api/gas-backup"
+  to = "https://script.google.com/macros/s/AKfycbwXIi4FIu9Z_eqJ-w0cX9lKc-ilS7TF23sqVRlykTsFE1C7pFD-PJJtxe3MuKGCCRMYXw/exec"
+  status = 200
+  force = true
+
 # Security Redirects: Block access to dotfiles, environment files and backend metadata
 [[redirects]]
   from = "/.env"

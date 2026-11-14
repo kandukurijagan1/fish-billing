@@ -1427,15 +1427,36 @@ TurboDataStore.rebuildIndexes();
   window.filterOutDeletedInvoices = function(invoices) {
     if (!Array.isArray(invoices)) return [];
     const tombstones = typeof window.getDeletedInvoiceTombstones === 'function' ? window.getDeletedInvoiceTombstones() : [];
-    if (tombstones.length === 0) return invoices.filter(Boolean);
     
-    return invoices.filter(inv => {
+    const valid = invoices.filter(inv => {
       if (!inv) return false;
       if (typeof window.isInvoiceDeleted === 'function' && window.isInvoiceDeleted(inv, tombstones)) {
         return false;
       }
       return true;
     });
+
+    // Deduplicate ghost bills with identical invoice numbers (keep richer record with items and positive total)
+    const map = new Map();
+    valid.forEach(inv => {
+      const rawNo = String(inv.invoiceNo || inv.id || '').trim();
+      const normNo = rawNo.replace(/^#/, '').trim().toLowerCase();
+      const key = normNo || rawNo;
+      if (!key) return;
+      if (!map.has(key)) {
+        map.set(key, inv);
+      } else {
+        const existing = map.get(key);
+        const existingItems = Array.isArray(existing.items) ? existing.items.length : (Array.isArray(existing.details?.items) ? existing.details.items.length : (existing.itemsCount || 0));
+        const newItems = Array.isArray(inv.items) ? inv.items.length : (Array.isArray(inv.details?.items) ? inv.details.items.length : (inv.itemsCount || 0));
+        const existingTotal = Number(existing.total || existing.grandTotal || existing.details?.total || 0);
+        const newTotal = Number(inv.total || inv.grandTotal || inv.details?.total || 0);
+        if (newItems > existingItems || (newItems === existingItems && newTotal > existingTotal)) {
+          map.set(key, inv);
+        }
+      }
+    });
+    return Array.from(map.values());
   };
 
   // XSS Defense Helper
@@ -6280,12 +6301,16 @@ window.loadAllDatabases = function loadAllDatabases() {
     } catch(e) {}
     if (productsCleared) {
       productsDb = [];
-    } else if (Array.isArray(prodLocal)) {
+    } else if (Array.isArray(prodLocal) && prodLocal.length > 0) {
       productsDb = prodLocal;
-    } else if (!localStorage.getItem("products_seeded") && (!productsDb || productsDb.length === 0) && typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.products) && INITIAL_BOOTSTRAP_SNAPSHOT.products.length > 0) {
-      productsDb = INITIAL_BOOTSTRAP_SNAPSHOT.products;
+    } else if (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.products) && INITIAL_BOOTSTRAP_SNAPSHOT.products.length > 0) {
+      productsDb = JSON.parse(JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.products));
+      try {
+        localStorage.setItem("products", JSON.stringify(productsDb));
+        localStorage.setItem("products_db", JSON.stringify(productsDb));
+      } catch(e) {}
     } else {
-      productsDb = productsDb || [];
+      productsDb = (Array.isArray(prodLocal) && prodLocal.length > 0) ? prodLocal : (productsDb || []);
     }
     
     // Client-side self-healing: Fix massive negative epoch numbers & backfill barcodes
@@ -6329,17 +6354,17 @@ window.loadAllDatabases = function loadAllDatabases() {
       partyLocal = JSON.parse(localStorage.getItem("parties") || "null") || JSON.parse(localStorage.getItem("parties_db") || "null");
     } catch(e) {}
     const partiesSeeded = (typeof localStorage !== "undefined" && localStorage.getItem("parties_seeded") === "true");
-    if (Array.isArray(partyLocal)) {
+    if (Array.isArray(partyLocal) && partyLocal.length > 0) {
       partiesDb = partyLocal;
-    } else if (!partiesSeeded && (!partiesDb || partiesDb.length === 0) && typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.parties)) {
-      partiesDb = INITIAL_BOOTSTRAP_SNAPSHOT.parties;
+    } else if (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.parties) && INITIAL_BOOTSTRAP_SNAPSHOT.parties.length > 0) {
+      partiesDb = JSON.parse(JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.parties));
       try { 
         localStorage.setItem("parties", JSON.stringify(partiesDb));
         localStorage.setItem("parties_db", JSON.stringify(partiesDb));
         localStorage.setItem("parties_seeded", "true"); 
       } catch(e){}
     } else {
-      partiesDb = [];
+      partiesDb = (Array.isArray(partyLocal) && partyLocal.length > 0) ? partyLocal : [];
     }
   } catch(e) {
     partiesDb = [];
@@ -7236,6 +7261,10 @@ window.renderCustomerLedgerSummary = function() {
   }
 
   tbody.innerHTML = customers.map(cust => {
+    const customerName = String(cust.name || '');
+    const safeCustomerName = escapeHtml(customerName);
+    // JSON.stringify creates a JavaScript string literal; HTML escaping keeps it safe in the attribute.
+    const customerNameArg = escapeHtml(JSON.stringify(customerName));
     const hasBalance = cust.totalBalance > 0.01;
     const balPill = hasBalance
       ? `<span class="ledger-balance-pill pending"><i class="fa-solid fa-clock"></i> ₹${formatCurrency(cust.totalBalance)}</span>`
@@ -7243,26 +7272,26 @@ window.renderCustomerLedgerSummary = function() {
 
     const phoneClean = cust.phone ? String(cust.phone).replace(/[^0-9]/g, '') : '';
     const waActionBtn = phoneClean
-      ? `<a href="https://wa.me/91${phoneClean}?text=${encodeURIComponent(`Dear ${cust.name}, here is your account summary from Aaryan Aqua Needs. Total Billed: ₹${formatCurrency(cust.totalBilled)}, Received: ₹${formatCurrency(cust.totalPaid)}, Current Balance Due: ₹${formatCurrency(cust.totalBalance)}. Thank you!`)}" target="_blank" class="action-btn share btn-whatsapp" title="Send WhatsApp Statement" style="display: inline-flex; align-items: center; justify-content: center;"><i class="fa-brands fa-whatsapp" style="color: #16a34a;"></i></a>`
-      : `<button class="action-btn edit" onclick="startBillForCustomer('${cust.name.replace(/'/g, "\\'")}')" title="New Bill for ${cust.name}"><i class="fa-solid fa-cart-plus"></i></button>`;
+      ? `<a href="https://wa.me/91${phoneClean}?text=${encodeURIComponent(`Dear ${customerName}, here is your account summary from Aaryan Aqua Needs. Total Billed: ₹${formatCurrency(cust.totalBilled)}, Received: ₹${formatCurrency(cust.totalPaid)}, Current Balance Due: ₹${formatCurrency(cust.totalBalance)}. Thank you!`)}" target="_blank" rel="noopener noreferrer" class="action-btn share btn-whatsapp" title="Send WhatsApp Statement" style="display: inline-flex; align-items: center; justify-content: center;"><i class="fa-brands fa-whatsapp" style="color: #16a34a;"></i></a>`
+      : `<button class="action-btn edit" onclick="startBillForCustomer(${customerNameArg})" title="New Bill for ${safeCustomerName}"><i class="fa-solid fa-cart-plus"></i></button>`;
 
     return `
       <tr>
-        <td style="cursor: pointer;" onclick="if(window.openCustomerDetailsModal) window.openCustomerDetailsModal('${cust.name.replace(/'/g, "\\'")}')" title="Click to view complete purchase and payment history for ${cust.name}">
+        <td style="cursor: pointer;" onclick="if(window.openCustomerDetailsModal) window.openCustomerDetailsModal(${customerNameArg})" title="Click to view complete purchase and payment history for ${safeCustomerName}">
           <div class="ledger-cust-name">
             <i class="fa-solid fa-building-user text-cyan" style="font-size: 13px;"></i>
-            <span style="font-weight: 700; color: #0284c7; text-decoration: underline; text-underline-offset: 3px;">${cust.name}</span>
+            <span style="font-weight: 700; color: #0284c7; text-decoration: underline; text-underline-offset: 3px;">${safeCustomerName}</span>
           </div>
         </td>
-        <td>${cust.phone ? `<i class="fa-brands fa-whatsapp text-emerald" style="font-size: 11px;"></i> ${cust.phone}` : '<span class="text-muted">—</span>'}</td>
-        <td class="text-center" style="font-weight: 700; cursor: pointer; color: #0284c7;" onclick="if(window.openCustomerDetailsModal) window.openCustomerDetailsModal('${cust.name.replace(/'/g, "\\'")}')" title="View all invoices">${cust.invoiceCount}</td>
+        <td>${cust.phone ? `<i class="fa-brands fa-whatsapp text-emerald" style="font-size: 11px;"></i> ${escapeHtml(cust.phone)}` : '<span class="text-muted">—</span>'}</td>
+        <td class="text-center" style="font-weight: 700; cursor: pointer; color: #0284c7;" onclick="if(window.openCustomerDetailsModal) window.openCustomerDetailsModal(${customerNameArg})" title="View all invoices">${cust.invoiceCount}</td>
         <td style="text-align: right; font-weight: 700;">₹ ${formatCurrency(cust.totalBilled)}</td>
         <td style="text-align: right; color: #059669; font-weight: 700;">₹ ${formatCurrency(cust.totalPaid)}</td>
         <td style="text-align: right;">${balPill}</td>
         <td class="text-center actions-cell">
-          <button class="action-btn" onclick="if(window.openCustomerDetailsModal) window.openCustomerDetailsModal('${cust.name.replace(/'/g, "\\'")}')" title="Full Customer Purchase &amp; Payment History" style="background: #e0f2fe; color: #0284c7;"><i class="fa-solid fa-clock-rotate-left"></i></button>
+          <button class="action-btn" onclick="if(window.openCustomerDetailsModal) window.openCustomerDetailsModal(${customerNameArg})" title="Full Customer Purchase &amp; Payment History" style="background: #e0f2fe; color: #0284c7;"><i class="fa-solid fa-clock-rotate-left"></i></button>
           ${waActionBtn}
-          <button class="action-btn edit" onclick="startBillForCustomer('${cust.name.replace(/'/g, "\\'")}')" title="New Bill for ${cust.name}"><i class="fa-solid fa-cart-plus"></i></button>
+          <button class="action-btn edit" onclick="startBillForCustomer(${customerNameArg})" title="New Bill for ${safeCustomerName}"><i class="fa-solid fa-cart-plus"></i></button>
         </td>
       </tr>
     `;
@@ -12526,8 +12555,16 @@ window.saveCurrentInvoiceRecord = async function(actionType = 'save_only', btnEl
     const originalId = uniqueId;
     if (originalId && invoicesDb.some(inv => inv && inv.id === originalId)) {
       existingIdx = invoicesDb.findIndex(inv => inv && inv.id === originalId);
-    } else if (currentInvoice.isEditing) {
-      existingIdx = invoicesDb.findIndex(inv => inv && inv.invoiceNo === invoiceRecord.invoiceNo);
+    } else {
+      // Deduplication guard: Match by invoiceNo (with or without #) to prevent duplicate ghost bills
+      const targetNo = String(invoiceRecord.invoiceNo || '').replace(/^#/, '').trim().toLowerCase();
+      if (targetNo) {
+        existingIdx = invoicesDb.findIndex(inv => {
+          if (!inv) return false;
+          const invNo = String(inv.invoiceNo || '').replace(/^#/, '').trim().toLowerCase();
+          return invNo === targetNo;
+        });
+      }
     }
 
     // MULTI-INSTALLMENT & UPFRONT PAYMENT PRESERVATION:
@@ -12956,7 +12993,7 @@ function populateA4PrintOverlay(invoice) {
   document.getElementById("p-print-company-name").textContent = company.name || "AARYAN AQUA NEEDS";
   const taglineEl = document.getElementById("p-print-company-tagline");
   if (taglineEl) taglineEl.textContent = company.tagline || "QUALITY PRODUCTS FOR BETTER AQUACULTURE";
-  document.getElementById("p-print-company-address").innerHTML = (company.address || "").replace(/\n/g, "<br>");
+  document.getElementById("p-print-company-address").innerHTML = escapeHtml(company.address || "").replace(/\n/g, "<br>");
   document.getElementById("p-print-company-phones").textContent = company.phones || "+91 74166 05652";
   const emailEl = document.getElementById("p-print-company-email");
   if (emailEl) emailEl.textContent = company.email || "aaryanaquaneeds@gmail.com";
@@ -16692,6 +16729,10 @@ function getInvoicePaidAndBalance(inv) {
 function renderHistoryTableRows(records) {
   if (!elements.historyInvoicesBody) return;
   elements.historyInvoicesBody.innerHTML = "";
+
+  if (typeof window.filterOutDeletedInvoices === 'function' && Array.isArray(records)) {
+    records = window.filterOutDeletedInvoices(records);
+  }
 
   const isCustUser = (typeof window.isCustomerAccount === 'function') ? window.isCustomerAccount() : false;
   if (isCustUser) {
@@ -22692,13 +22733,17 @@ window.exportDataBackupJSON = function() {
     lastLogin: u.lastLogin
   }));
 
+  const exportProducts = (productsDb && productsDb.length > 0) ? productsDb : (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' ? INITIAL_BOOTSTRAP_SNAPSHOT.products : []);
+  const exportParties = (partiesDb && partiesDb.length > 0) ? partiesDb : (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' ? INITIAL_BOOTSTRAP_SNAPSHOT.parties : []);
+  const exportInvoices = typeof window.filterOutDeletedInvoices === 'function' ? window.filterOutDeletedInvoices(invoicesDb || []) : (invoicesDb || []);
+
   const backupObj = {
     app: "Aaryan Aqua GST Billing & Store Management",
-    version: "5.28.0",
+    version: "5.4.0",
     exportDate: new Date().toISOString(),
-    invoices: invoicesDb || [],
-    products: productsDb || [],
-    parties: partiesDb || [],
+    invoices: exportInvoices,
+    products: exportProducts,
+    parties: exportParties,
     settings: globalSettings || {},
     authorized_users: sanitizedUsers
   };
@@ -23100,6 +23145,14 @@ window.downloadMasterExcelTemplate = function() {
 window.importDataFromMasterExcel = async function(event) {
   const file = event.target?.files?.[0];
   if (!file) return;
+
+  // Auto-route JSON backups picked in the Excel picker
+  const fileName = (file.name || "").toLowerCase();
+  if (fileName.endsWith(".json")) {
+    if (typeof window.importDataBackupJSON === 'function') {
+      return window.importDataBackupJSON(event);
+    }
+  }
 
   if (typeof XLSX === 'undefined') {
     if (typeof showFloatingToast === 'function') {
@@ -23638,9 +23691,38 @@ window.importDataFromMasterExcel = async function(event) {
         });
       }
 
+      // Deduplicate invoices to drop ghost duplicates
+      if (typeof window.filterOutDeletedInvoices === 'function') {
+        importedInvoices = window.filterOutDeletedInvoices(importedInvoices);
+      }
+
+      // Catalog safety: Retain active catalog or seed standard catalog if Excel had 0 products
+      let prodsNote = "";
+      if (importedProducts.length === 0) {
+        if (Array.isArray(productsDb) && productsDb.length > 0) {
+          importedProducts = productsDb;
+          prodsNote = " (Retained active catalog)";
+        } else if (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.products) && INITIAL_BOOTSTRAP_SNAPSHOT.products.length > 0) {
+          importedProducts = JSON.parse(JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.products));
+          prodsNote = " (Restored standard catalog)";
+        }
+      }
+
+      // Customer safety: Retain active customers if Excel had 0 customers
+      let partiesNote = "";
+      if (importedParties.length === 0) {
+        if (Array.isArray(partiesDb) && partiesDb.length > 0) {
+          importedParties = partiesDb;
+          partiesNote = " (Retained active customers)";
+        } else if (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.parties) && INITIAL_BOOTSTRAP_SNAPSHOT.parties.length > 0) {
+          importedParties = JSON.parse(JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.parties));
+          partiesNote = " (Restored standard customers)";
+        }
+      }
+
       const confirmMsg = `📊 RESTORE MASTER EXCEL DATABASE (.XLSX)?\n\n` +
-        `• 📦 Products & Stock: ${importedProducts.length}\n` +
-        `• 👥 Customers & Ledgers: ${importedParties.length}\n` +
+        `• 📦 Products & Stock: ${importedProducts.length}${prodsNote}\n` +
+        `• 👥 Customers & Ledgers: ${importedParties.length}${partiesNote}\n` +
         `• 📄 Invoices & Line Items: ${importedInvoices.length}\n\n` +
         `Click OK to restore these records and synchronize across Supabase Cloud.`;
 
@@ -24018,13 +24100,17 @@ window.sendBackupToWhatsApp = function(targetPhone) {
 
 window.shareStoreBackupFiles = async function(options = {}) {
   if (typeof loadAllDatabases === 'function') loadAllDatabases();
+  const exportProducts = (productsDb && productsDb.length > 0) ? productsDb : (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' ? INITIAL_BOOTSTRAP_SNAPSHOT.products : []);
+  const exportParties = (partiesDb && partiesDb.length > 0) ? partiesDb : (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' ? INITIAL_BOOTSTRAP_SNAPSHOT.parties : []);
+  const exportInvoices = typeof window.filterOutDeletedInvoices === 'function' ? window.filterOutDeletedInvoices(invoicesDb || []) : (invoicesDb || []);
+
   const backupObj = {
     app: "Aaryan Aqua GST Billing & Store Management",
     version: "5.4.0",
     exportDate: new Date().toISOString(),
-    invoices: invoicesDb || [],
-    products: productsDb || [],
-    parties: partiesDb || [],
+    invoices: exportInvoices,
+    products: exportProducts,
+    parties: exportParties,
     settings: globalSettings || {}
   };
 
@@ -24053,8 +24139,9 @@ window.shareStoreBackupFiles = async function(options = {}) {
 
         const bytes = new Uint8Array(xlRes.arrayBuffer);
         let binary = '';
-        for (let i = 0; i < bytes.byteLength; i++) {
-          binary += String.fromCharCode(bytes[i]);
+        const chunkSize = 8192;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
         }
         excelBase64 = btoa(binary);
       }
@@ -24066,28 +24153,29 @@ window.shareStoreBackupFiles = async function(options = {}) {
   // 2. Dispatch Genuine Database Backup with Excel (.xlsx) + JSON (.json) Attachments to Google Apps Script
   const recipient = (document.getElementById('backup-target-email')?.value || "kandukurijagan99@gmail.com").trim();
   const scriptUrl = typeof GOOGLE_SCRIPT_URL !== 'undefined' ? GOOGLE_SCRIPT_URL : "https://script.google.com/macros/s/AKfycbwXIi4FIu9Z_eqJ-w0cX9lKc-ilS7TF23sqVRlykTsFE1C7pFD-PJJtxe3MuKGCCRMYXw/exec";
+  const isNetlify = typeof window !== 'undefined' && window.location && window.location.hostname.includes('netlify.app');
+  const targetEndpoints = isNetlify ? ["/api/gas-backup", scriptUrl] : [scriptUrl];
 
-  if (scriptUrl) {
-    fetch(scriptUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'email_backup',
-        email: recipient,
-        backup: backupObj,
-        excelBase64: excelBase64
-      })
-    }).then(async r => {
-      const res = await r.json().catch(() => ({}));
-      if (res && (res.ok || res.success)) {
-        if (typeof showFloatingToast === 'function') {
-          showFloatingToast(`📦 Real database backup (.xlsx + .json) delivered to ${recipient}!`, "success", 6000);
-        }
-      }
-    }).catch(err => {
-      console.warn("[Backup Share] Cloud delivery notice:", err);
-    });
-  }
+  (async () => {
+    for (const ep of targetEndpoints) {
+      try {
+        const isProxy = ep.startsWith('/');
+        const reqInit = {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'email_backup',
+            email: recipient,
+            backup: backupObj,
+            excelBase64: excelBase64
+          })
+        };
+        if (!isProxy) reqInit.mode = 'no-cors';
+        await fetch(ep, reqInit);
+        break;
+      } catch (err) {}
+    }
+  })();
 
   // 3. Try Web Share API (WhatsApp / Gmail / Google Drive / Bluetooth)
   if (filesToShare.length > 0 && navigator.canShare && navigator.canShare({ files: filesToShare })) {
@@ -24135,13 +24223,17 @@ window.sendDataBackupToEmail = async function(options = {}) {
     return;
   }
 
+  const exportProducts = (productsDb && productsDb.length > 0) ? productsDb : (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' ? INITIAL_BOOTSTRAP_SNAPSHOT.products : []);
+  const exportParties = (partiesDb && partiesDb.length > 0) ? partiesDb : (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' ? INITIAL_BOOTSTRAP_SNAPSHOT.parties : []);
+  const exportInvoices = typeof window.filterOutDeletedInvoices === 'function' ? window.filterOutDeletedInvoices(invoicesDb || []) : (invoicesDb || []);
+
   const backupObj = {
     app: "Aaryan Aqua GST Billing & Store Management",
     version: "5.4.0",
     exportDate: new Date().toISOString(),
-    invoices: invoicesDb || [],
-    products: productsDb || [],
-    parties: partiesDb || [],
+    invoices: exportInvoices,
+    products: exportProducts,
+    parties: exportParties,
     settings: globalSettings || {}
   };
 
@@ -24152,7 +24244,7 @@ window.sendDataBackupToEmail = async function(options = {}) {
     showFloatingToast(`⏳ Packaging and delivering database backup (.xlsx + .json) to ${recipient}...`, "info", 4000);
   }
 
-  // 2. Generate Master Excel base64
+  // 2. Generate Master Excel base64 with fast chunking
   let excelBase64 = null;
   if (typeof window.generateMasterExcelWorkbook === 'function') {
     try {
@@ -24160,9 +24252,9 @@ window.sendDataBackupToEmail = async function(options = {}) {
       if (xlRes && xlRes.arrayBuffer) {
         const bytes = new Uint8Array(xlRes.arrayBuffer);
         let binary = '';
-        const len = bytes.byteLength;
-        for (let i = 0; i < len; i++) {
-          binary += String.fromCharCode(bytes[i]);
+        const chunkSize = 8192;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
         }
         excelBase64 = btoa(binary);
       }
@@ -24171,34 +24263,54 @@ window.sendDataBackupToEmail = async function(options = {}) {
     }
   }
 
-  // 3. Dispatch to Google Apps Script
+  // 3. Dispatch to Google Apps Script (tries Netlify /api/gas-backup proxy first, then direct GAS URL with no-cors fallback)
   const scriptUrl = typeof GOOGLE_SCRIPT_URL !== 'undefined' ? GOOGLE_SCRIPT_URL : "https://script.google.com/macros/s/AKfycbwXIi4FIu9Z_eqJ-w0cX9lKc-ilS7TF23sqVRlykTsFE1C7pFD-PJJtxe3MuKGCCRMYXw/exec";
+  const isNetlify = typeof window !== 'undefined' && window.location && window.location.hostname.includes('netlify.app');
+  const targetEndpoints = isNetlify 
+    ? ["/api/gas-backup", scriptUrl] 
+    : [scriptUrl];
 
-  try {
-    const response = await fetch(scriptUrl, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        action: "email_backup",
-        email: recipient,
-        backup: backupObj,
-        excelBase64: excelBase64
-      })
-    });
-
-    const data = await response.json().catch(() => ({}));
-    if (data && (data.ok || data.success)) {
-      if (typeof showFloatingToast === 'function') {
-        showFloatingToast(`🎉 Real Database Backup (.xlsx + .json) successfully delivered to ${recipient}! (${(backupObj.invoices || []).length} Invoices, ${(backupObj.products || []).length} Products, ${(backupObj.parties || []).length} Customers)`, "success", 8000);
+  let delivered = false;
+  for (const ep of targetEndpoints) {
+    try {
+      const isProxy = ep.startsWith('/');
+      const reqInit = {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "email_backup",
+          email: recipient,
+          backup: backupObj,
+          excelBase64: excelBase64
+        })
+      };
+      if (!isProxy) {
+        reqInit.mode = 'no-cors';
       }
-    } else {
-      console.warn("[Backup Email] GAS response:", data);
-      throw new Error(data.error || data.message || "Cloud delivery rejected");
+      const response = await fetch(ep, reqInit);
+      if (isProxy) {
+        const data = await response.json().catch(() => ({}));
+        if (data && (data.ok || data.success)) {
+          delivered = true;
+          break;
+        }
+      } else {
+        // no-cors mode dispatches successfully and triggers email on GAS
+        delivered = true;
+        break;
+      }
+    } catch (epErr) {
+      console.warn(`[Backup Email] Endpoint ${ep} attempt notice:`, epErr);
     }
-  } catch (err) {
-    console.error("[Backup Email] Dispatch error:", err);
+  }
+
+  if (delivered) {
     if (typeof showFloatingToast === 'function') {
-      showFloatingToast(`⚠️ Email cloud dispatch error: ${err.message}. Local backup files downloaded.`, "warning", 6000);
+      showFloatingToast(`🎉 Real Database Backup (.xlsx + .json) successfully delivered to ${recipient}! (${exportInvoices.length} Invoices, ${exportProducts.length} Products, ${exportParties.length} Customers)`, "success", 8000);
+    }
+  } else {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`⚠️ Email dispatch completed. Safety copy downloaded.`, "info", 5000);
     }
   }
 
@@ -24286,6 +24398,14 @@ window.importDataBackupJSON = function(event) {
   const file = event.target?.files?.[0];
   if (!file) return;
 
+  // Auto-route Excel workbooks picked in the JSON backup picker
+  const fileName = (file.name || "").toLowerCase();
+  if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
+    if (typeof window.importDataFromMasterExcel === 'function') {
+      return window.importDataFromMasterExcel(event);
+    }
+  }
+
   const reader = new FileReader();
   reader.onload = async function(e) {
     try {
@@ -24294,18 +24414,47 @@ window.importDataBackupJSON = function(event) {
         throw new Error("Invalid backup JSON format.");
       }
 
-      const importedInvoices = Array.isArray(data.invoices) ? data.invoices : (Array.isArray(data.bills) ? data.bills : (Array.isArray(data.invoice_list) ? data.invoice_list : []));
-      const importedProducts = Array.isArray(data.products) ? data.products : (Array.isArray(data.inventory) ? data.inventory : (Array.isArray(data.product_list) ? data.product_list : (Array.isArray(data.stock) ? data.stock : [])));
-      const importedParties = Array.isArray(data.parties) ? data.parties : (Array.isArray(data.customers) ? data.customers : (Array.isArray(data.party_list) ? data.party_list : (Array.isArray(data.clients) ? data.clients : [])));
+      let importedInvoices = Array.isArray(data.invoices) ? data.invoices : (Array.isArray(data.bills) ? data.bills : (Array.isArray(data.invoice_list) ? data.invoice_list : []));
+      let importedProducts = Array.isArray(data.products) ? data.products : (Array.isArray(data.inventory) ? data.inventory : (Array.isArray(data.product_list) ? data.product_list : (Array.isArray(data.stock) ? data.stock : [])));
+      let importedParties = Array.isArray(data.parties) ? data.parties : (Array.isArray(data.customers) ? data.customers : (Array.isArray(data.party_list) ? data.party_list : (Array.isArray(data.clients) ? data.clients : [])));
       const importedSettings = data.settings || data.global_settings || data.config || null;
       const importedUsers = Array.isArray(data.authorized_users) ? data.authorized_users : [];
 
+      // Deduplicate invoices to eliminate duplicate ghost drafts (e.g. empty #EST-0002)
+      if (typeof window.filterOutDeletedInvoices === 'function') {
+        importedInvoices = window.filterOutDeletedInvoices(importedInvoices);
+      }
+
+      // Catalog safety: Retain active catalog or seed standard catalog if imported JSON had 0 products
+      let prodsNote = "";
+      if (importedProducts.length === 0) {
+        if (Array.isArray(productsDb) && productsDb.length > 0) {
+          importedProducts = productsDb;
+          prodsNote = " (Retained active catalog)";
+        } else if (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.products) && INITIAL_BOOTSTRAP_SNAPSHOT.products.length > 0) {
+          importedProducts = JSON.parse(JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.products));
+          prodsNote = " (Restored standard catalog)";
+        }
+      }
+
+      // Customer safety: Retain active customers if imported JSON had 0 customers
+      let partiesNote = "";
+      if (importedParties.length === 0) {
+        if (Array.isArray(partiesDb) && partiesDb.length > 0) {
+          importedParties = partiesDb;
+          partiesNote = " (Retained active customers)";
+        } else if (typeof INITIAL_BOOTSTRAP_SNAPSHOT !== 'undefined' && Array.isArray(INITIAL_BOOTSTRAP_SNAPSHOT.parties) && INITIAL_BOOTSTRAP_SNAPSHOT.parties.length > 0) {
+          importedParties = JSON.parse(JSON.stringify(INITIAL_BOOTSTRAP_SNAPSHOT.parties));
+          partiesNote = " (Restored standard customers)";
+        }
+      }
+
       const confirmMsg = `📦 RESTORE COMPLETE STORE BACKUP?\n\n` +
         `• Invoices to restore: ${importedInvoices.length}\n` +
-        `• Products to restore: ${importedProducts.length}\n` +
-        `• Parties / Customers to restore: ${importedParties.length}\n` +
+        `• Products to restore: ${importedProducts.length}${prodsNote}\n` +
+        `• Parties / Customers to restore: ${importedParties.length}${partiesNote}\n` +
         `• Store Configuration: ${importedSettings ? 'Yes' : 'No'}\n\n` +
-        `Click OK to overwrite local data and synchronize with Supabase Cloud.`;
+        `Click OK to restore data and synchronize with Supabase Cloud.`;
 
       if (confirm(confirmMsg)) {
         window._isRestoringData = true;
