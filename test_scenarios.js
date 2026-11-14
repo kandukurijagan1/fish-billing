@@ -435,6 +435,19 @@ async function runAllTests() {
   assert(InvoiceUtils.validateDirectMailAuth('unauthorized@example.com') === false, 'Unauthorized email is rejected by Direct Mail Auth');
   assert(InvoiceUtils.validateDirectMailAuth('staff@aaryanaqua.com', staffList) === true, 'Authorized staff email authenticates via Direct Mail Auth');
 
+  // 5. Official Google Cloud OAuth 2.0 Endpoint & Redirect URI Formulation
+  const prodRedirectUri = InvoiceUtils.validateGoogleOAuthRedirectUri('https://aaryanaqua.netlify.app');
+  assert(prodRedirectUri === 'https://aaryanaqua.netlify.app/', 'Production Netlify redirect URI strictly formulated with trailing slash');
+  const localRedirectUri = InvoiceUtils.validateGoogleOAuthRedirectUri('http://localhost:3000');
+  assert(localRedirectUri === 'http://localhost:3000', 'Local dev redirect URI maps to http://localhost:3000');
+
+  const authUrl = InvoiceUtils.buildGoogleOAuthUrl();
+  assert(authUrl.startsWith('https://accounts.google.com/o/oauth2/v2/auth?'), 'Google OAuth authorization endpoint starts with official Google URL');
+  assert(authUrl.includes('client_id=902168382803-6gof845v72ku6k4lp4mecsgr3l1uc3s0.apps.googleusercontent.com'), 'Google OAuth URL contains official client ID');
+  assert(authUrl.includes('response_type=token'), 'Google OAuth URL requests token for direct implicit client-side authentication');
+  assert(authUrl.includes('redirect_uri=https%3A%2F%2Faaryanaqua.netlify.app%2F'), 'Google OAuth URL encodes authorized redirect URI');
+  assert(authUrl.includes('prompt=select_account'), 'Google OAuth URL enforces prompt=select_account for reliable account selection');
+
   console.log('\n====================================================');
   console.log(`🏁 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('====================================================\n');

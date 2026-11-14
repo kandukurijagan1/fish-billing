@@ -433,6 +433,27 @@
     return false;
   }
 
+  function validateGoogleOAuthRedirectUri(origin = "") {
+    const norm = String(origin || "").toLowerCase().trim();
+    if (norm.includes("localhost") || norm.includes("127.0.0.1")) {
+      return "http://localhost:3000";
+    }
+    return "https://aaryanaqua.netlify.app/";
+  }
+
+  function buildGoogleOAuthUrl(clientId, redirectUri) {
+    const cId = clientId || "902168382803-6gof845v72ku6k4lp4mecsgr3l1uc3s0.apps.googleusercontent.com";
+    const rUri = redirectUri || "https://aaryanaqua.netlify.app/";
+    const params = new URLSearchParams({
+      client_id: cId,
+      response_type: "token",
+      scope: "email profile openid",
+      redirect_uri: rUri,
+      prompt: "select_account"
+    });
+    return "https://accounts.google.com/o/oauth2/v2/auth?" + params.toString();
+  }
+
   global.InvoiceUtils = {
     roundToTwo,
     calculateInvoiceBreakdown,
@@ -444,7 +465,9 @@
     mergePartiesNonDestructively,
     validatePin,
     validatePassword,
-    validateDirectMailAuth
+    validateDirectMailAuth,
+    validateGoogleOAuthRedirectUri,
+    buildGoogleOAuthUrl
   };
 
   if (typeof module !== 'undefined' && module.exports) {

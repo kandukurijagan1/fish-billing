@@ -12,19 +12,25 @@
         if (window.history && window.history.replaceState) {
           window.history.replaceState(null, document.title, window.location.pathname + window.location.search);
         }
-        if (window.opener) {
+        try {
+          sessionStorage.setItem('pending_oauth_access_token', accessToken);
+        } catch (_) {}
+
+        if (window.opener && window.opener !== window) {
+          try {
+            window.opener.postMessage({ type: 'GOOGLE_OAUTH_TOKEN', accessToken: accessToken }, '*');
+          } catch (e) {}
           try {
             if (typeof window.opener.handleGoogleOAuthAccessToken === 'function') {
               window.opener.handleGoogleOAuthAccessToken(accessToken);
-            } else {
-              window.opener.postMessage({ type: 'GOOGLE_OAUTH_TOKEN', accessToken: accessToken }, '*');
             }
-          } catch (e) {
-            window.opener.postMessage({ type: 'GOOGLE_OAUTH_TOKEN', accessToken: accessToken }, '*');
-          }
-          window.close();
+          } catch (e) {}
+          setTimeout(() => {
+            try { window.close(); } catch (_) {}
+          }, 350);
           return;
         }
+
         const runAuth = () => {
           if (typeof window.handleGoogleOAuthAccessToken === 'function') {
             window.handleGoogleOAuthAccessToken(accessToken);
@@ -6085,40 +6091,15 @@ function initializeApp() {
     } catch(e) {}
   }
 
-  // FREE VIEW MODE CHECK - ONLY for non-authorized users!
-  const isDemoSession = !isCandidateAuthorized && (
-    sessionStorage.getItem("is_demo_mode") === "true" || 
-    localStorage.getItem("is_demo_mode") === "true" || 
-    savedSession?.role === "viewer" ||
-    (typeof window.isViewOnlyUser === 'function' && candidateEmail && window.isViewOnlyUser(candidateEmail))
-  );
-  if (isDemoSession) {
-    canStayUnlocked = true;
-    isLocked = false;
-    localStorage.removeItem("app_locked");
-    document.body.classList.remove("app-is-locked");
-    const lockOverlay = document.getElementById("lock-screen-overlay");
-    if (lockOverlay) {
-      lockOverlay.classList.add("hidden");
-      lockOverlay.style.setProperty("display", "none", "important");
-    }
-    const wrapper = document.querySelector('.dashboard-wrapper');
-    if (wrapper) wrapper.classList.remove("blur-dashboard-wrapper");
-
-    if (typeof window.loginAsFreeViewer === 'function') {
-      window.loginAsFreeViewer({
-        email: candidateEmail || "demo@viewer.com",
-        name: sessionStorage.getItem("current_user_name") || savedSession?.name || "Prospective Buyer"
-      });
-    }
-    // Free viewers go directly to billing tab
-    setTimeout(() => {
-      if (typeof window.switchTab === 'function') {
-        window.switchTab('billing');
-      }
-    }, 50);
+  // Check for pending Google OAuth redirect token
+  const pendingOAuthToken = sessionStorage.getItem('pending_oauth_access_token');
+  if (pendingOAuthToken && typeof window.handleGoogleOAuthAccessToken === 'function') {
+    sessionStorage.removeItem('pending_oauth_access_token');
+    window.handleGoogleOAuthAccessToken(pendingOAuthToken);
     return;
   }
+
+  // Pure Google OAuth Authentication Enforced: No direct bypass or unauthenticated demo unlock on boot
 
   // STRICT AUDIT: If currently stored email is not authorized by Main Admin and NOT in demo mode, purge!
   if (candidateEmail && typeof window.isUserAuthorizedByAdmin === 'function' && !window.isUserAuthorizedByAdmin(candidateEmail)) {
@@ -21302,100 +21283,82 @@ window.handleGoogleCredentialResponse = function(response) {
   window.verifyAndAuthorizeUser(email, name);
 };
 
-window.triggerDirectGoogleAuth = async function() {
+window.getGoogleOAuthRedirectUri = function() {
+  if (typeof window === 'undefined' || !window.location) {
+    return 'https://aaryanaqua.netlify.app/';
+  }
+  const origin = (window.location.origin || '').toLowerCase();
+  if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+    return 'http://localhost:3000';
+  }
+  // Officially authorized redirect URI in Google Cloud Console
+  return 'https://aaryanaqua.netlify.app/';
+};
+
+window.triggerDirectGoogleAuth = function() {
   const errBlock = document.getElementById("login-error-message");
   if (errBlock) errBlock.classList.add("hidden");
 
-  const btn = document.getElementById("btn-google-direct");
   const label = document.getElementById("google-btn-label");
   const origText = label ? label.innerHTML : "Sign in with Google";
 
-  if (label) label.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Authenticating...';
+  if (label) label.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Connecting to Google...';
 
   // 1. Electron Desktop App native Google OAuth via IPC
   if (window.electronAPI && typeof window.electronAPI.startGoogleOAuth === 'function') {
-    try {
-      const res = await window.electronAPI.startGoogleOAuth();
+    window.electronAPI.startGoogleOAuth().then(res => {
       if (res && res.accessToken) {
         window.handleGoogleOAuthAccessToken(res.accessToken);
-        if (label) label.innerHTML = origText;
-        return;
       }
-    } catch (_) {}
-  }
-
-  // 2. Try Google Identity Services OAuth popup if on supported origin
-  let popupTriggered = false;
-  if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
-    try {
-      const tokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: window.GOOGLE_OAUTH_CLIENT_ID,
-        scope: 'email profile openid',
-        callback: async (tokenResponse) => {
-          if (tokenResponse && tokenResponse.access_token) {
-            await window.handleGoogleOAuthAccessToken(tokenResponse.access_token);
-            if (label) label.innerHTML = origText;
-          } else {
-            window.unlockViaDirectMail();
-          }
-        },
-        error_callback: () => {
-          window.unlockViaDirectMail();
-        }
-      });
-      tokenClient.requestAccessToken({ prompt: 'select_account' });
-      popupTriggered = true;
-    } catch (e) {
-      console.warn("GIS tokenClient invocation failed:", e);
-    }
-  }
-
-  // 3. Fallback: If Google Identity popup is blocked or fails origin check, unlock via Direct Mail instantly!
-  if (!popupTriggered) {
-    window.unlockViaDirectMail();
-  }
-};
-
-window.unlockViaDirectMail = function(emailCandidate) {
-  const adminEmail = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-  const targetEmail = (emailCandidate || adminEmail).toLowerCase().trim();
-  const label = document.getElementById("google-btn-label");
-  if (label) label.textContent = "Sign in with Google";
-
-  if (!targetEmail) {
-    const errBlock = document.getElementById("login-error-message");
-    if (errBlock) {
-      errBlock.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Please enter a valid authorized email address.`;
-      errBlock.classList.remove("hidden");
-    }
+      if (label) label.innerHTML = origText;
+    }).catch(e => {
+      console.warn("Electron Google OAuth error:", e);
+      if (label) label.innerHTML = origText;
+    });
     return;
   }
 
-  const isMainAdmin = (targetEmail === adminEmail);
-  const isAuthorized = isMainAdmin || (typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(targetEmail));
+  // 2. Direct Web Google OAuth 2.0 Web Flow
+  const clientId = window.GOOGLE_OAUTH_CLIENT_ID || '902168382803-6gof845v72ku6k4lp4mecsgr3l1uc3s0.apps.googleusercontent.com';
+  const redirectUri = window.getGoogleOAuthRedirectUri();
 
-  if (!isAuthorized) {
-    const errBlock = document.getElementById("login-error-message");
-    if (errBlock) {
-      errBlock.innerHTML = `
-        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
-          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
-            <i class="fa-solid fa-ban"></i> Unauthorized Email
-          </div>
-          <div style="font-size: 11.5px; color: #cbd5e1;">
-            "${escapeHtml(targetEmail)}" is not authorized to access this system. Authorized: <strong style="color: #38bdf8;">${escapeHtml(adminEmail)}</strong>.
-          </div>
-        </div>`;
-      errBlock.classList.remove("hidden");
-    }
+  const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+    client_id: clientId,
+    response_type: 'token',
+    scope: 'email profile openid',
+    redirect_uri: redirectUri,
+    prompt: 'select_account'
+  }).toString();
+
+  // Open centered popup window
+  const width = 520;
+  const height = 630;
+  const left = window.screenLeft !== undefined ? window.screenLeft + (window.outerWidth - width) / 2 : (screen.width - width) / 2;
+  const top = window.screenTop !== undefined ? window.screenTop + (window.outerHeight - height) / 2 : (screen.height - height) / 2;
+
+  let authWin = null;
+  try {
+    authWin = window.open(authUrl, 'GoogleAuthPopup', `width=${width},height=${height},top=${top},left=${left},menubar=no,toolbar=no,status=no`);
+  } catch (e) {
+    console.warn("Popup blocked by browser:", e);
+  }
+
+  // Fallback: If popup was blocked by browser, perform in-window redirect to Google
+  if (!authWin || authWin.closed || typeof authWin.closed === 'undefined') {
+    window.location.href = authUrl;
     return;
   }
 
-  if (typeof showFloatingToast === 'function') {
-    showFloatingToast(`🔓 Direct Mail Authenticated as ${targetEmail}! Welcome back.`, "success", 3000);
+  if (authWin.focus) {
+    try { authWin.focus(); } catch (_) {}
   }
-  const displayName = isMainAdmin ? "Jagan Kandukuri (Main Admin)" : targetEmail.split("@")[0];
-  window.verifyAndAuthorizeUser(targetEmail, displayName);
+
+  const pollTimer = setInterval(() => {
+    if (!authWin || authWin.closed) {
+      clearInterval(pollTimer);
+      if (label) label.innerHTML = origText;
+    }
+  }, 1000);
 };
 
 // 5. Render User Management Table in Settings

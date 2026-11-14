@@ -526,13 +526,10 @@
       </div>
 
       <!-- DIRECT GOOGLE MAIL SIGN-IN (EXCLUSIVE AUTHENTICATION) -->
-      <div style="display: flex; flex-direction: column; gap: 10px; align-items: center; width: 100%; margin-top: 4px;">
-        <!-- Native Google Rendered Button Slot (Hidden to prevent broken third-party origin blocking) -->
-        <div id="google-signin-btn-container" style="display: none; justify-content: center; width: 100%;"></div>
-
+      <div style="display: flex; flex-direction: column; gap: 10px; align-items: center; width: 100%; margin-top: 6px;">
         <!-- Direct Google OAuth Prompt Button -->
-        <button type="button" id="btn-google-direct" onclick="window.triggerDirectGoogleAuth()" style="display: flex; width: 100%; max-width: 320px; padding: 12px 18px; border-radius: 10px; background: #ffffff; color: #1f2937; border: 1.5px solid #e5e7eb; font-weight: 700; font-size: 14px; cursor: pointer; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.18); transition: all 0.2s ease;">
-          <svg style="width: 20px; height: 20px;" viewBox="0 0 24 24">
+        <button type="button" id="btn-google-direct" onclick="window.triggerDirectGoogleAuth()" style="display: flex; width: 100%; max-width: 320px; padding: 13px 20px; border-radius: 12px; background: #ffffff; color: #1f2937; border: 1.5px solid #e5e7eb; font-weight: 700; font-size: 14.5px; cursor: pointer; align-items: center; justify-content: center; gap: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.22); transition: all 0.2s ease;">
+          <svg style="width: 22px; height: 22px;" viewBox="0 0 24 24">
             <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
             <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"/>
             <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.17 0 9.99 0 12s.45 3.83 1.25 5.42l4.03-3.15z"/>
@@ -540,25 +537,6 @@
           </svg>
           <span id="google-btn-label">Sign in with Google</span>
         </button>
-
-        <!-- Instant Direct Mail Unlock Button -->
-        <button type="button" id="btn-direct-mail-unlock" onclick="window.unlockViaDirectMail()" style="display: flex; width: 100%; max-width: 320px; padding: 11px 16px; border-radius: 10px; background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff; border: none; font-weight: 700; font-size: 13px; cursor: pointer; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35); transition: all 0.2s ease;">
-          <i class="fa-solid fa-envelope-circle-check"></i>
-          <span>Direct Mail Unlock (kandukurijagan99@gmail.com)</span>
-        </button>
-
-        <!-- Alternate Authorized Email Input (Expandable) -->
-        <div style="margin-top: 4px; width: 100%; max-width: 320px; text-align: center;">
-          <div id="direct-mail-custom-input-wrap" style="display: none; margin-bottom: 8px; text-align: left;">
-            <input type="email" id="login-direct-email" placeholder="Enter authorized staff email" style="width: 100%; height: 38px; background: rgba(15, 23, 42, 0.9); border: 1.5px solid #0284c7; border-radius: 8px; color: #ffffff; font-size: 12.5px; padding: 0 10px; outline: none; box-sizing: border-box; margin-bottom: 6px;">
-            <button type="button" onclick="window.unlockViaDirectMail(document.getElementById('login-direct-email').value)" style="width: 100%; height: 34px; background: #0284c7; color: #ffffff; border: none; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer;">
-              <i class="fa-solid fa-arrow-right-to-bracket"></i> Verify &amp; Unlock Email
-            </button>
-          </div>
-          <button type="button" onclick="const w = document.getElementById('direct-mail-custom-input-wrap'); w.style.display = w.style.display === 'none' ? 'block' : 'none';" style="background: transparent; border: none; color: #38bdf8; font-size: 11px; cursor: pointer; text-decoration: underline; padding: 2px;">
-            <i class="fa-solid fa-user-plus"></i> Sign in with another authorized email
-          </button>
-        </div>
       </div>
 
       <!-- EXCLUSIVE ACCESS NOTICE / CLOUD ADMINISTRATOR -->
@@ -570,16 +548,16 @@
           kandukurijagan99@gmail.com
         </div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">
-          Direct Google Mail authentication required to unlock system
+          Google Authentication required to unlock system
         </div>
       </div>
 
       <div class="login-footer" style="margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 11px; color: #64748b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
         <div style="display: flex; align-items: center; gap: 6px;">
           <i class="fa-solid fa-lock" style="color: #0ea5e9;"></i>
-          <span style="font-weight: 700; color: #94a3b8;">Direct Mail Authentication</span>
+          <span style="font-weight: 700; color: #94a3b8;">Google OAuth Authentication</span>
         </div>
-        <span style="font-size: 10px; color: #64748b; text-align: center;">Cryptographically secured session authentication</span>
+        <span style="font-size: 10px; color: #64748b; text-align: center;">Only authorized accounts can access store data</span>
       </div>
 
     </div>
