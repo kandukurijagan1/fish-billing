@@ -866,15 +866,7 @@ _rootGlobal.INITIAL_BOOTSTRAP_SNAPSHOT = {
     authorizedUsers: [
       {
         email: "kandukurijagan99@gmail.com",
-        name: "Jagan Kandukuri (Main Admin)",
-        role: "super_admin",
-        status: "active",
-        addedAt: "2026-09-01T00:00:00.000Z",
-        isMainAdmin: true
-      },
-      {
-        email: "kandukurijagan7@gmail.com",
-        name: "Jagan Kandukuri (Admin)",
+        name: "Jagan Kandukuri",
         role: "super_admin",
         status: "active",
         addedAt: "2026-09-01T00:00:00.000Z",

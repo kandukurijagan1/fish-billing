@@ -425,7 +425,7 @@
     const norm = String(email || "").toLowerCase().trim();
     if (!norm) return false;
     const mainAdmin = "kandukurijagan99@gmail.com";
-    if (norm === mainAdmin || norm === "kandukurijagan7@gmail.com" || norm === "kandukurijagan88@gmail.com" || norm === "kandukurijagan642@gmail.com") return true;
+    if (norm === mainAdmin) return true;
     if (Array.isArray(authorizedList)) {
       const match = authorizedList.find(u => String(u.email || "").toLowerCase().trim() === norm);
       if (match && String(match.status || "active").toLowerCase() === "active") return true;
@@ -457,12 +457,7 @@
   function isMainAdminEmail(email) {
     const norm = String(email || "").toLowerCase().trim();
     if (!norm) return false;
-    return (
-      norm === "kandukurijagan99@gmail.com" ||
-      norm === "kandukurijagan7@gmail.com" ||
-      norm === "kandukurijagan88@gmail.com" ||
-      norm === "kandukurijagan642@gmail.com"
-    );
+    return norm === "kandukurijagan99@gmail.com";
   }
 
   function calculateDashboardAnalytics(invoices = [], products = []) {

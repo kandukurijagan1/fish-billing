@@ -355,10 +355,7 @@ window.isDemoMode = function() {
   ).toLowerCase().trim();
 
   const isJagan = (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(currentEmail)) ||
-                  currentEmail === "kandukurijagan99@gmail.com" ||
-                  currentEmail === "kandukurijagan7@gmail.com" ||
-                  currentEmail === "kandukurijagan88@gmail.com" ||
-                  currentEmail === "kandukurijagan642@gmail.com";
+                  currentEmail === "kandukurijagan99@gmail.com";
 
   if (isJagan || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_main_admin") === "true")) {
     try {
@@ -3663,7 +3660,7 @@ window.triggerDatabaseSync = async function(forceReload = false) {
   // Never sync live business database for unauthenticated / unauthorized sessions
   const currentEmail = ((typeof sessionStorage !== 'undefined' ? sessionStorage.getItem("current_user_email") : "") || "").toLowerCase().trim();
   const isMainAdmin = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_main_admin") === "true") ||
-                      currentEmail === "kandukurijagan99@gmail.com" || currentEmail === "kandukurijagan88@gmail.com";
+                      currentEmail === "kandukurijagan99@gmail.com";
   const isAuthStaff = typeof window.isUserAuthorizedByAdmin === 'function' && currentEmail && window.isUserAuthorizedByAdmin(currentEmail);
   const isPinUnlocked = (typeof localStorage !== 'undefined' && localStorage.getItem("app_authenticated") === "true" && localStorage.getItem("app_locked") !== "true" && (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_demo_mode") !== "true"));
 
@@ -4878,10 +4875,7 @@ window.clearPersistentAuthSession = function() {
 window.getCurrentResolvedRole = function() {
   const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
   const isJagan = (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(currentEmail)) ||
-                  currentEmail === "kandukurijagan99@gmail.com" ||
-                  currentEmail === "kandukurijagan7@gmail.com" ||
-                  currentEmail === "kandukurijagan88@gmail.com" ||
-                  currentEmail === "kandukurijagan642@gmail.com";
+                  currentEmail === "kandukurijagan99@gmail.com";
 
   if (isJagan || sessionStorage.getItem("is_main_admin") === "true") {
     return "super_admin";
@@ -4901,7 +4895,7 @@ window.getCurrentResolvedRole = function() {
         return "viewer";
       }
       const pEmail = (pSess.email || "").toLowerCase().trim();
-      if (pEmail === "kandukurijagan99@gmail.com" || pEmail === "kandukurijagan88@gmail.com" || pSess.isMainAdmin) {
+      if (pEmail === "kandukurijagan99@gmail.com" || (pSess.isMainAdmin && pEmail === "kandukurijagan99@gmail.com")) {
         return "super_admin";
       }
       return pSess.role;
@@ -4930,10 +4924,7 @@ window.isViewOnlyUser = function() {
   }
   const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
   const isJagan = (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(currentEmail)) ||
-                  currentEmail === "kandukurijagan99@gmail.com" ||
-                  currentEmail === "kandukurijagan7@gmail.com" ||
-                  currentEmail === "kandukurijagan88@gmail.com" ||
-                  currentEmail === "kandukurijagan642@gmail.com";
+                  currentEmail === "kandukurijagan99@gmail.com";
 
   // 1. Permanent Main Admin ALWAYS has full edit access and is NEVER view-only
   if (isJagan || sessionStorage.getItem("is_main_admin") === "true") {
@@ -5779,9 +5770,7 @@ function initializeApp() {
   const curEmailEarly = ((typeof sessionStorage !== 'undefined' ? sessionStorage.getItem("current_user_email") : "") || "").toLowerCase().trim();
   const isMainAdminEarly = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_main_admin") === "true") ||
                            (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(curEmailEarly)) ||
-                           curEmailEarly === "kandukurijagan99@gmail.com" ||
-                           curEmailEarly === "kandukurijagan7@gmail.com" ||
-                           curEmailEarly === "kandukurijagan88@gmail.com";
+                           curEmailEarly === "kandukurijagan99@gmail.com";
   const isStaffEarly = typeof window.isUserAuthorizedByAdmin === 'function' && curEmailEarly && window.isUserAuthorizedByAdmin(curEmailEarly);
   const isUnlockedEarly = (typeof localStorage !== 'undefined' && localStorage.getItem("app_authenticated") === "true" && localStorage.getItem("app_locked") !== "true" && !isDemoEarly);
 
@@ -5834,8 +5823,8 @@ function initializeApp() {
           if (curEmail && typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(curEmail)) {
             const matched = authUsers.find(u => (u.email || "").toLowerCase().trim() === curEmail);
             if (matched && String(matched.status || "active").toLowerCase().trim() === "active") {
-              const role = matched.role || "admin";
-              const name = matched.name || curEmail.split("@")[0];
+              const role = (curEmail === "kandukurijagan99@gmail.com") ? "super_admin" : (matched.role && matched.role !== "super_admin" && matched.role !== "admin" ? matched.role : "customer");
+              const name = (curEmail === "kandukurijagan99@gmail.com") ? "Jagan Kandukuri" : (matched.name || curEmail.split("@")[0]);
               console.log("[AUTH] Auto-upgrading active authorized user from cloud:", curEmail, role);
               sessionStorage.removeItem("is_demo_mode");
               localStorage.removeItem("is_demo_mode");
@@ -6135,13 +6124,13 @@ function initializeApp() {
     const isMainAdmin = (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(candidateEmail)) || (candidateEmail === (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim());
     const usersList = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
     const matchedUser = isMainAdmin
-      ? { status: "active", role: "super_admin", name: "Jagan Kandukuri (Main Admin)", isMainAdmin: true }
+      ? { status: "active", role: "super_admin", name: "Jagan Kandukuri", isMainAdmin: true }
       : usersList.find(u => (u.email || "").toLowerCase().trim() === candidateEmail && u.status === "active");
 
     if (matchedUser) {
       canStayUnlocked = true;
-      const role = isMainAdmin ? "super_admin" : (matchedUser.role || "admin");
-      const name = isMainAdmin ? "Jagan Kandukuri (Main Admin)" : (matchedUser.name || candidateEmail.split("@")[0]);
+      const role = isMainAdmin ? "super_admin" : (matchedUser.role && matchedUser.role !== "super_admin" && matchedUser.role !== "admin" ? matchedUser.role : "customer");
+      const name = isMainAdmin ? "Jagan Kandukuri" : (matchedUser.name || candidateEmail.split("@")[0]);
       sessionStorage.setItem("session_authenticated", "true");
       sessionStorage.setItem("current_user_email", candidateEmail);
       sessionStorage.setItem("current_user_name", name);
@@ -20830,12 +20819,7 @@ window.isEmailBanned = function(email) {
 window.isMainAdminEmail = function(email) {
   const norm = (email || "").toLowerCase().trim();
   if (!norm) return false;
-  return (
-    norm === "kandukurijagan99@gmail.com" ||
-    norm === "kandukurijagan7@gmail.com" ||
-    norm === "kandukurijagan88@gmail.com" ||
-    norm === "kandukurijagan642@gmail.com"
-  );
+  return norm === "kandukurijagan99@gmail.com";
 };
 
 window.DEFAULT_AUTHORIZED_USERS = [
@@ -20908,26 +20892,14 @@ window.getAuthorizedUsersList = function() {
         const k = u.email.toLowerCase().trim();
         if (k !== mainAdminNorm && !isRevoked(k)) {
           const userCopy = Object.assign({}, u);
-          if (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(k)) {
-            userCopy.role = "super_admin";
-            userCopy.status = "active";
-            userCopy.isMainAdmin = true;
-            userCopy.name = userCopy.name || "Jagan Kandukuri (Main Admin)";
+          // Only kandukurijagan99@gmail.com is Main Admin. All others are customers (or assigned staff)
+          if (userCopy.role === "super_admin" || userCopy.isMainAdmin) {
+            userCopy.role = "customer";
+            userCopy.isMainAdmin = false;
           }
+          userCopy.role = userCopy.role || "customer";
+          userCopy.name = (userCopy.name || k.split("@")[0]).replace(/\s*\([^)]*\)/g, '').trim();
           map.set(k, userCopy);
-        }
-      }
-    });
-
-    (window.DEFAULT_AUTHORIZED_USERS || []).forEach(def => {
-      if (def && def.email) {
-        const k = def.email.toLowerCase().trim();
-        if (k !== mainAdminNorm && (!map.has(k) || (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(k)))) {
-          map.set(k, Object.assign({}, def, {
-            status: "active",
-            role: "super_admin",
-            isMainAdmin: true
-          }));
         }
       }
     });
@@ -20951,7 +20923,7 @@ window.getAuthorizedUsersList = function() {
   // Main Admin is ALWAYS permanent index 0
   list.unshift({
     email: mainAdminNorm,
-    name: "Jagan Kandukuri (Main Admin)",
+    name: "Jagan Kandukuri",
     role: "super_admin",
     status: "active",
     addedAt: "2026-09-01T00:00:00.000Z",
@@ -21049,6 +21021,11 @@ window.cleanStorageOfUnauthorizedUsers = function() {
           u.role = "super_admin";
           u.isMainAdmin = true;
           u.name = (u.name || "Jagan Kandukuri").replace(/\s*\([^)]*\)/g, '').trim() || "Jagan Kandukuri";
+        } else {
+          u.isMainAdmin = false;
+          if (u.role === "super_admin" || u.role === "admin" || !u.role) {
+            u.role = "customer";
+          }
         }
         return u;
       };
@@ -21070,14 +21047,24 @@ window.cleanStorageOfUnauthorizedUsers = function() {
       const rawSession = localStorage.getItem("aaryan_auth_session");
       if (rawSession) {
         const sess = JSON.parse(rawSession);
-        if (sess && sess.email && typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(sess.email)) {
+        const sessEmail = (sess?.email || "").toLowerCase().trim();
+        const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+        if (sessEmail === mainAdminNorm) {
           sess.role = "super_admin";
           sess.isMainAdmin = true;
-          sess.name = sess.name || "Jagan Kandukuri (Main Admin)";
+          sess.name = (sess.name || "Jagan Kandukuri").replace(/\s*\([^)]*\)/g, '').trim();
           localStorage.setItem("aaryan_auth_session", JSON.stringify(sess));
           sessionStorage.setItem("is_main_admin", "true");
           sessionStorage.setItem("current_user_role", "super_admin");
           sessionStorage.setItem("current_user_name", sess.name);
+        } else if (sess) {
+          sess.isMainAdmin = false;
+          if (sess.role === "super_admin" || sess.role === "admin" || !sess.role) {
+            sess.role = "customer";
+            localStorage.setItem("aaryan_auth_session", JSON.stringify(sess));
+            sessionStorage.setItem("is_main_admin", "false");
+            sessionStorage.setItem("current_user_role", "customer");
+          }
         }
       }
     } catch (_) {}
@@ -21297,11 +21284,11 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
 
   const usersList = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
   const matchedUser = isMainAdmin
-    ? { email: normEmail, name: displayName || "Jagan Kandukuri (Main Admin)", role: "super_admin", status: "active", isMainAdmin: true }
-    : (usersList.find(u => (u.email || "").toLowerCase().trim() === normEmail) || { email: normEmail, name: displayName || normEmail.split("@")[0], role: "admin", status: "active" });
+    ? { email: normEmail, name: displayName || "Jagan Kandukuri", role: "super_admin", status: "active", isMainAdmin: true }
+    : (usersList.find(u => (u.email || "").toLowerCase().trim() === normEmail) || { email: normEmail, name: displayName || normEmail.split("@")[0], role: "customer", status: "active" });
 
-  const role = isMainAdmin ? "super_admin" : (matchedUser.role || "admin");
-  const name = displayName || matchedUser.name || (isMainAdmin ? "Jagan Kandukuri (Main Admin)" : normEmail.split("@")[0]);
+  const role = isMainAdmin ? "super_admin" : (matchedUser.role && matchedUser.role !== "super_admin" && matchedUser.role !== "admin" ? matchedUser.role : "customer");
+  const name = displayName || matchedUser.name || (isMainAdmin ? "Jagan Kandukuri" : normEmail.split("@")[0]);
 
   // Store persistent session
   if (typeof window.savePersistentAuthSession === 'function') {
@@ -21473,20 +21460,18 @@ window.renderUserManagerTable = function() {
     const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
     const userEmailNorm = (u.email || '').toLowerCase().trim();
     const isPrimaryMaster = (userEmailNorm === mainAdminNorm);
-    const isMain = isPrimaryMaster || !!u.isMainAdmin || (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(u.email));
-    const role = isMain ? 'super_admin' : (u.role || 'operator');
-    const status = isMain ? (u.status || 'active') : (u.status || 'active');
+    const isMain = isPrimaryMaster;
+    const role = isMain ? 'super_admin' : (u.role && u.role !== 'super_admin' && u.role !== 'admin' ? u.role : 'customer');
+    const status = isMain ? 'active' : (u.status || 'active');
     const isActive = (status === 'active');
 
     let roleBadge = '';
-    if (role === 'super_admin' || isMain) {
+    if (isMain) {
       roleBadge = `<span style="background: #fef3c7; color: #92400e; border: 1px solid #fde68a; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-crown" style="color: #d97706;"></i> Main Admin (Master)</span>`;
-    } else if (role === 'admin') {
-      roleBadge = `<span style="background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-shield-halved" style="color: #0284c7;"></i> Administrator</span>`;
-    } else if (role === 'customer') {
-      roleBadge = `<span style="background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-user-check" style="color: #16a34a;"></i> Customer / Client</span>`;
-    } else {
+    } else if (role === 'operator') {
       roleBadge = `<span style="background: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-briefcase" style="color: #9333ea;"></i> Billing Staff</span>`;
+    } else {
+      roleBadge = `<span style="background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-user-check" style="color: #16a34a;"></i> Customer</span>`;
     }
 
     const statusBadge = isActive
@@ -21508,7 +21493,7 @@ window.renderUserManagerTable = function() {
 
     let actionBtns = '';
     if (isPrimaryMaster) {
-      actionBtns = `<span style="color: #475569; font-size: 11px; font-weight: 600; background: #f1f5f9; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px;"><i class="fa-solid fa-lock" style="font-size: 9px; color: #64748b;"></i> Primary Master</span>`;
+      actionBtns = `<span style="color: #475569; font-size: 11px; font-weight: 600; background: #f1f5f9; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px;"><i class="fa-solid fa-lock" style="font-size: 9px; color: #64748b;"></i> Permanent Master Account</span>`;
     } else {
       actionBtns = `
         <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
@@ -21527,7 +21512,7 @@ window.renderUserManagerTable = function() {
 
     const avatarBg = isMain
       ? 'linear-gradient(135deg, #f59e0b, #d97706)'
-      : (role === 'admin' ? 'linear-gradient(135deg, #0284c7, #0369a1)' : (role === 'customer' ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #8b5cf6, #6d28d9)'));
+      : (role === 'operator' ? 'linear-gradient(135deg, #8b5cf6, #6d28d9)' : 'linear-gradient(135deg, #10b981, #059669)');
 
     return `
       <tr style="border-bottom: 1px solid #e2e8f0; transition: background 0.15s; vertical-align: middle;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
@@ -21538,7 +21523,7 @@ window.renderUserManagerTable = function() {
             </div>
             <div>
               <div style="font-weight: 700; color: #0f172a; font-size: 13px; line-height: 1.2;">${escapeHtml(cleanDisplayName)}</div>
-              ${isPrimaryMaster ? '<div style="font-size: 10.5px; color: #b45309; font-weight: 700; display: flex; align-items: center; gap: 3px; margin-top: 2px;"><i class="fa-solid fa-crown" style="font-size: 9px;"></i> Primary Master Administrator</div>' : (isMain ? '<div style="font-size: 10.5px; color: #0369a1; font-weight: 700; display: flex; align-items: center; gap: 3px; margin-top: 2px;"><i class="fa-solid fa-shield-halved" style="font-size: 9px;"></i> Master Administrator</div>' : '<div style="font-size: 10.5px; color: #64748b; font-weight: 500; margin-top: 2px;">Authorized Operator</div>')}
+              ${isPrimaryMaster ? '<div style="font-size: 10.5px; color: #b45309; font-weight: 700; display: flex; align-items: center; gap: 3px; margin-top: 2px;"><i class="fa-solid fa-crown" style="font-size: 9px;"></i> Primary Master Administrator</div>' : (role === 'operator' ? '<div style="font-size: 10.5px; color: #6b21a8; font-weight: 600; margin-top: 2px;">Billing Staff</div>' : '<div style="font-size: 10.5px; color: #166534; font-weight: 600; margin-top: 2px;">Customer Account</div>')}
             </div>
           </div>
         </td>
@@ -21699,8 +21684,8 @@ window.saveUserAccessSubmit = async function(e) {
 window.toggleUserStatus = async function(email) {
   const normEmail = (email || "").toLowerCase().trim();
   const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-  if (normEmail === mainAdminNorm || (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(normEmail))) {
-    showFloatingToast("⚠️ Main Admin account cannot be suspended!", "warning");
+  if (normEmail === mainAdminNorm) {
+    showFloatingToast("⚠️ Primary Master Admin account cannot be suspended!", "warning");
     return;
   }
   const list = window.getAuthorizedUsersList();
@@ -22261,7 +22246,7 @@ window.handleMailLoginSubmit = async function(e) {
     // Role assignment & Permissions
     const usersList = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
     const matchedUser = isMainAdmin
-      ? { email: window.AUTHORIZED_LOGIN_EMAIL, name: "Jagan Kandukuri (Main Admin)", role: "super_admin", status: "active", isMainAdmin: true }
+      ? { email: window.AUTHORIZED_LOGIN_EMAIL, name: "Jagan Kandukuri", role: "super_admin", status: "active", isMainAdmin: true }
       : usersList.find(u => (u.email || "").toLowerCase().trim() === enteredEmail);
 
     if (matchedUser && String(matchedUser.status).toLowerCase().trim() === "suspended") {
@@ -22287,8 +22272,8 @@ window.handleMailLoginSubmit = async function(e) {
     let displayName = enteredEmail.split("@")[0] || "User";
 
     if (isAuthorized) {
-      assignedRole = isMainAdmin ? "super_admin" : (matchedUser?.role || "admin");
-      displayName = isMainAdmin ? "Jagan Kandukuri (Main Admin)" : (matchedUser?.name || enteredEmail.split("@")[0]);
+      assignedRole = isMainAdmin ? "super_admin" : (matchedUser?.role && matchedUser?.role !== "super_admin" && matchedUser?.role !== "admin" ? matchedUser?.role : "customer");
+      displayName = isMainAdmin ? "Jagan Kandukuri" : (matchedUser?.name || enteredEmail.split("@")[0]);
     } else {
       let customerName = "";
       if (Array.isArray(window.invoices)) {
@@ -22683,7 +22668,7 @@ window.submitPasswordLogin = function(e) {
   else if (["admin123", "admin", "Aaryan@2026", "Aaryan@2024", "password", "123456"].includes(enteredPass)) {
     isMatch = true;
     userRole = "admin";
-    userName = "Jagan Kandukuri (Main Admin)";
+    userName = "Jagan Kandukuri";
   }
   // 3. Check if entered password matches configured PIN
   else if (configuredPin && enteredPass === configuredPin) {
@@ -29623,13 +29608,7 @@ window.checkDirectMailAuthParams = async function() {
 
       // Check if Admin or Customer
       const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-      const isAdminEmail = (
-        directEmail === mainAdminNorm ||
-        (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(directEmail)) ||
-        directEmail.includes("admin") ||
-        directEmail.startsWith("jagan") ||
-        (window.isUserAuthorizedByAdmin && window.isUserAuthorizedByAdmin(directEmail))
-      );
+      const isAdminEmail = (directEmail === mainAdminNorm);
 
       let customerName = "";
       const currentInvoices = Array.isArray(window.invoices) ? window.invoices : (Array.isArray(invoicesDb) ? invoicesDb : []);
@@ -29644,7 +29623,7 @@ window.checkDirectMailAuthParams = async function() {
       }
 
       const assignedRole = isAdminEmail ? "super_admin" : "customer";
-      const displayName = isAdminEmail ? "Jagan Kandukuri (Main Admin)" : (customerName || directEmail.split("@")[0]);
+      const displayName = isAdminEmail ? "Jagan Kandukuri" : (customerName || directEmail.split("@")[0]);
 
       sessionStorage.setItem("current_user_email", directEmail);
       sessionStorage.setItem("current_user_name", displayName);

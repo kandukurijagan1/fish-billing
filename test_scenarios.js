@@ -432,7 +432,8 @@ async function runAllTests() {
   // 4. Direct Google Mail Authentication
   const adminEmail = 'kandukurijagan99@gmail.com';
   assert(InvoiceUtils.validateDirectMailAuth(adminEmail) === true, 'Direct Google Mail kandukurijagan99@gmail.com is authorized as Main Admin');
-  assert(InvoiceUtils.validateDirectMailAuth('kandukurijagan7@gmail.com') === true, 'Direct Google Mail kandukurijagan7@gmail.com is authorized as Main Admin');
+  const customerList = [{ email: 'kandukurijagan7@gmail.com', role: 'customer', status: 'active' }];
+  assert(InvoiceUtils.validateDirectMailAuth('kandukurijagan7@gmail.com', customerList) === true, 'Customer Google Mail kandukurijagan7@gmail.com is authorized as Customer');
   assert(InvoiceUtils.validateDirectMailAuth('unauthorized@example.com') === false, 'Unauthorized email is rejected by Direct Mail Auth');
   assert(InvoiceUtils.validateDirectMailAuth('staff@aaryanaqua.com', staffList) === true, 'Authorized staff email authenticates via Direct Mail Auth');
 
@@ -451,11 +452,11 @@ async function runAllTests() {
 
   // 👉 TEST CASE 10: Testing Master Admin Recognition & Dashboard Profit / Volume Math
   console.log('\n👉 TEST CASE 10: Testing Master Admin Recognition & Consistent Financial Analytics...');
-  assert(InvoiceUtils.isMainAdminEmail('kandukurijagan99@gmail.com') === true, 'kandukurijagan99@gmail.com recognized as Master Admin');
-  assert(InvoiceUtils.isMainAdminEmail('kandukurijagan7@gmail.com') === true, 'kandukurijagan7@gmail.com recognized as Master Admin');
-  assert(InvoiceUtils.isMainAdminEmail('kandukurijagan88@gmail.com') === true, 'kandukurijagan88@gmail.com recognized as Master Admin');
-  assert(InvoiceUtils.isMainAdminEmail('kandukurijagan642@gmail.com') === true, 'kandukurijagan642@gmail.com recognized as Master Admin');
-  assert(InvoiceUtils.isMainAdminEmail('manasakokkiligadda11@gmail.com') === false, 'Non-master staff email recognized as standard user');
+  assert(InvoiceUtils.isMainAdminEmail('kandukurijagan99@gmail.com') === true, 'Only kandukurijagan99@gmail.com recognized as Master Admin');
+  assert(InvoiceUtils.isMainAdminEmail('kandukurijagan7@gmail.com') === false, 'kandukurijagan7@gmail.com recognized as Customer (not Master Admin)');
+  assert(InvoiceUtils.isMainAdminEmail('kandukurijagan88@gmail.com') === false, 'kandukurijagan88@gmail.com recognized as Customer (not Master Admin)');
+  assert(InvoiceUtils.isMainAdminEmail('kandukurijagan642@gmail.com') === false, 'kandukurijagan642@gmail.com recognized as Customer (not Master Admin)');
+  assert(InvoiceUtils.isMainAdminEmail('manasakokkiligadda11@gmail.com') === false, 'Customer email recognized as non-master user');
 
   // Verify financial analytics consistency: Quotations must never inflate Gross Profit or Billing Volume
   const mockProducts = [

@@ -440,13 +440,13 @@
         var email = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
         var role = (sessionStorage.getItem("current_user_role") || "").toLowerCase().trim();
         var isDemo = sessionStorage.getItem("is_demo_mode") === "true" || localStorage.getItem("is_demo_mode") === "true" || role === "viewer" || role === "demo" || role === "guest";
-        var isJagan = email === "kandukurijagan99@gmail.com" || email === "kandukurijagan7@gmail.com" || email === "kandukurijagan88@gmail.com" || email === "kandukurijagan642@gmail.com";
+        var isJagan = email === "kandukurijagan99@gmail.com";
         if (isDemo && !isJagan) {
           document.documentElement.classList.add("view-only-mode", "demo-mode-active");
         }
       } catch(e) {}
     })();
-    window.__APP_BUILD_VERSION__ = "v57_financial_sync_master_auth_v543";
+    window.__APP_BUILD_VERSION__ = "v59_master_admin_kandukurijagan99_only_v546";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -459,9 +459,9 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=5.4.5_20261115_session_activity_fix">
+  <link rel="stylesheet" href="index.css?v=5.4.6_20261115_kandukurijagan99_only">
 
-  <script src="invoice_utils_v5.js?v=5.4.5_20261115_session_activity_fix"></script>
+  <script src="invoice_utils_v5.js?v=5.4.6_20261115_kandukurijagan99_only"></script>
 
 </head>
 
@@ -8577,9 +8577,9 @@
 
           <select id="user-input-role" style="width: 100%; padding: 10px 12px; background: #1e293b; border: 1px solid rgba(255,255,255,0.18); border-radius: 8px; color: #ffffff; font-size: 13px;">
 
-            <option value="customer">👤 Customer / Client (View Invoices &amp; Ledger only)</option>
+            <option value="customer" selected>👤 Customer / Client (View Invoices &amp; Ledger only)</option>
 
-            <option value="operator" selected>💼 Billing Operator / Staff (Create Bills &amp; Inventory)</option>
+            <option value="operator">💼 Billing Operator / Staff (Create Bills &amp; Inventory)</option>
 
             <option value="admin">🛡️ Administrator (Full Store Management)</option>
 
@@ -11461,13 +11461,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=5.4.5_20261115_session_activity_fix"></script>
+<script src="supabase-adapter.js?v=5.4.6_20261115_kandukurijagan99_only"></script>
 
-<script src="initial_db.js?v=5.4.5_20261115_session_activity_fix"></script>
+<script src="initial_db.js?v=5.4.6_20261115_kandukurijagan99_only"></script>
 
-<script src="customer-timeline.js?v=5.4.5_20261115_session_activity_fix"></script>
+<script src="customer-timeline.js?v=5.4.6_20261115_kandukurijagan99_only"></script>
 
-<script src="index_v5.js?v=5.4.5_20261115_session_activity_fix"></script>
+<script src="index_v5.js?v=5.4.6_20261115_kandukurijagan99_only"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->
