@@ -24894,13 +24894,13 @@ window.sendDataBackupToEmail = async function(options = {}) {
       showFloatingToast(`🎉 Real Database Backup (.xlsx + .json) successfully delivered to ${recipient}! (${exportInvoices.length} Invoices, ${exportProducts.length} Products, ${exportParties.length} Customers)`, "success", 8000);
     }
   } else {
-    if (typeof showFloatingToast === 'function') {
-      showFloatingToast(`⚠️ Email dispatch completed. Safety copy downloaded.`, "info", 5000);
+    if (!options.isSilent && typeof showFloatingToast === 'function') {
+      showFloatingToast(`⚠️ Email dispatch completed.`, "info", 5000);
     }
   }
 
-  // 4. Download local backup files directly as fallback / instant local safety copy
-  if (options.downloadFiles !== false) {
+  // 4. Download local backup files directly ONLY IF explicitly requested by the caller
+  if (options.downloadFiles === true) {
     if (typeof window.exportMasterExcelBackup === 'function') {
       window.exportMasterExcelBackup();
     }
@@ -30826,9 +30826,16 @@ window.quickCreateProductWithBarcode = function() {
   }
 };
 
-// Automated Background Backup Watcher (runs 4 seconds after boot)
+// Automated Background Backup Watcher (runs after boot ONLY for authenticated Main Admin)
 setTimeout(() => {
   try {
+    // 1. NEVER run auto-backup on locked/unauthenticated screens or guest sessions!
+    const isAppAuth = (typeof localStorage !== 'undefined' && localStorage.getItem("app_authenticated") === "true" && localStorage.getItem("app_locked") !== "true") ||
+                      (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("session_authenticated") === "true");
+    const isMainAdmin = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_main_admin") === "true") ||
+                        (typeof localStorage !== 'undefined' && (localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim() === "kandukurijagan99@gmail.com");
+    if (!isAppAuth || !isMainAdmin) return;
+
     const sched = (typeof globalSettings !== 'undefined' && globalSettings.backupSchedule) ? globalSettings.backupSchedule : null;
     if (!sched || sched.enabled === false || sched.frequency === 'manual') return;
 
@@ -30848,10 +30855,11 @@ setTimeout(() => {
     }
 
     if (triggerType && typeof window.sendDataBackupToEmail === 'function') {
-      console.log(`[Auto-Backup] Dispatching background ${triggerType} store backup...`);
-      window.sendDataBackupToEmail({ isSilent: true, scheduleType: triggerType });
+      console.log(`[Auto-Backup] Dispatching background ${triggerType} store backup to email...`);
+      // CRITICAL: downloadFiles is strictly false in background tasks - NEVER download files automatically!
+      window.sendDataBackupToEmail({ isSilent: true, scheduleType: triggerType, downloadFiles: false });
     }
   } catch(e) {
     console.warn("Auto-backup watcher note:", e);
   }
-}, 4000);
+}, 10000);
