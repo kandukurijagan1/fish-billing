@@ -20841,21 +20841,21 @@ window.isMainAdminEmail = function(email) {
 window.DEFAULT_AUTHORIZED_USERS = [
   {
     email: "kandukurijagan99@gmail.com",
-    name: "Jagan Kandukuri (Main Admin)",
+    name: "Jagan Kandukuri",
     role: "super_admin",
     status: "active",
     isMainAdmin: true
   },
   {
     email: "kandukurijagan7@gmail.com",
-    name: "Jagan Kandukuri (Admin)",
+    name: "Jagan Kandukuri",
     role: "super_admin",
     status: "active",
     isMainAdmin: true
   },
   {
     email: "kandukurijagan88@gmail.com",
-    name: "Jagan Kandukuri (Admin)",
+    name: "Jagan Kandukuri",
     role: "super_admin",
     status: "active",
     isMainAdmin: true
@@ -21064,7 +21064,7 @@ window.cleanStorageOfUnauthorizedUsers = function() {
           u.status = "active";
           u.role = "super_admin";
           u.isMainAdmin = true;
-          u.name = u.name || "Jagan Kandukuri (Main Admin)";
+          u.name = (u.name || "Jagan Kandukuri").replace(/\s*\([^)]*\)/g, '').trim() || "Jagan Kandukuri";
         }
         return u;
       };
@@ -21434,7 +21434,7 @@ window.renderUserManagerTable = function() {
 
   const users = window.getAuthorizedUsersList();
   if (!users || users.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #94a3b8; padding: 20px;">No authorized users found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #64748b; padding: 24px; font-weight: 500;">No authorized users found.</td></tr>`;
     return;
   }
 
@@ -21446,18 +21446,18 @@ window.renderUserManagerTable = function() {
 
     let roleBadge = '';
     if (role === 'super_admin' || isMain) {
-      roleBadge = `<span style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.35); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-crown"></i> Main Admin (Master)</span>`;
+      roleBadge = `<span style="background: #fef3c7; color: #92400e; border: 1px solid #fde68a; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-crown" style="color: #d97706;"></i> Main Admin (Master)</span>`;
     } else if (role === 'admin') {
-      roleBadge = `<span style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-shield-halved"></i> Administrator</span>`;
+      roleBadge = `<span style="background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-shield-halved" style="color: #0284c7;"></i> Administrator</span>`;
     } else if (role === 'customer') {
-      roleBadge = `<span style="background: rgba(52, 211, 153, 0.15); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.35); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-user-check"></i> Customer / Client</span>`;
+      roleBadge = `<span style="background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-user-check" style="color: #16a34a;"></i> Customer / Client</span>`;
     } else {
-      roleBadge = `<span style="background: rgba(168, 85, 247, 0.15); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.35); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-briefcase"></i> Billing Staff</span>`;
+      roleBadge = `<span style="background: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-briefcase" style="color: #9333ea;"></i> Billing Staff</span>`;
     }
 
     const statusBadge = isActive
-      ? `<span style="background: rgba(16, 185, 129, 0.12); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px;"><i class="fa-solid fa-circle" style="font-size: 7px; margin-right: 4px;"></i>Active</span>`
-      : `<span style="background: rgba(244, 63, 94, 0.12); color: #f43f5e; border: 1px solid rgba(244, 63, 94, 0.3); padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px;"><i class="fa-solid fa-circle" style="font-size: 7px; margin-right: 4px;"></i>Suspended</span>`;
+      ? `<span style="background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-circle" style="font-size: 7px; color: #10b981;"></i> Active</span>`
+      : `<span style="background: #fff1f2; color: #be123c; border: 1px solid #fecdd3; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 11px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-circle" style="font-size: 7px; color: #f43f5e;"></i> Suspended</span>`;
 
     let lastLoginStr = "Never";
     if (u.lastLogin) {
@@ -21468,45 +21468,53 @@ window.renderUserManagerTable = function() {
       }
     }
 
-    const initial = (u.name || u.email || 'U').charAt(0).toUpperCase();
+    const rawName = u.name || u.email || 'User';
+    const cleanDisplayName = rawName.replace(/\s*\([^)]*\)/g, '').trim() || (isMain ? "Jagan Kandukuri" : "User");
+    const initial = cleanDisplayName.charAt(0).toUpperCase();
 
     let actionBtns = '';
     if (isMain) {
-      actionBtns = `<span style="color: #64748b; font-size: 11px; font-style: italic;">Permanent Master Account</span>`;
+      actionBtns = `<span style="color: #475569; font-size: 11px; font-weight: 600; background: #f1f5f9; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-lock" style="font-size: 9px; color: #64748b;"></i> Permanent Master</span>`;
     } else {
       actionBtns = `
-        <div style="display: flex; gap: 6px; justify-content: flex-end;">
-          <button type="button" class="btn btn-xs" onclick="window.toggleUserStatus('${escapeHtml(u.email)}')" style="background: ${isActive ? 'rgba(244, 63, 94, 0.12)' : 'rgba(16, 185, 129, 0.12)'}; color: ${isActive ? '#f43f5e' : '#10b981'}; border: 1px solid ${isActive ? 'rgba(244, 63, 94, 0.3)' : 'rgba(16, 185, 129, 0.3)'}; border-radius: 5px; padding: 4px 8px; font-size: 11px; cursor: pointer;" title="${isActive ? 'Suspend Access' : 'Activate Access'}">
+        <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
+          <button type="button" class="btn btn-xs" onclick="window.toggleUserStatus('${escapeHtml(u.email)}')" style="background: ${isActive ? '#fff1f2' : '#ecfdf5'}; color: ${isActive ? '#be123c' : '#047857'}; border: 1px solid ${isActive ? '#fecdd3' : '#a7f3d0'}; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="${isActive ? 'Suspend Access' : 'Activate Access'}">
             <i class="fa-solid ${isActive ? 'fa-pause' : 'fa-play'}"></i> ${isActive ? 'Suspend' : 'Activate'}
           </button>
-          <button type="button" class="btn btn-xs btn-secondary" onclick="window.openEditUserModal('${escapeHtml(u.email)}')" style="padding: 4px 8px; font-size: 11px;" title="Edit Role">
+          <button type="button" class="btn btn-xs" onclick="window.openEditUserModal('${escapeHtml(u.email)}')" style="background: #f8fafc; color: #334155; border: 1px solid #cbd5e1; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Edit Role">
             <i class="fa-solid fa-pen"></i> Edit
           </button>
-          <button type="button" class="btn btn-xs" onclick="window.deleteAuthorizedUser('${escapeHtml(u.email)}')" style="background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 5px; padding: 4px 8px; font-size: 11px; cursor: pointer;" title="Revoke & Delete Access">
+          <button type="button" class="btn btn-xs" onclick="window.deleteAuthorizedUser('${escapeHtml(u.email)}')" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center;" title="Revoke & Delete Access">
             <i class="fa-solid fa-trash"></i>
           </button>
         </div>
       `;
     }
 
+    const avatarBg = isMain
+      ? 'linear-gradient(135deg, #f59e0b, #d97706)'
+      : (role === 'admin' ? 'linear-gradient(135deg, #0284c7, #0369a1)' : (role === 'customer' ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #8b5cf6, #6d28d9)'));
+
     return `
-      <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.06); transition: background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
-        <td style="padding: 12px;">
+      <tr style="border-bottom: 1px solid #e2e8f0; transition: background 0.15s; vertical-align: middle;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+        <td style="padding: 12px 14px;">
           <div style="display: flex; align-items: center; gap: 10px;">
-            <div style="width: 32px; height: 32px; border-radius: 50%; background: ${isMain ? '#f59e0b' : '#0284c7'}; color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 12.5px;">
+            <div style="width: 32px; height: 32px; border-radius: 50%; background: ${avatarBg}; color: #ffffff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 12.5px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); flex-shrink: 0;">
               ${initial}
             </div>
             <div>
-              <div style="font-weight: 700; color: #ffffff;">${escapeHtml(u.name || u.email)}</div>
-              ${isMain ? '<div style="font-size: 10.5px; color: #f59e0b; font-weight: 600;">Main Administrator</div>' : ''}
+              <div style="font-weight: 700; color: #0f172a; font-size: 13px; line-height: 1.2;">${escapeHtml(cleanDisplayName)}</div>
+              ${isMain ? '<div style="font-size: 10.5px; color: #b45309; font-weight: 700; display: flex; align-items: center; gap: 3px; margin-top: 2px;"><i class="fa-solid fa-crown" style="font-size: 9px;"></i> Master Administrator</div>' : '<div style="font-size: 10.5px; color: #64748b; font-weight: 500; margin-top: 2px;">Authorized Operator</div>'}
             </div>
           </div>
         </td>
-        <td style="padding: 12px; color: #93c5fd; font-family: monospace; font-size: 12px;">${escapeHtml(u.email)}</td>
-        <td style="padding: 12px;">${roleBadge}</td>
-        <td style="padding: 12px;">${statusBadge}</td>
-        <td style="padding: 12px; color: #94a3b8; font-size: 11.5px;">${lastLoginStr}</td>
-        <td style="padding: 12px; text-align: right;">${actionBtns}</td>
+        <td style="padding: 12px 14px;">
+          <span style="color: #0369a1; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; font-weight: 600; background: #f0f9ff; border: 1px solid #bae6fd; padding: 2px 7px; border-radius: 5px;">${escapeHtml(u.email)}</span>
+        </td>
+        <td style="padding: 12px 14px;">${roleBadge}</td>
+        <td style="padding: 12px 14px;">${statusBadge}</td>
+        <td style="padding: 12px 14px; color: #475569; font-size: 12px; font-weight: 500;">${lastLoginStr}</td>
+        <td style="padding: 12px 14px; text-align: right;">${actionBtns}</td>
       </tr>
     `;
   }).join('');
@@ -21826,8 +21834,8 @@ window.applyRolePermissions = function(role) {
   const isAdmin = (currentRole === 'admin' || isSuperAdmin);
 
   const email = sessionStorage.getItem("current_user_email") || (isSuperAdmin ? (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com") : (isViewOnly ? "demo@viewer" : ""));
-  const rawName = sessionStorage.getItem("current_user_name") || (isSuperAdmin ? "Jagan Kandukuri" : (isViewOnly ? "Guest Viewer (Demo)" : (email.split("@")[0] || "User")));
-  const name = isSuperAdmin ? (rawName.replace(/\s*\([^)]*\)/g, '').trim() || "Jagan Kandukuri") : rawName;
+  const rawName = sessionStorage.getItem("current_user_name") || (isSuperAdmin ? "Jagan Kandukuri" : (isViewOnly ? "Guest Viewer" : (email.split("@")[0] || "User")));
+  const cleanName = (rawName || "").replace(/\s*\([^)]*\)/g, '').trim() || (isSuperAdmin ? "Jagan Kandukuri" : (email.split("@")[0] || "User"));
   
   // 1. Top Demo Banner
   const demoBanner = document.getElementById("demo-mode-top-banner");
@@ -21856,7 +21864,7 @@ window.applyRolePermissions = function(role) {
       badgeSlot.innerHTML = `
         <div style="${badgeBg} padding: 4px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; cursor: ${isSuperAdmin ? 'pointer' : 'default'};" ${isSuperAdmin ? 'onclick="window.switchTab(\'settings\'); document.getElementById(\'user-management-panel\')?.scrollIntoView({behavior:\'smooth\'});" title="Main Admin - Click to Manage Users"' : ''}>
           <i class="fa-solid ${roleIcon}"></i>
-          <span class="user-badge-text">${escapeHtml(name)} (${roleLabel})</span>
+          <span class="user-badge-text">${escapeHtml(cleanName)} (${roleLabel})</span>
         </div>
       `;
     }
@@ -21865,7 +21873,7 @@ window.applyRolePermissions = function(role) {
   // 3. Sidebar profile (bottom-left)
   const sbName = document.getElementById("sidebar-user-name");
   const sbEmail = document.getElementById("sidebar-user-email");
-  if (sbName) sbName.textContent = isViewOnly ? "Prospective Buyer" : name;
+  if (sbName) sbName.textContent = isViewOnly ? "Prospective Buyer" : cleanName;
   if (sbEmail) {
     const dispEmail = isViewOnly ? (email && email !== "demo@viewer" ? email : "Free View Access") : email;
     sbEmail.textContent = dispEmail;
@@ -21878,7 +21886,7 @@ window.applyRolePermissions = function(role) {
   if (dashGreeting) {
     dashGreeting.innerHTML = isViewOnly
       ? `Welcome to Aaryan Aqua 👋 <span style="font-size: 14px; color: #38bdf8; font-weight: 600;">(Demo Mode)</span>`
-      : `Welcome back, ${escapeHtml(name)} 👋`;
+      : `Welcome back, ${escapeHtml(cleanName)} 👋`;
   }
   if (dashMeta) {
     dashMeta.innerHTML = isSuperAdmin

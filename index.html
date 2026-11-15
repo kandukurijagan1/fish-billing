@@ -459,9 +459,9 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=5.4.3_20261115_clean_release">
+  <link rel="stylesheet" href="index.css?v=5.4.4_20261115_alignment_fix">
 
-  <script src="invoice_utils_v5.js?v=5.4.3_20261115_clean_release"></script>
+  <script src="invoice_utils_v5.js?v=5.4.4_20261115_alignment_fix"></script>
 
 </head>
 
@@ -3993,23 +3993,23 @@
 
           <div style="margin-top: 14px; overflow-x: auto;">
 
-            <table class="data-table" id="users-management-table" style="width: 100%; font-size: 12.5px; border-collapse: collapse;">
+            <table class="dashboard-table" id="users-management-table" style="width: 100%; min-width: 760px; border-collapse: collapse; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
 
               <thead>
 
-                <tr style="background: rgba(15, 23, 42, 0.6); text-align: left;">
+                <tr style="background: #f8fafc; text-align: left; border-bottom: 2px solid #e2e8f0;">
 
-                  <th style="padding: 10px 12px;">User / Customer</th>
+                  <th style="padding: 12px 14px; width: 26%;">User / Customer</th>
 
-                  <th style="padding: 10px 12px;">Google Email</th>
+                  <th style="padding: 12px 14px; width: 24%;">Google Email</th>
 
-                  <th style="padding: 10px 12px;">Role &amp; Permissions</th>
+                  <th style="padding: 12px 14px; width: 18%;">Role &amp; Permissions</th>
 
-                  <th style="padding: 10px 12px;">Status</th>
+                  <th style="padding: 12px 14px; width: 12%;">Status</th>
 
-                  <th style="padding: 10px 12px;">Last Login</th>
+                  <th style="padding: 12px 14px; width: 12%;">Last Login</th>
 
-                  <th style="padding: 10px 12px; text-align: right;">Actions</th>
+                  <th style="padding: 12px 14px; width: 8%; text-align: right;">Actions</th>
 
                 </tr>
 
@@ -4039,9 +4039,13 @@
 
           </div>
 
-          <form id="settings-global-form" class="form-grid" onsubmit="saveGlobalSettingsDefaults(event)">
+          <form id="settings-global-form" class="settings-form-grid" onsubmit="saveGlobalSettingsDefaults(event)">
 
-            <div class="form-group">
+            <div class="settings-section-divider" style="margin-top: 0;">
+              <i class="fa-solid fa-building"></i> Company &amp; Store Profile Defaults
+            </div>
+
+            <div class="form-group col-span-2">
 
               <label for="set-c-name">Company Name</label>
 
@@ -4049,7 +4053,7 @@
 
             </div>
 
-            <div class="form-group">
+            <div class="form-group col-span-2">
 
               <label for="set-c-tagline">Company Tagline</label>
 
@@ -4057,7 +4061,7 @@
 
             </div>
 
-            <div class="form-group col-12">
+            <div class="form-group col-full">
 
               <label for="set-c-address">Company Address</label>
 
@@ -4065,7 +4069,7 @@
 
             </div>
 
-            <div class="form-group">
+            <div class="form-group col-span-2">
 
               <label for="set-c-phones">Phone Numbers</label>
 
@@ -4073,7 +4077,7 @@
 
             </div>
 
-            <div class="form-group">
+            <div class="form-group col-span-2">
 
               <label for="set-c-email">Email Address</label>
 
@@ -4089,33 +4093,27 @@
 
             </div>
 
-            <div class="form-grid-inner col-12">
+            <div class="form-group col-span-2">
 
-              <div class="form-group">
+              <label for="set-c-state">State Name</label>
 
-                <label>State Name</label>
-
-                <input type="text" id="set-c-state" value="Andhra Pradesh">
-
-              </div>
-
-              <div class="form-group">
-
-                <label>State Code</label>
-
-                <input type="text" id="set-c-state-code" value="37">
-
-              </div>
+              <input type="text" id="set-c-state" value="Andhra Pradesh">
 
             </div>
 
+            <div class="form-group col-span-2">
 
+              <label for="set-c-state-code">State Code</label>
 
-            <div class="section-divider">BANK DETAILS DEFAULTS</div>
+              <input type="text" id="set-c-state-code" value="37">
 
-            
+            </div>
 
-            <div class="form-group">
+            <div class="settings-section-divider">
+              <i class="fa-solid fa-building-columns"></i> Bank Account &amp; Settlement Defaults
+            </div>
+
+            <div class="form-group col-span-2">
 
               <label for="set-b-name">Bank Name</label>
 
@@ -4123,7 +4121,7 @@
 
             </div>
 
-            <div class="form-group">
+            <div class="form-group col-span-2">
 
               <label for="set-b-acc-name">Account Name</label>
 
@@ -4131,7 +4129,7 @@
 
             </div>
 
-            <div class="form-group">
+            <div class="form-group col-span-2">
 
               <label for="set-b-acc-no">Account Number</label>
 
@@ -4139,7 +4137,7 @@
 
             </div>
 
-            <div class="form-group">
+            <div class="form-group col-span-2">
 
               <label for="set-b-ifsc">IFSC Code</label>
 
@@ -4147,7 +4145,7 @@
 
             </div>
 
-            <div class="form-group">
+            <div class="form-group col-span-2">
 
               <label for="set-b-branch">Branch</label>
 
@@ -4155,29 +4153,27 @@
 
             </div>
 
-            <div class="form-group">
+            <div class="form-group col-span-2">
 
-              <label for="set-b-upi">UPI ID for Payment scan</label>
+              <label for="set-b-upi">UPI ID for Payment Scan</label>
 
               <input type="text" id="set-b-upi" value="7386262139@upi">
 
             </div>
 
+            <div class="form-group col-full">
 
-
-            <div class="form-group col-12">
-
-              <label>Default Terms & Conditions (One per line)</label>
+              <label for="set-b-terms">Default Terms &amp; Conditions (One per line)</label>
 
               <textarea id="set-b-terms" rows="4"></textarea>
 
             </div>
 
+            <div class="form-group col-full" style="margin-top: 10px;">
 
-
-            <div class="form-group col-12 margin-top-20">
-
-              <button type="submit" class="btn btn-primary">Save Store Configuration Defaults</button>
+              <button type="submit" class="btn btn-primary" style="padding: 10px 22px; font-weight: 700; font-size: 13.5px; border-radius: 8px; display: inline-flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-floppy-disk"></i> Save Store Configuration Defaults
+              </button>
 
             </div>
 
@@ -11455,13 +11451,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=5.4.3_20261115_clean_release"></script>
+<script src="supabase-adapter.js?v=5.4.4_20261115_alignment_fix"></script>
 
-<script src="initial_db.js?v=5.4.3_20261115_clean_release"></script>
+<script src="initial_db.js?v=5.4.4_20261115_alignment_fix"></script>
 
-<script src="customer-timeline.js?v=5.4.3_20261115_clean_release"></script>
+<script src="customer-timeline.js?v=5.4.4_20261115_alignment_fix"></script>
 
-<script src="index_v5.js?v=5.4.3_20261115_clean_release"></script>
+<script src="index_v5.js?v=5.4.4_20261115_alignment_fix"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->
