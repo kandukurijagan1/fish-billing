@@ -454,6 +454,70 @@
     return "https://accounts.google.com/o/oauth2/v2/auth?" + params.toString();
   }
 
+  function isMainAdminEmail(email) {
+    const norm = String(email || "").toLowerCase().trim();
+    if (!norm) return false;
+    return (
+      norm === "kandukurijagan99@gmail.com" ||
+      norm === "kandukurijagan7@gmail.com" ||
+      norm === "kandukurijagan88@gmail.com" ||
+      norm === "kandukurijagan642@gmail.com"
+    );
+  }
+
+  function calculateDashboardAnalytics(invoices = [], products = []) {
+    let totalRevenue = 0;
+    let totalCollected = 0;
+    let totalBalanceDue = 0;
+    let gstCount = 0;
+    let estCount = 0;
+    let allInvoicesCost = 0;
+    let allInvoicesTaxable = 0;
+
+    (invoices || []).forEach(inv => {
+      if (!inv) return;
+      const isEst = Boolean(inv.isEstimate || inv.details?.isEstimate || String(inv.invoiceNo || "").startsWith("EST-"));
+      if (isEst) {
+        estCount++;
+        return;
+      }
+      gstCount++;
+      const tot = parseFloat(inv.total || inv.details?.total || 0) || 0;
+      const paid = parseFloat(inv.paidAmount || (inv.payment && inv.payment.paidAmount) || tot) || 0;
+      const bal = parseFloat(inv.balanceDue || (inv.payment && inv.payment.balanceDue) || 0) || 0;
+
+      totalRevenue += tot;
+      totalCollected += paid;
+      totalBalanceDue += bal;
+
+      const items = inv.items || inv.details?.items || [];
+      items.forEach(it => {
+        const prod = (products || []).find(p => (it.productId && p.id === it.productId) || ((p.description || '').trim().toLowerCase() === (it.description || '').trim().toLowerCase()));
+        const cPrice = it.costPrice !== undefined ? it.costPrice : (prod?.costPrice || 0);
+        const qty = parseFloat(it.quantity) || 0;
+        const amt = parseFloat(it.amount) || (qty * (parseFloat(it.rate) || 0));
+        allInvoicesCost += (parseFloat(cPrice) || 0) * qty;
+        allInvoicesTaxable += amt;
+      });
+    });
+
+    const estProfit = Math.max(0, allInvoicesTaxable - allInvoicesCost);
+    const profitPct = allInvoicesTaxable > 0 ? Math.min(100, Math.max(0, (estProfit / allInvoicesTaxable) * 100)).toFixed(1) : "0.0";
+
+    return {
+      totalRevenue,
+      totalCollected,
+      totalBalanceDue,
+      gstCount,
+      estCount,
+      totalInvoices: invoices.length,
+      allInvoicesCost,
+      allInvoicesTaxable,
+      estProfit,
+      profitPct
+    };
+  }
+
   global.InvoiceUtils = {
     roundToTwo,
     calculateInvoiceBreakdown,
@@ -467,7 +531,9 @@
     validatePassword,
     validateDirectMailAuth,
     validateGoogleOAuthRedirectUri,
-    buildGoogleOAuthUrl
+    buildGoogleOAuthUrl,
+    isMainAdminEmail,
+    calculateDashboardAnalytics
   };
 
   if (typeof module !== 'undefined' && module.exports) {

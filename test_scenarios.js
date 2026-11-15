@@ -449,6 +449,53 @@ async function runAllTests() {
   assert(authUrl.includes('redirect_uri=https%3A%2F%2Faaryanaqua.netlify.app%2F'), 'Google OAuth URL encodes authorized redirect URI');
   assert(authUrl.includes('prompt=select_account'), 'Google OAuth URL enforces prompt=select_account for reliable account selection');
 
+  // 👉 TEST CASE 10: Testing Master Admin Recognition & Dashboard Profit / Volume Math
+  console.log('\n👉 TEST CASE 10: Testing Master Admin Recognition & Consistent Financial Analytics...');
+  assert(InvoiceUtils.isMainAdminEmail('kandukurijagan99@gmail.com') === true, 'kandukurijagan99@gmail.com recognized as Master Admin');
+  assert(InvoiceUtils.isMainAdminEmail('kandukurijagan7@gmail.com') === true, 'kandukurijagan7@gmail.com recognized as Master Admin');
+  assert(InvoiceUtils.isMainAdminEmail('kandukurijagan88@gmail.com') === true, 'kandukurijagan88@gmail.com recognized as Master Admin');
+  assert(InvoiceUtils.isMainAdminEmail('kandukurijagan642@gmail.com') === true, 'kandukurijagan642@gmail.com recognized as Master Admin');
+  assert(InvoiceUtils.isMainAdminEmail('manasakokkiligadda11@gmail.com') === false, 'Non-master staff email recognized as standard user');
+
+  // Verify financial analytics consistency: Quotations must never inflate Gross Profit or Billing Volume
+  const mockProducts = [
+    { id: 'p1', description: 'Fish Feed 20kg', costPrice: 1000, rate: 1500 }
+  ];
+  const mockInvoices = [
+    {
+      id: 'inv_1',
+      invoiceNo: '#0001',
+      total: 31095,
+      paidAmount: 31095,
+      balanceDue: 0,
+      items: [{ productId: 'p1', description: 'Fish Feed 20kg', quantity: 10, rate: 1500, amount: 15000, costPrice: 1000 }]
+    },
+    {
+      id: 'inv_est_1',
+      invoiceNo: '#EST-0002',
+      isEstimate: true,
+      total: 105000,
+      paidAmount: 105000,
+      balanceDue: 0,
+      items: [{ productId: 'p1', description: 'Fish Feed 20kg', quantity: 70, rate: 1500, amount: 105000, costPrice: 1000 }]
+    },
+    {
+      id: 'inv_est_2',
+      invoiceNo: '#EST-0003',
+      isEstimate: true,
+      total: 310950,
+      paidAmount: 0,
+      balanceDue: 310950,
+      items: [{ productId: 'p1', description: 'Fish Feed 20kg', quantity: 200, rate: 1500, amount: 300000, costPrice: 1000 }]
+    }
+  ];
+
+  const analytics = InvoiceUtils.calculateDashboardAnalytics(mockInvoices, mockProducts);
+  assert(analytics.gstCount === 1, 'Exactly 1 GST Tax invoice counted');
+  assert(analytics.estCount === 2, 'Exactly 2 Quotations counted separately');
+  assert(analytics.totalRevenue === 31095, 'Billing Volume strictly includes GST Tax Invoice (₹31,095) and excludes quotes');
+  assert(analytics.estProfit === 5000, 'Gross profit (₹5,000) correctly computed from billed items only (₹15,000 taxable - ₹10,000 cost), ignoring ₹4 Lakh+ quotations');
+
   console.log('\n====================================================');
   console.log(`🏁 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('====================================================\n');

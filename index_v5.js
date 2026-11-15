@@ -354,8 +354,11 @@ window.isDemoMode = function() {
     })() || ""
   ).toLowerCase().trim();
 
-  const isJagan = currentEmail === "kandukurijagan99@gmail.com" ||
-                  currentEmail === "kandukurijagan88@gmail.com";
+  const isJagan = (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(currentEmail)) ||
+                  currentEmail === "kandukurijagan99@gmail.com" ||
+                  currentEmail === "kandukurijagan7@gmail.com" ||
+                  currentEmail === "kandukurijagan88@gmail.com" ||
+                  currentEmail === "kandukurijagan642@gmail.com";
 
   if (isJagan || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_main_admin") === "true")) {
     try {
@@ -4807,7 +4810,7 @@ Object.defineProperty(window, 'AUTHORIZED_LOGIN_EMAIL', {
 window.savePersistentAuthSession = function(userObj) {
   if (!userObj || !userObj.email) return null;
   const normEmail = (userObj.email || "").toLowerCase().trim();
-  const isMainAdmin = (normEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
+  const isMainAdmin = (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(normEmail)) || (normEmail === (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim());
   
   // BANNED emails can ONLY be saved as viewer, never as admin
   let effectiveRole = isMainAdmin ? "super_admin" : (userObj.role || "admin");
@@ -4874,8 +4877,11 @@ window.clearPersistentAuthSession = function() {
 // Safe helper to determine current user role
 window.getCurrentResolvedRole = function() {
   const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
-  const isJagan = currentEmail === "kandukurijagan99@gmail.com" ||
-                  currentEmail === "kandukurijagan88@gmail.com";
+  const isJagan = (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(currentEmail)) ||
+                  currentEmail === "kandukurijagan99@gmail.com" ||
+                  currentEmail === "kandukurijagan7@gmail.com" ||
+                  currentEmail === "kandukurijagan88@gmail.com" ||
+                  currentEmail === "kandukurijagan642@gmail.com";
 
   if (isJagan || sessionStorage.getItem("is_main_admin") === "true") {
     return "super_admin";
@@ -4923,8 +4929,11 @@ window.isViewOnlyUser = function() {
     return false;
   }
   const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
-  const isJagan = currentEmail === "kandukurijagan99@gmail.com" ||
-                  currentEmail === "kandukurijagan88@gmail.com";
+  const isJagan = (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(currentEmail)) ||
+                  currentEmail === "kandukurijagan99@gmail.com" ||
+                  currentEmail === "kandukurijagan7@gmail.com" ||
+                  currentEmail === "kandukurijagan88@gmail.com" ||
+                  currentEmail === "kandukurijagan642@gmail.com";
 
   // 1. Permanent Main Admin ALWAYS has full edit access and is NEVER view-only
   if (isJagan || sessionStorage.getItem("is_main_admin") === "true") {
@@ -5263,7 +5272,11 @@ window.openServiceInquiryModal = function(prefillService = "") {
   // STRICT RULE: Contact form is ONLY available in Demo / Free View mode!
   // Main Admin / authenticated store accounts NEVER show or open the contact inquiry form!
   const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
-  const isSuperAdmin = (currentEmail === (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim() || sessionStorage.getItem("is_main_admin") === "true");
+  const isSuperAdmin = (
+    (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(currentEmail)) ||
+    currentEmail === (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim() ||
+    sessionStorage.getItem("is_main_admin") === "true"
+  );
   const isDemo = (typeof window.isViewOnlyUser === 'function' && window.isViewOnlyUser()) ||
                  (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer"));
 
@@ -5599,7 +5612,7 @@ window.submitClientServiceInquiry = async function(e) {
 window.isCustomerAccountOriginal = function() {
   const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
   const mainAdminEmail = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-  if (currentEmail === mainAdminEmail) return false;
+  if (currentEmail === mainAdminEmail || (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(currentEmail))) return false;
   if (sessionStorage.getItem("is_main_admin") === "true") return false;
 
   const currentRole = (typeof window.getCurrentResolvedRole === 'function') ? window.getCurrentResolvedRole() : (sessionStorage.getItem("current_user_role") || "admin");
@@ -5764,7 +5777,11 @@ function initializeApp() {
                       (typeof sessionStorage !== 'undefined' && (sessionStorage.getItem("is_demo_mode") === "true" || sessionStorage.getItem("current_user_role") === "viewer")) ||
                       (typeof localStorage !== 'undefined' && localStorage.getItem("is_demo_mode") === "true");
   const curEmailEarly = ((typeof sessionStorage !== 'undefined' ? sessionStorage.getItem("current_user_email") : "") || "").toLowerCase().trim();
-  const isMainAdminEarly = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_main_admin") === "true") || curEmailEarly === "kandukurijagan99@gmail.com" || curEmailEarly === "kandukurijagan88@gmail.com";
+  const isMainAdminEarly = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem("is_main_admin") === "true") ||
+                           (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(curEmailEarly)) ||
+                           curEmailEarly === "kandukurijagan99@gmail.com" ||
+                           curEmailEarly === "kandukurijagan7@gmail.com" ||
+                           curEmailEarly === "kandukurijagan88@gmail.com";
   const isStaffEarly = typeof window.isUserAuthorizedByAdmin === 'function' && curEmailEarly && window.isUserAuthorizedByAdmin(curEmailEarly);
   const isUnlockedEarly = (typeof localStorage !== 'undefined' && localStorage.getItem("app_authenticated") === "true" && localStorage.getItem("app_locked") !== "true" && !isDemoEarly);
 
@@ -7114,6 +7131,8 @@ function renderDashboardCharts() {
 
   (invoicesDb || []).forEach(inv => {
     if (!inv) return;
+    const isEst = Boolean(inv.isEstimate || inv.details?.isEstimate || String(inv.invoiceNo || "").startsWith("EST-"));
+    if (isEst) return;
     const invAmt = safeParseAmount(inv.total !== undefined ? inv.total : (inv.details && inv.details.total));
 
     // Robust date parsing
@@ -7481,16 +7500,21 @@ function updateDashboardOverview() {
     const ss = document.getElementById("stat-settlement-rate");
     if (ss) ss.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="font-size: 16px;"></i>`;
   } else {
-    if (elements.statTotalInvoices) elements.statTotalInvoices.textContent = activeInvoices.length;
     let totalRevenue = 0;
     let totalCollected = 0;
     let totalBalanceDue = 0;
     let pendingInvoicesCount = 0;
+    let gstCount = 0;
+    let estCount = 0;
 
     (activeInvoices || []).forEach(inv => {
       if (!inv) return;
       const isEst = Boolean(inv.isEstimate || inv.details?.isEstimate || String(inv.invoiceNo || "").startsWith("EST-"));
-      if (isEst) return;
+      if (isEst) {
+        estCount++;
+        return;
+      }
+      gstCount++;
       const payInfo = typeof getInvoicePaidAndBalance === "function" 
         ? getInvoicePaidAndBalance(inv)
         : { status: 'Paid', isPaid: true, paid: safeParseAmount(inv.total), balance: 0, total: safeParseAmount(inv.total) };
@@ -7503,9 +7527,15 @@ function updateDashboardOverview() {
       }
     });
 
+    if (elements.statTotalInvoices) elements.statTotalInvoices.textContent = activeInvoices.length;
+    const statTotalInvoicesSub = document.getElementById("stat-total-invoices-sub");
+    if (statTotalInvoicesSub) {
+      statTotalInvoicesSub.innerHTML = `<i class="fa-solid fa-arrow-trend-up"></i> ${gstCount} Tax Bills${estCount > 0 ? ` · ${estCount} Quotes` : ''}`;
+    }
+
     if (elements.statTotalAmount) {
       elements.statTotalAmount.textContent = '₹ ' + formatCurrency(totalRevenue);
-      elements.statTotalAmount.title = 'Total Gross Billing Volume: ₹ ' + formatCurrency(totalRevenue);
+      elements.statTotalAmount.title = 'Total Gross Billing Volume: ₹ ' + formatCurrency(totalRevenue) + ' across ' + gstCount + ' GST Tax Invoices';
     }
 
     const statCollectedEl = document.getElementById("stat-total-collected");
@@ -7536,6 +7566,8 @@ function updateDashboardOverview() {
     let allInvoicesTaxable = 0;
     (activeInvoices || []).forEach(inv => {
       if (!inv) return;
+      const isEst = Boolean(inv.isEstimate || inv.details?.isEstimate || String(inv.invoiceNo || "").startsWith("EST-"));
+      if (isEst) return;
       const items = inv.items || inv.details?.items || [];
       items.forEach(it => {
         const prod = (productsDb || []).find(p => (it.productId && p.id === it.productId) || ((p.description || '').trim().toLowerCase() === (it.description || '').trim().toLowerCase()));
@@ -7547,11 +7579,11 @@ function updateDashboardOverview() {
       });
     });
     const estProfit = Math.max(0, allInvoicesTaxable - allInvoicesCost);
-    const profitPct = allInvoicesTaxable > 0 ? ((estProfit / allInvoicesTaxable) * 100).toFixed(1) : "0";
+    const profitPct = allInvoicesTaxable > 0 ? Math.min(100, Math.max(0, ((estProfit / allInvoicesTaxable) * 100))).toFixed(1) : "0.0";
     const profitStatEl = document.getElementById("stat-total-profit");
     const profitPctEl = document.getElementById("stat-profit-pct");
     if (profitStatEl) profitStatEl.textContent = '₹ ' + formatCurrency(estProfit);
-    if (profitPctEl) profitPctEl.textContent = `${profitPct}%`;
+    if (profitPctEl) profitPctEl.textContent = `${profitPct}% Margin`;
 
     // 8th Stat: Settlement & Recovery Rate
     const settlementRate = totalRevenue > 0 ? ((totalCollected / totalRevenue) * 100).toFixed(1) : "100.0";
@@ -20875,6 +20907,9 @@ window.getAuthorizedUsersList = function() {
     } catch(_) {}
     const isRevoked = (em) => {
       const normEm = String(em || "").toLowerCase().trim();
+      if (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(normEm)) {
+        return false;
+      }
       if (cloudList && cloudList.some(u => (u.email || "").toLowerCase().trim() === normEm && String(u.status || "active").toLowerCase() === "active")) {
         return false;
       }
@@ -20889,10 +20924,31 @@ window.getAuthorizedUsersList = function() {
       if (u && u.email) {
         const k = u.email.toLowerCase().trim();
         if (k !== mainAdminNorm && !isRevoked(k)) {
-          map.set(k, Object.assign({}, u));
+          const userCopy = Object.assign({}, u);
+          if (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(k)) {
+            userCopy.role = "super_admin";
+            userCopy.status = "active";
+            userCopy.isMainAdmin = true;
+            userCopy.name = userCopy.name || "Jagan Kandukuri (Main Admin)";
+          }
+          map.set(k, userCopy);
         }
       }
     });
+
+    (window.DEFAULT_AUTHORIZED_USERS || []).forEach(def => {
+      if (def && def.email) {
+        const k = def.email.toLowerCase().trim();
+        if (k !== mainAdminNorm && (!map.has(k) || (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(k)))) {
+          map.set(k, Object.assign({}, def, {
+            status: "active",
+            role: "super_admin",
+            isMainAdmin: true
+          }));
+        }
+      }
+    });
+
     list = Array.from(map.values());
   } catch (e) {
     list = [];
@@ -20904,6 +20960,7 @@ window.getAuthorizedUsersList = function() {
     if (!u || !u.email) return false;
     const email = (u.email || "").toLowerCase().trim();
     if (email === mainAdminNorm) return false;
+    if (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(email)) return true;
     if (typeof window.isEmailBanned === 'function' && window.isEmailBanned(email)) return false;
     return true;
   });
@@ -21339,9 +21396,9 @@ window.renderUserManagerTable = function() {
   }
 
   tbody.innerHTML = users.map((u) => {
-    const isMain = !!u.isMainAdmin || (u.email || '').toLowerCase().trim() === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
-    const role = u.role || 'operator';
-    const status = u.status || 'active';
+    const isMain = !!u.isMainAdmin || (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(u.email)) || (u.email || '').toLowerCase().trim() === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
+    const role = isMain ? 'super_admin' : (u.role || 'operator');
+    const status = isMain ? 'active' : (u.status || 'active');
     const isActive = (status === 'active');
 
     let roleBadge = '';
@@ -21548,7 +21605,7 @@ window.saveUserAccessSubmit = async function(e) {
 window.toggleUserStatus = async function(email) {
   const normEmail = (email || "").toLowerCase().trim();
   const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-  if (normEmail === mainAdminNorm) {
+  if (normEmail === mainAdminNorm || (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(normEmail))) {
     showFloatingToast("⚠️ Main Admin account cannot be suspended!", "warning");
     return;
   }
@@ -21585,7 +21642,7 @@ window.customConfirm = function(msg) {
 window.deleteAuthorizedUser = async function(email) {
   const normEmail = (email || "").toLowerCase().trim();
   const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-  if (normEmail === mainAdminNorm) {
+  if (normEmail === mainAdminNorm || (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(normEmail))) {
     showFloatingToast("⚠️ Main Admin account cannot be deleted!", "warning");
     return;
   }
@@ -21648,7 +21705,11 @@ window.deleteAuthorizedUser = async function(email) {
 // 7. Role Permissions Application
 window.applyRolePermissions = function(role) {
   const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
-  const isSuperAdmin = (currentEmail === (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim() || sessionStorage.getItem("is_main_admin") === "true");
+  const isSuperAdmin = (
+    (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(currentEmail)) ||
+    currentEmail === (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim() ||
+    sessionStorage.getItem("is_main_admin") === "true"
+  );
   const isViewOnly = window.isViewOnlyUser();
   if (isViewOnly) {
     document.body.classList.add("view-only-mode", "demo-mode-active");
@@ -21721,8 +21782,9 @@ window.applyRolePermissions = function(role) {
   const currentRole = isSuperAdmin ? "super_admin" : (isViewOnly ? "viewer" : (role || (typeof window.getCurrentResolvedRole === 'function' ? window.getCurrentResolvedRole() : (sessionStorage.getItem("current_user_role") || "admin"))));
   const isAdmin = (currentRole === 'admin' || isSuperAdmin);
 
-  const email = sessionStorage.getItem("current_user_email") || (isSuperAdmin ? window.AUTHORIZED_LOGIN_EMAIL : (isViewOnly ? "demo@viewer" : ""));
-  const name = sessionStorage.getItem("current_user_name") || (isSuperAdmin ? "Jagan (Main Admin)" : (isViewOnly ? "Guest Viewer (Demo)" : (email.split("@")[0] || "User")));
+  const email = sessionStorage.getItem("current_user_email") || (isSuperAdmin ? (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com") : (isViewOnly ? "demo@viewer" : ""));
+  const rawName = sessionStorage.getItem("current_user_name") || (isSuperAdmin ? "Jagan Kandukuri" : (isViewOnly ? "Guest Viewer (Demo)" : (email.split("@")[0] || "User")));
+  const name = isSuperAdmin ? (rawName.replace(/\s*\([^)]*\)/g, '').trim() || "Jagan Kandukuri") : rawName;
   
   // 1. Top Demo Banner
   const demoBanner = document.getElementById("demo-mode-top-banner");
@@ -24967,17 +25029,17 @@ window.importDataBackupJSON = function(event) {
 
         // Restore to IndexedDB
         if (window.TurboIndexedDB) {
-          if (typeof window.TurboIndexedDB.saveAllInvoices === 'function') window.TurboIndexedDB.saveAllInvoices(importedInvoices);
-          if (typeof window.TurboIndexedDB.saveAllProducts === 'function') window.TurboIndexedDB.saveAllProducts(importedProducts);
-          if (typeof window.TurboIndexedDB.saveAllParties === 'function') window.TurboIndexedDB.saveAllParties(importedParties);
+          if (typeof window.TurboIndexedDB.saveAllInvoices === 'function') window.TurboIndexedDB.saveAllInvoices(invoicesDb);
+          if (typeof window.TurboIndexedDB.saveAllProducts === 'function') window.TurboIndexedDB.saveAllProducts(productsDb);
+          if (typeof window.TurboIndexedDB.saveAllParties === 'function') window.TurboIndexedDB.saveAllParties(partiesDb);
         }
 
         // Push to Supabase Cloud
         if (window.SupabaseDB && window.SupabaseDB.isConfigured()) {
           try {
-            if (importedProducts.length > 0) window.SupabaseDB.saveAllProducts(importedProducts).catch(console.warn);
-            if (importedParties.length > 0) window.SupabaseDB.saveAllCustomers(importedParties).catch(console.warn);
-            if (importedInvoices.length > 0) window.SupabaseDB.bulkUpsertInvoices(importedInvoices).catch(console.warn);
+            if (productsDb.length > 0) window.SupabaseDB.saveAllProducts(productsDb).catch(console.warn);
+            if (partiesDb.length > 0) window.SupabaseDB.saveAllCustomers(partiesDb).catch(console.warn);
+            if (invoicesDb.length > 0) window.SupabaseDB.bulkUpsertInvoices(invoicesDb).catch(console.warn);
           } catch(err) {
             console.warn("[Restore] Supabase sync notice:", err);
           }
@@ -28899,7 +28961,9 @@ window.openInvoiceVerificationModal = function(invoiceNo, rawUrl = "") {
                  isViewOnly;
   const currentUserEmail = (sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
   const mainAdminEmail = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-  const isMainAdmin = (currentUserEmail === mainAdminEmail) || (sessionStorage.getItem("is_main_admin") === "true");
+  const isMainAdmin = (currentUserEmail === mainAdminEmail) || 
+                      (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(currentUserEmail)) || 
+                      (sessionStorage.getItem("is_main_admin") === "true");
   const isAuthorized = isMainAdmin || ((typeof window.isUserAuthorizedByAdmin === 'function') && window.isUserAuthorizedByAdmin(currentUserEmail));
   const isSessionAuth = (sessionStorage.getItem("session_authenticated") === "true") || (localStorage.getItem("app_authenticated") === "true");
   const isAppLocked = (typeof isLocked !== "undefined" && isLocked) || (sessionStorage.getItem("manual_locked") === "true");
@@ -29168,7 +29232,9 @@ window.submitInvoicePaymentSettlement = function() {
 
   const currentUserEmail = (sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
   const mainAdminEmail = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-  const isMainAdmin = (currentUserEmail === mainAdminEmail) || (sessionStorage.getItem("is_main_admin") === "true");
+  const isMainAdmin = (currentUserEmail === mainAdminEmail) || 
+                      (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(currentUserEmail)) || 
+                      (sessionStorage.getItem("is_main_admin") === "true");
   const isAuthorized = isMainAdmin || ((typeof window.isUserAuthorizedByAdmin === 'function') && window.isUserAuthorizedByAdmin(currentUserEmail));
   const isSessionAuth = (sessionStorage.getItem("session_authenticated") === "true") || (localStorage.getItem("app_authenticated") === "true");
   const isAppLocked = (typeof isLocked !== "undefined" && isLocked) || (sessionStorage.getItem("manual_locked") === "true");
@@ -29465,6 +29531,7 @@ window.checkDirectMailAuthParams = async function() {
       const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
       const isAdminEmail = (
         directEmail === mainAdminNorm ||
+        (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(directEmail)) ||
         directEmail.includes("admin") ||
         directEmail.startsWith("jagan") ||
         (window.isUserAuthorizedByAdmin && window.isUserAuthorizedByAdmin(directEmail))
