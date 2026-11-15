@@ -6132,16 +6132,16 @@ function initializeApp() {
   }
 
   if (candidateEmail && typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(candidateEmail) && !isManuallyLocked && !lockoutStatus.locked) {
-    const isMainAdmin = (candidateEmail === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim());
+    const isMainAdmin = (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(candidateEmail)) || (candidateEmail === (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim());
     const usersList = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
     const matchedUser = isMainAdmin
-      ? { status: "active", role: "super_admin", name: "Jagan (Main Admin)" }
+      ? { status: "active", role: "super_admin", name: "Jagan Kandukuri (Main Admin)", isMainAdmin: true }
       : usersList.find(u => (u.email || "").toLowerCase().trim() === candidateEmail && u.status === "active");
 
     if (matchedUser) {
       canStayUnlocked = true;
-      const role = matchedUser.role || "customer";
-      const name = matchedUser.name || (isMainAdmin ? "Jagan (Main Admin)" : candidateEmail.split("@")[0]);
+      const role = isMainAdmin ? "super_admin" : (matchedUser.role || "admin");
+      const name = isMainAdmin ? "Jagan Kandukuri (Main Admin)" : (matchedUser.name || candidateEmail.split("@")[0]);
       sessionStorage.setItem("session_authenticated", "true");
       sessionStorage.setItem("current_user_email", candidateEmail);
       sessionStorage.setItem("current_user_name", name);
@@ -21054,6 +21054,49 @@ window.cleanStorageOfUnauthorizedUsers = function() {
         console.warn("[SECURITY] Forced viewer role for banned email in session:", sessEmail);
       }
     } catch(_) {}
+
+    // 5. Self-Healing Master Admin accounts: Guarantee active status & super_admin role across all storage
+    try {
+      const fixAdmin = (u) => {
+        if (!u || !u.email) return u;
+        const em = u.email.toLowerCase().trim();
+        if (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(em)) {
+          u.status = "active";
+          u.role = "super_admin";
+          u.isMainAdmin = true;
+          u.name = u.name || "Jagan Kandukuri (Main Admin)";
+        }
+        return u;
+      };
+
+      const rawAuth = localStorage.getItem("authorized_users");
+      if (rawAuth) {
+        let parsed = JSON.parse(rawAuth);
+        if (Array.isArray(parsed)) {
+          parsed = parsed.map(fixAdmin);
+          localStorage.setItem("authorized_users", JSON.stringify(parsed));
+        }
+      }
+
+      if (typeof globalSettings !== 'undefined' && Array.isArray(globalSettings.authorizedUsers)) {
+        globalSettings.authorizedUsers = globalSettings.authorizedUsers.map(fixAdmin);
+        try { localStorage.setItem("settings", JSON.stringify(globalSettings)); } catch(_) {}
+      }
+
+      const rawSession = localStorage.getItem("aaryan_auth_session");
+      if (rawSession) {
+        const sess = JSON.parse(rawSession);
+        if (sess && sess.email && typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(sess.email)) {
+          sess.role = "super_admin";
+          sess.isMainAdmin = true;
+          sess.name = sess.name || "Jagan Kandukuri (Main Admin)";
+          localStorage.setItem("aaryan_auth_session", JSON.stringify(sess));
+          sessionStorage.setItem("is_main_admin", "true");
+          sessionStorage.setItem("current_user_role", "super_admin");
+          sessionStorage.setItem("current_user_name", sess.name);
+        }
+      }
+    } catch (_) {}
   } catch (_) {}
 };
 window.cleanStorageOfUnauthorizedUsers();

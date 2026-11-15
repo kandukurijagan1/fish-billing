@@ -440,13 +440,13 @@
         var email = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
         var role = (sessionStorage.getItem("current_user_role") || "").toLowerCase().trim();
         var isDemo = sessionStorage.getItem("is_demo_mode") === "true" || localStorage.getItem("is_demo_mode") === "true" || role === "viewer" || role === "demo" || role === "guest";
-        var isJagan = email === "kandukurijagan99@gmail.com" || email === "kandukurijagan88@gmail.com";
+        var isJagan = email === "kandukurijagan99@gmail.com" || email === "kandukurijagan7@gmail.com" || email === "kandukurijagan88@gmail.com" || email === "kandukurijagan642@gmail.com";
         if (isDemo && !isJagan) {
           document.documentElement.classList.add("view-only-mode", "demo-mode-active");
         }
       } catch(e) {}
     })();
-    window.__APP_BUILD_VERSION__ = "v56_infinite_repeatability";
+    window.__APP_BUILD_VERSION__ = "v57_financial_sync_master_auth_v543";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -459,9 +459,9 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=live_v101_direct_google_and_mail_auth">
+  <link rel="stylesheet" href="index.css?v=5.4.3_20261115_clean_release">
 
-  <script src="invoice_utils_v5.js?v=live_v101_direct_google_and_mail_auth"></script>
+  <script src="invoice_utils_v5.js?v=5.4.3_20261115_clean_release"></script>
 
 </head>
 
@@ -11455,13 +11455,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=live_v101_direct_google_and_mail_auth"></script>
+<script src="supabase-adapter.js?v=5.4.3_20261115_clean_release"></script>
 
-<script src="initial_db.js?v=live_v101_direct_google_and_mail_auth"></script>
+<script src="initial_db.js?v=5.4.3_20261115_clean_release"></script>
 
-<script src="customer-timeline.js?v=live_v101_direct_google_and_mail_auth"></script>
+<script src="customer-timeline.js?v=5.4.3_20261115_clean_release"></script>
 
-<script src="index_v5.js?v=live_v101_direct_google_and_mail_auth"></script>
+<script src="index_v5.js?v=5.4.3_20261115_clean_release"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->
