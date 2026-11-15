@@ -20845,20 +20845,6 @@ window.DEFAULT_AUTHORIZED_USERS = [
     role: "super_admin",
     status: "active",
     isMainAdmin: true
-  },
-  {
-    email: "kandukurijagan7@gmail.com",
-    name: "Jagan Kandukuri",
-    role: "super_admin",
-    status: "active",
-    isMainAdmin: true
-  },
-  {
-    email: "kandukurijagan88@gmail.com",
-    name: "Jagan Kandukuri",
-    role: "super_admin",
-    status: "active",
-    isMainAdmin: true
   }
 ];
 
@@ -20907,10 +20893,7 @@ window.getAuthorizedUsersList = function() {
     } catch(_) {}
     const isRevoked = (em) => {
       const normEm = String(em || "").toLowerCase().trim();
-      if (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(normEm)) {
-        return false;
-      }
-      if (cloudList && cloudList.some(u => (u.email || "").toLowerCase().trim() === normEm && String(u.status || "active").toLowerCase() === "active")) {
+      if (normEm === mainAdminNorm) {
         return false;
       }
       return Array.isArray(revoked) && revoked.includes(normEm);
@@ -21060,7 +21043,8 @@ window.cleanStorageOfUnauthorizedUsers = function() {
       const fixAdmin = (u) => {
         if (!u || !u.email) return u;
         const em = u.email.toLowerCase().trim();
-        if (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(em)) {
+        const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+        if (em === mainAdminNorm) {
           u.status = "active";
           u.role = "super_admin";
           u.isMainAdmin = true;
@@ -21171,6 +21155,53 @@ window.updateUserLastLogin = function(email) {
         localStorage.setItem("settings", JSON.stringify(globalSettings));
       }
     } catch (e) {}
+  }
+};
+
+// Clear session activity / Last Login timestamp for a specific user
+window.clearUserSessionActivity = async function(email) {
+  const normEmail = (email || "").toLowerCase().trim();
+  if (!normEmail) return;
+
+  const list = window.getAuthorizedUsersList();
+  const user = list.find(u => (u.email || "").toLowerCase().trim() === normEmail);
+  if (user) {
+    user.lastLogin = null;
+    window.saveAuthorizedUsersList(list);
+  }
+
+  const currentEmail = (sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
+  if (currentEmail === normEmail) {
+    sessionStorage.removeItem("session_last_active_time");
+  }
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast(`🧹 Session activity cleared for ${email}.`, "info", 3000);
+  }
+};
+
+// Clear all session activities / Last Login timestamps across all accounts
+window.clearAllSessionActivities = async function() {
+  const confirmed = confirm("Are you sure you want to clear all session activity & last login timestamps for all accounts?");
+  if (!confirmed) return;
+
+  const list = window.getAuthorizedUsersList();
+  list.forEach(u => {
+    u.lastLogin = null;
+  });
+
+  window.saveAuthorizedUsersList(list);
+
+  try {
+    if (typeof AppSecurity !== 'undefined' && typeof AppSecurity.clearAuditLogs === 'function') {
+      AppSecurity.clearAuditLogs();
+    }
+    localStorage.removeItem("last_active_time");
+    sessionStorage.removeItem("session_last_active_time");
+  } catch(_) {}
+
+  if (typeof showFloatingToast === 'function') {
+    showFloatingToast("🧹 All user session activity logs cleared successfully.", "success", 3500);
   }
 };
 
@@ -21439,9 +21470,12 @@ window.renderUserManagerTable = function() {
   }
 
   tbody.innerHTML = users.map((u) => {
-    const isMain = !!u.isMainAdmin || (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(u.email)) || (u.email || '').toLowerCase().trim() === window.AUTHORIZED_LOGIN_EMAIL.toLowerCase().trim();
+    const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+    const userEmailNorm = (u.email || '').toLowerCase().trim();
+    const isPrimaryMaster = (userEmailNorm === mainAdminNorm);
+    const isMain = isPrimaryMaster || !!u.isMainAdmin || (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(u.email));
     const role = isMain ? 'super_admin' : (u.role || 'operator');
-    const status = isMain ? 'active' : (u.status || 'active');
+    const status = isMain ? (u.status || 'active') : (u.status || 'active');
     const isActive = (status === 'active');
 
     let roleBadge = '';
@@ -21473,18 +21507,18 @@ window.renderUserManagerTable = function() {
     const initial = cleanDisplayName.charAt(0).toUpperCase();
 
     let actionBtns = '';
-    if (isMain) {
-      actionBtns = `<span style="color: #475569; font-size: 11px; font-weight: 600; background: #f1f5f9; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-lock" style="font-size: 9px; color: #64748b;"></i> Permanent Master</span>`;
+    if (isPrimaryMaster) {
+      actionBtns = `<span style="color: #475569; font-size: 11px; font-weight: 600; background: #f1f5f9; border: 1px solid #e2e8f0; padding: 4px 10px; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px;"><i class="fa-solid fa-lock" style="font-size: 9px; color: #64748b;"></i> Primary Master</span>`;
     } else {
       actionBtns = `
         <div style="display: flex; gap: 6px; justify-content: flex-end; align-items: center;">
           <button type="button" class="btn btn-xs" onclick="window.toggleUserStatus('${escapeHtml(u.email)}')" style="background: ${isActive ? '#fff1f2' : '#ecfdf5'}; color: ${isActive ? '#be123c' : '#047857'}; border: 1px solid ${isActive ? '#fecdd3' : '#a7f3d0'}; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="${isActive ? 'Suspend Access' : 'Activate Access'}">
             <i class="fa-solid ${isActive ? 'fa-pause' : 'fa-play'}"></i> ${isActive ? 'Suspend' : 'Activate'}
           </button>
-          <button type="button" class="btn btn-xs" onclick="window.openEditUserModal('${escapeHtml(u.email)}')" style="background: #f8fafc; color: #334155; border: 1px solid #cbd5e1; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Edit Role">
+          <button type="button" class="btn btn-xs" onclick="window.openEditUserModal('${escapeHtml(u.email)}')" style="background: #f8fafc; color: #334155; border: 1px solid #cbd5e1; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;" title="Edit Role & Permissions">
             <i class="fa-solid fa-pen"></i> Edit
           </button>
-          <button type="button" class="btn btn-xs" onclick="window.deleteAuthorizedUser('${escapeHtml(u.email)}')" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center;" title="Revoke & Delete Access">
+          <button type="button" class="btn btn-xs" onclick="window.deleteAuthorizedUser('${escapeHtml(u.email)}')" style="background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; border-radius: 5px; padding: 4px 8px; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center;" title="Revoke Google Access & Delete User">
             <i class="fa-solid fa-trash"></i>
           </button>
         </div>
@@ -21504,7 +21538,7 @@ window.renderUserManagerTable = function() {
             </div>
             <div>
               <div style="font-weight: 700; color: #0f172a; font-size: 13px; line-height: 1.2;">${escapeHtml(cleanDisplayName)}</div>
-              ${isMain ? '<div style="font-size: 10.5px; color: #b45309; font-weight: 700; display: flex; align-items: center; gap: 3px; margin-top: 2px;"><i class="fa-solid fa-crown" style="font-size: 9px;"></i> Master Administrator</div>' : '<div style="font-size: 10.5px; color: #64748b; font-weight: 500; margin-top: 2px;">Authorized Operator</div>'}
+              ${isPrimaryMaster ? '<div style="font-size: 10.5px; color: #b45309; font-weight: 700; display: flex; align-items: center; gap: 3px; margin-top: 2px;"><i class="fa-solid fa-crown" style="font-size: 9px;"></i> Primary Master Administrator</div>' : (isMain ? '<div style="font-size: 10.5px; color: #0369a1; font-weight: 700; display: flex; align-items: center; gap: 3px; margin-top: 2px;"><i class="fa-solid fa-shield-halved" style="font-size: 9px;"></i> Master Administrator</div>' : '<div style="font-size: 10.5px; color: #64748b; font-weight: 500; margin-top: 2px;">Authorized Operator</div>')}
             </div>
           </div>
         </td>
@@ -21513,7 +21547,16 @@ window.renderUserManagerTable = function() {
         </td>
         <td style="padding: 12px 14px;">${roleBadge}</td>
         <td style="padding: 12px 14px;">${statusBadge}</td>
-        <td style="padding: 12px 14px; color: #475569; font-size: 12px; font-weight: 500;">${lastLoginStr}</td>
+        <td style="padding: 12px 14px;">
+          ${u.lastLogin ? `
+            <div style="display: inline-flex; align-items: center; gap: 6px;">
+              <span style="color: #475569; font-size: 12px; font-weight: 500;">${lastLoginStr}</span>
+              <button type="button" onclick="window.clearUserSessionActivity('${escapeHtml(u.email)}')" title="Clear session activity (Reset Last Login)" style="background: #f1f5f9; border: 1px solid #e2e8f0; color: #64748b; border-radius: 4px; padding: 1px 6px; font-size: 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px;" onmouseover="this.style.background='#fee2e2'; this.style.color='#b91c1c'; this.style.borderColor='#fca5a5';" onmouseout="this.style.background='#f1f5f9'; this.style.color='#64748b'; this.style.borderColor='#e2e8f0';">
+                <i class="fa-solid fa-xmark"></i> Clear
+              </button>
+            </div>
+          ` : `<span style="color: #94a3b8; font-size: 12px; font-style: italic;">Never</span>`}
+        </td>
         <td style="padding: 12px 14px; text-align: right;">${actionBtns}</td>
       </tr>
     `;
@@ -21693,8 +21736,8 @@ window.customConfirm = function(msg) {
 window.deleteAuthorizedUser = async function(email) {
   const normEmail = (email || "").toLowerCase().trim();
   const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-  if (normEmail === mainAdminNorm || (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(normEmail))) {
-    showFloatingToast("⚠️ Main Admin account cannot be deleted!", "warning");
+  if (normEmail === mainAdminNorm) {
+    showFloatingToast(`⚠️ Primary Master Admin account (${mainAdminNorm}) cannot be deleted!`, "warning");
     return;
   }
 

@@ -459,9 +459,9 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=5.4.4_20261115_alignment_fix">
+  <link rel="stylesheet" href="index.css?v=5.4.5_20261115_session_activity_fix">
 
-  <script src="invoice_utils_v5.js?v=5.4.4_20261115_alignment_fix"></script>
+  <script src="invoice_utils_v5.js?v=5.4.5_20261115_session_activity_fix"></script>
 
 </head>
 
@@ -3981,11 +3981,21 @@
 
             </div>
 
-            <button type="button" class="btn btn-primary btn-sm" onclick="window.openAddUserModal()" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700; border-radius: 8px; padding: 7px 14px;">
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
 
-              <i class="fa-solid fa-user-plus"></i> Grant Access to User / Customer
+              <button type="button" class="btn btn-secondary btn-sm" onclick="window.clearAllSessionActivities()" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700; border-radius: 8px; padding: 7px 14px; background: #f8fafc; border: 1px solid #cbd5e1; color: #334155;" title="Reset last login timestamps & clear session activity for all accounts">
 
-            </button>
+                <i class="fa-solid fa-clock-rotate-left" style="color: #0284c7;"></i> Clear Session Activities
+
+              </button>
+
+              <button type="button" class="btn btn-primary btn-sm" onclick="window.openAddUserModal()" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700; border-radius: 8px; padding: 7px 14px;">
+
+                <i class="fa-solid fa-user-plus"></i> Grant Access to User / Customer
+
+              </button>
+
+            </div>
 
           </div>
 
@@ -11451,13 +11461,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=5.4.4_20261115_alignment_fix"></script>
+<script src="supabase-adapter.js?v=5.4.5_20261115_session_activity_fix"></script>
 
-<script src="initial_db.js?v=5.4.4_20261115_alignment_fix"></script>
+<script src="initial_db.js?v=5.4.5_20261115_session_activity_fix"></script>
 
-<script src="customer-timeline.js?v=5.4.4_20261115_alignment_fix"></script>
+<script src="customer-timeline.js?v=5.4.5_20261115_session_activity_fix"></script>
 
-<script src="index_v5.js?v=5.4.4_20261115_alignment_fix"></script>
+<script src="index_v5.js?v=5.4.5_20261115_session_activity_fix"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->
