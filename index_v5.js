@@ -4919,9 +4919,6 @@ window.getCurrentResolvedRole = function() {
 // Commercial Product Tier: Helper to determine if current session is in Free View / Demo mode (read-only)
 window.isViewOnlyUser = function() {
   if (typeof window !== 'undefined' && window._isRestoringData === true) return false;
-  if (typeof localStorage !== 'undefined' && (localStorage.getItem("is_imported_data") === "true" || localStorage.getItem("has_real_data") === "true")) {
-    return false;
-  }
   const currentEmail = (sessionStorage.getItem("current_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
   const isJagan = (typeof window.isMainAdminEmail === 'function' && window.isMainAdminEmail(currentEmail)) ||
                   currentEmail === "kandukurijagan99@gmail.com";
@@ -4960,6 +4957,10 @@ window.isViewOnlyUser = function() {
   const currentRole = (sessionStorage.getItem("current_user_role") || "").toLowerCase().trim();
   if (currentRole === "viewer" || currentRole === "demo" || currentRole === "guest") {
     return true;
+  }
+
+  if (typeof localStorage !== 'undefined' && (localStorage.getItem("is_imported_data") === "true" || localStorage.getItem("has_real_data") === "true")) {
+    return false;
   }
 
   // 3. Check persistent session
@@ -6086,6 +6087,14 @@ function initializeApp() {
   let canStayUnlocked = false;
   let candidateEmail = (savedSession?.email || sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
 
+  // Check if candidate is already in demo / view-only mode
+  const isDemoSession = (
+    sessionStorage.getItem("is_demo_mode") === "true" ||
+    localStorage.getItem("is_demo_mode") === "true" ||
+    savedSession?.role === "viewer" ||
+    sessionStorage.getItem("current_user_role") === "viewer"
+  );
+
   // If candidate is an authorized admin/staff, CLEAR all demo flags!
   const isCandidateAuthorized = candidateEmail && typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(candidateEmail);
   if (isCandidateAuthorized) {
@@ -6105,10 +6114,31 @@ function initializeApp() {
     return;
   }
 
-  // Pure Google OAuth Authentication Enforced: No direct bypass or unauthenticated demo unlock on boot
+  // FREE VIEW MODE: If user logged in as a free viewer / demo mode, KEEP THEM UNLOCKED in view mode!
+  if (isDemoSession && !isCandidateAuthorized && !isManuallyLocked && !lockoutStatus.locked) {
+    canStayUnlocked = true;
+    isLocked = false;
+    localStorage.removeItem("app_locked");
+    document.body.classList.remove("app-is-locked");
+    const lockOverlay = document.getElementById("lock-screen-overlay");
+    if (lockOverlay) {
+      lockOverlay.classList.add("hidden");
+      lockOverlay.style.setProperty("display", "none", "important");
+    }
+    const wrapper = document.querySelector('.dashboard-wrapper');
+    if (wrapper) wrapper.classList.remove("blur-dashboard-wrapper");
+
+    if (typeof window.loginAsFreeViewer === 'function') {
+      window.loginAsFreeViewer({
+        email: candidateEmail || "guest@viewer.com",
+        name: sessionStorage.getItem("current_user_name") || savedSession?.name || "Guest Viewer"
+      });
+    }
+    return;
+  }
 
   // STRICT AUDIT: If currently stored email is not authorized by Main Admin and NOT in demo mode, purge!
-  if (candidateEmail && typeof window.isUserAuthorizedByAdmin === 'function' && !window.isUserAuthorizedByAdmin(candidateEmail)) {
+  if (candidateEmail && !isDemoSession && typeof window.isUserAuthorizedByAdmin === 'function' && !window.isUserAuthorizedByAdmin(candidateEmail)) {
     console.warn("Purging unauthorized session on boot for:", candidateEmail);
     if (typeof window.clearPersistentAuthSession === 'function') {
       window.clearPersistentAuthSession();
@@ -21266,20 +21296,19 @@ window.verifyAndAuthorizeUser = async function(email, displayName) {
   // 4. CHECK AUTHORIZATION
   const isAuthorized = isMainAdmin || (typeof window.isUserAuthorizedByAdmin === 'function' && window.isUserAuthorizedByAdmin(normEmail));
   if (!isAuthorized) {
-    if (errBlock) {
-      errBlock.innerHTML = `
-        <div style="background: rgba(239, 68, 68, 0.18); border: 1.5px solid #ef4444; border-radius: 10px; padding: 12px 14px; text-align: left;">
-          <div style="font-weight: 800; color: #f43f5e; margin-bottom: 4px; font-size: 13px;">
-            <i class="fa-solid fa-lock"></i> Access Denied
-          </div>
-          <div style="font-size: 11.5px; color: #cbd5e1;">
-            Google account <strong style="color: #fca5a5;">${escapeHtml(normEmail)}</strong> is not authorized to access store records.
-          </div>
-        </div>
-      `;
-      errBlock.classList.remove("hidden");
+    // Unknown Google Account: Automatically grant View-Only Access so they can explore!
+    console.log("[AUTH] Unknown Google account granted View-Only access:", normEmail);
+    if (errBlock) errBlock.classList.add("hidden");
+    if (typeof window.loginAsFreeViewer === 'function') {
+      window.loginAsFreeViewer({
+        email: normEmail,
+        name: displayName || normEmail.split("@")[0]
+      });
     }
-    return false;
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast(`👁️ Welcome, ${escapeHtml(displayName || normEmail.split("@")[0])}! Granted View-Only Access.`, "info", 5000);
+    }
+    return true;
   }
 
   const usersList = (typeof window.getAuthorizedUsersList === 'function') ? window.getAuthorizedUsersList() : [];
@@ -22742,20 +22771,32 @@ window.submitPasswordLogin = function(e) {
 };
 
 window.unlockInDemoMode = function() {
-  sessionStorage.setItem("is_demo_mode", "true");
-  localStorage.setItem("is_demo_mode", "true");
-  sessionStorage.setItem("current_user_email", "demo@viewer.com");
-  sessionStorage.setItem("current_user_name", "Guest Explorer");
-  sessionStorage.setItem("current_user_role", "viewer");
-  sessionStorage.setItem("manual_locked", "false");
+  if (typeof window.loginAsFreeViewer === 'function') {
+    window.loginAsFreeViewer({
+      email: "guest@viewer.com",
+      name: "Guest Viewer"
+    });
+  } else {
+    sessionStorage.setItem("is_demo_mode", "true");
+    localStorage.setItem("is_demo_mode", "true");
+    sessionStorage.setItem("current_user_email", "guest@viewer.com");
+    sessionStorage.setItem("current_user_name", "Guest Viewer");
+    sessionStorage.setItem("current_user_role", "viewer");
+    sessionStorage.setItem("is_main_admin", "false");
+    sessionStorage.setItem("manual_locked", "false");
 
-  unlockSystemSilently(false);
+    unlockSystemSilently(false);
 
-  if (typeof window.switchTab === 'function') {
-    window.switchTab('billing');
+    if (typeof window.applyRolePermissions === 'function') {
+      window.applyRolePermissions("viewer");
+    }
+    if (typeof window.switchTab === 'function') {
+      window.switchTab('billing');
+    }
   }
+
   if (typeof showFloatingToast === 'function') {
-    showFloatingToast("👁️ Opened in View-Only Demo Mode. Full billing active.", 3000);
+    showFloatingToast("👁️ Opened in View-Only Demo Mode. Free preview active.", 3500);
   }
 };
 
