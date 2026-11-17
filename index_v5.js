@@ -4815,19 +4815,25 @@ window.savePersistentAuthSession = function(userObj) {
     effectiveRole = "viewer";
   }
   
+  const timeoutSec = (typeof lockTimerSeconds !== "undefined" && lockTimerSeconds > 0) ? lockTimerSeconds : 1800;
+  const now = Date.now();
   const sessionData = {
     authenticated: true,
     email: normEmail,
     name: userObj.name || normEmail.split("@")[0],
     role: effectiveRole,
     isMainAdmin: isMainAdmin && !(typeof window.isEmailBanned === 'function' && window.isEmailBanned(normEmail)),
-    createdAt: Date.now(),
-    expiresAt: Date.now() + (30 * 24 * 60 * 60 * 1000) // 30-day persistent real-world session
+    createdAt: now,
+    lastActive: now,
+    expiresAt: now + (timeoutSec * 1000) // Session expires strictly based on active timeout
   };
   try {
     localStorage.setItem("aaryan_auth_session", JSON.stringify(sessionData));
     localStorage.setItem("app_authenticated", "true");
     localStorage.setItem("app_locked", "false");
+    localStorage.removeItem("session_timed_out");
+    localStorage.removeItem("manual_locked");
+    localStorage.setItem("last_active_time", now.toString());
     localStorage.setItem("last_logged_in_email", normEmail);
   } catch (e) {}
 
@@ -4837,7 +4843,8 @@ window.savePersistentAuthSession = function(userObj) {
   sessionStorage.setItem("current_user_role", sessionData.role);
   sessionStorage.setItem("is_main_admin", isMainAdmin ? "true" : "false");
   sessionStorage.setItem("manual_locked", "false");
-  sessionStorage.setItem("session_last_active_time", Date.now().toString());
+  sessionStorage.removeItem("session_timed_out");
+  sessionStorage.setItem("session_last_active_time", now.toString());
 
   if (!sessionData.isDemo && typeof window.initSupabaseRealtimeStream === 'function') {
     window.initSupabaseRealtimeStream();
@@ -4848,25 +4855,54 @@ window.savePersistentAuthSession = function(userObj) {
 
 window.getPersistentAuthSession = function() {
   try {
+    // 1. If explicitly locked or timed out, do NOT return active session!
+    if (localStorage.getItem("app_locked") === "true" ||
+        localStorage.getItem("session_timed_out") === "true" ||
+        sessionStorage.getItem("session_timed_out") === "true" ||
+        sessionStorage.getItem("manual_locked") === "true") {
+      return null;
+    }
+
     const raw = localStorage.getItem("aaryan_auth_session");
     if (!raw) return null;
     const sess = JSON.parse(raw);
-    if (sess && sess.authenticated && sess.email) {
-      if (sess.expiresAt && Date.now() > sess.expiresAt) {
-        window.clearPersistentAuthSession();
-        return null;
+    if (!sess || !sess.authenticated || !sess.email) return null;
+
+    // 2. Inactivity check: Check last activity against lockTimerSeconds
+    const now = Date.now();
+    const lastActive = parseInt(sess.lastActive || localStorage.getItem("last_active_time") || sessionStorage.getItem("session_last_active_time") || "0", 10);
+    const timeoutSec = (typeof lockTimerSeconds !== "undefined" && lockTimerSeconds > 0) ? lockTimerSeconds : 1800;
+
+    if (lastActive > 0 && (now - lastActive) >= (timeoutSec * 1000)) {
+      console.warn("[AUTH] Session timed out due to inactivity (" + Math.round((now - lastActive)/1000) + "s elapsed). Requiring re-login.");
+      if (typeof window.clearPersistentAuthSession === 'function') {
+        window.clearPersistentAuthSession("inactivity_timeout");
       }
-      return sess;
+      return null;
     }
+
+    if (sess.expiresAt && now > sess.expiresAt) {
+      console.warn("[AUTH] Session expired by timestamp. Requiring re-login.");
+      if (typeof window.clearPersistentAuthSession === 'function') {
+        window.clearPersistentAuthSession("inactivity_timeout");
+      }
+      return null;
+    }
+
+    return sess;
   } catch (e) {}
   return null;
 };
 
-window.clearPersistentAuthSession = function() {
+window.clearPersistentAuthSession = function(reason = "logout") {
   try {
     localStorage.removeItem("aaryan_auth_session");
     localStorage.removeItem("app_authenticated");
     localStorage.setItem("app_locked", "true");
+    if (reason === "inactivity_timeout") {
+      localStorage.setItem("session_timed_out", "true");
+      sessionStorage.setItem("session_timed_out", "true");
+    }
     sessionStorage.clear();
   } catch (e) {}
 };
@@ -5080,20 +5116,25 @@ window.loginAsFreeViewer = function(customData = {}) {
   // Also force the persistent session directly in case savePersistentAuthSession
   // has protection against banned emails (we want viewer to be stored)
   try {
+    const timeoutSec = (typeof lockTimerSeconds !== "undefined" && lockTimerSeconds > 0) ? lockTimerSeconds : 1800;
+    const now = Date.now();
     const viewerSession = {
       authenticated: true,
       email: email,
       name: name,
       role: "viewer",
       isMainAdmin: false,
-      createdAt: Date.now(),
-      expiresAt: Date.now() + (30 * 24 * 60 * 60 * 1000)
+      createdAt: now,
+      lastActive: now,
+      expiresAt: now + (timeoutSec * 1000)
     };
     localStorage.setItem("aaryan_auth_session", JSON.stringify(viewerSession));
   } catch(_) {}
 
   localStorage.setItem("app_authenticated", "true");
   localStorage.setItem("app_locked", "false");
+  localStorage.removeItem("session_timed_out");
+  sessionStorage.removeItem("session_timed_out");
   isLocked = false;
   document.body.classList.remove("app-is-locked");
 
@@ -6085,17 +6126,46 @@ function initializeApp() {
     }
   });
 
+  // 1. Inactivity & session timeout check on boot / reload
+  const now = Date.now();
+  const lastActiveStr = sessionStorage.getItem("session_last_active_time") || localStorage.getItem("last_active_time");
+  const lastActiveTime = lastActiveStr ? parseInt(lastActiveStr, 10) : 0;
+  const timeoutSec = (typeof lockTimerSeconds !== "undefined" && lockTimerSeconds > 0) ? lockTimerSeconds : 1800;
+
+  const isTimedOut = (
+    localStorage.getItem("session_timed_out") === "true" ||
+    sessionStorage.getItem("session_timed_out") === "true" ||
+    (lastActiveTime > 0 && (now - lastActiveTime) >= (timeoutSec * 1000))
+  );
+
+  const isAppLocked = localStorage.getItem("app_locked") === "true";
+  const isManuallyLocked = sessionStorage.getItem("manual_locked") === "true" || localStorage.getItem("manual_locked") === "true";
+  const lockoutStatus = AppSecurity.isLockedOut();
+
+  // If session is timed out or locked, purge active session data so it CANNOT open automatically!
+  if (isTimedOut) {
+    console.warn("[AUTH] Boot check: Session is timed out. Requiring re-login with Google.");
+    localStorage.setItem("session_timed_out", "true");
+    localStorage.setItem("app_locked", "true");
+    localStorage.removeItem("app_authenticated");
+    localStorage.removeItem("aaryan_auth_session");
+    localStorage.removeItem("is_demo_mode");
+    sessionStorage.clear();
+  }
+
   // REAL-WORLD ENTERPRISE SESSION PERSISTENCE (Strict Main Admin Authorization)
   if (typeof window.cleanStorageOfUnauthorizedUsers === 'function') {
     window.cleanStorageOfUnauthorizedUsers();
   }
 
-  const savedSession = (typeof window.getPersistentAuthSession === 'function') ? window.getPersistentAuthSession() : null;
-  const isManuallyLocked = sessionStorage.getItem("manual_locked") === "true";
-  const lockoutStatus = AppSecurity.isLockedOut();
+  const savedSession = (!isTimedOut && !isAppLocked && !isManuallyLocked && typeof window.getPersistentAuthSession === 'function')
+    ? window.getPersistentAuthSession()
+    : null;
 
   let canStayUnlocked = false;
-  let candidateEmail = (savedSession?.email || sessionStorage.getItem("current_user_email") || "").toLowerCase().trim();
+  let candidateEmail = (!isTimedOut && !isAppLocked && !isManuallyLocked)
+    ? (savedSession?.email || sessionStorage.getItem("current_user_email") || "").toLowerCase().trim()
+    : "";
 
   // Check if candidate is already in demo / view-only mode
   const isDemoSession = (
@@ -6215,7 +6285,7 @@ function initializeApp() {
     }
   } else {
     // STRICT LOCKOUT: System must remain securely locked behind authentication overlay!
-    const lockReason = isManuallyLocked ? "manual" : "initial";
+    const lockReason = isTimedOut ? "inactivity_timeout" : (isManuallyLocked ? "manual" : "initial");
     triggerLockOverlay(lockReason, false);
     document.body.classList.add("app-is-locked");
     const overlay = document.getElementById("lock-screen-overlay");
@@ -20452,8 +20522,22 @@ function resetAutolockTimer() {
     lastActivityRecordTime = now;
     try {
       sessionStorage.setItem("session_last_active_time", now.toString());
-      localStorage.setItem("last_active_time", now);
+      localStorage.setItem("last_active_time", now.toString());
       localStorage.setItem("app_locked", "false");
+      localStorage.removeItem("session_timed_out");
+      sessionStorage.removeItem("session_timed_out");
+
+      // Slide session expiry forward in localStorage
+      const timeoutSec = (typeof lockTimerSeconds !== "undefined" && lockTimerSeconds > 0) ? lockTimerSeconds : 1800;
+      const raw = localStorage.getItem("aaryan_auth_session");
+      if (raw) {
+        const sess = JSON.parse(raw);
+        if (sess && sess.authenticated) {
+          sess.lastActive = now;
+          sess.expiresAt = now + (timeoutSec * 1000);
+          localStorage.setItem("aaryan_auth_session", JSON.stringify(sess));
+        }
+      }
     } catch (_) {}
     updateSessionTimerUI();
   }
@@ -20475,9 +20559,12 @@ function unlockSystemSilently(shouldBroadcast = false) {
   localStorage.setItem("app_authenticated", "true");
   sessionStorage.setItem("session_authenticated", "true");
   sessionStorage.setItem("manual_locked", "false");
+  localStorage.removeItem("manual_locked");
+  localStorage.removeItem("session_timed_out");
+  sessionStorage.removeItem("session_timed_out");
   lastActivityRecordTime = Date.now();
   sessionStorage.setItem("session_last_active_time", lastActivityRecordTime.toString());
-  localStorage.setItem("last_active_time", lastActivityRecordTime);
+  localStorage.setItem("last_active_time", lastActivityRecordTime.toString());
   document.body.classList.remove("app-is-locked");
   
   if (typeof window.hideAppModal === 'function') {
@@ -20552,6 +20639,8 @@ window.handleLockPasswordInput = function(inputEl) {
 
 window.triggerManualLock = function(shouldBroadcast = true) {
   sessionStorage.setItem("manual_locked", "true");
+  localStorage.setItem("manual_locked", "true");
+  localStorage.setItem("app_locked", "true");
   triggerLockOverlay("manual", shouldBroadcast);
   AppSecurity.logEvent("MANUAL_LOCK", "Screen locked manually by user", "INFO");
   if (typeof showFloatingToast === 'function') {
@@ -20620,9 +20709,26 @@ function triggerLockOverlay(reason = "manual", shouldBroadcast = true) {
   localStorage.setItem("app_locked", "true");
   sessionStorage.removeItem("session_authenticated");
   localStorage.removeItem("app_authenticated");
-  if (reason === "manual") {
+
+  if (reason === "inactivity_timeout") {
+    localStorage.setItem("session_timed_out", "true");
+    sessionStorage.setItem("session_timed_out", "true");
+    // Strictly purge active persistent session tokens so refreshing CANNOT bypass timeout!
+    localStorage.removeItem("aaryan_auth_session");
+    localStorage.removeItem("is_demo_mode");
+    sessionStorage.removeItem("is_demo_mode");
+    sessionStorage.removeItem("current_user_email");
+    sessionStorage.removeItem("current_user_role");
+    sessionStorage.removeItem("is_main_admin");
+  } else if (reason === "manual") {
     sessionStorage.setItem("manual_locked", "true");
+    localStorage.setItem("manual_locked", "true");
+  } else if (reason === "logout") {
+    localStorage.removeItem("aaryan_auth_session");
+    localStorage.removeItem("is_demo_mode");
+    sessionStorage.clear();
   }
+
   document.body.classList.add("app-is-locked");
 
   const errBlock = document.getElementById("login-error-message");
@@ -20672,12 +20778,12 @@ function triggerLockOverlay(reason = "manual", shouldBroadcast = true) {
       sessionStatusBanner.style.border = "1px solid rgba(245, 158, 11, 0.35)";
       sessionStatusBanner.style.color = "#fbbf24";
       const mins = Math.max(1, Math.round((lockTimerSeconds || 1800) / 60));
-      sessionStatusText.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Session Expired: Inactive for ${mins} min. Sign in via Google Mail to resume.`;
+      sessionStatusText.innerHTML = `<i class="fa-solid fa-clock-rotate-left"></i> Session Expired: Inactive for ${mins} min. Sign in with Google to resume.`;
     } else if (reason === "manual") {
       sessionStatusBanner.style.background = "rgba(56, 189, 248, 0.15)";
       sessionStatusBanner.style.border = "1px solid rgba(56, 189, 248, 0.35)";
       sessionStatusBanner.style.color = "#38bdf8";
-      sessionStatusText.innerHTML = '<i class="fa-solid fa-envelope"></i> Screen Locked Securely. Sign in via Google Mail to unlock.';
+      sessionStatusText.innerHTML = '<i class="fa-solid fa-lock"></i> Screen Locked Securely. Sign in with Google to unlock.';
     } else if (reason === "logout") {
       sessionStatusBanner.style.background = "rgba(168, 85, 247, 0.15)";
       sessionStatusBanner.style.border = "1px solid rgba(168, 85, 247, 0.35)";
@@ -21088,23 +21194,36 @@ window.cleanStorageOfUnauthorizedUsers = function() {
       const rawSession = localStorage.getItem("aaryan_auth_session");
       if (rawSession) {
         const sess = JSON.parse(rawSession);
-        const sessEmail = (sess?.email || "").toLowerCase().trim();
-        const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
-        if (sessEmail === mainAdminNorm) {
-          sess.role = "super_admin";
-          sess.isMainAdmin = true;
-          sess.name = (sess.name || "Jagan Kandukuri").replace(/\s*\([^)]*\)/g, '').trim();
-          localStorage.setItem("aaryan_auth_session", JSON.stringify(sess));
-          sessionStorage.setItem("is_main_admin", "true");
-          sessionStorage.setItem("current_user_role", "super_admin");
-          sessionStorage.setItem("current_user_name", sess.name);
-        } else if (sess) {
-          sess.isMainAdmin = false;
-          if (sess.role === "super_admin" || sess.role === "admin" || !sess.role) {
-            sess.role = "customer";
+        // Inactivity/Timeout check: Do not heal or resurrect session if timed out or locked!
+        const isTimedOut = localStorage.getItem("session_timed_out") === "true" || localStorage.getItem("app_locked") === "true";
+        const timeoutSec = (typeof lockTimerSeconds !== "undefined" && lockTimerSeconds > 0) ? lockTimerSeconds : 1800;
+        const now = Date.now();
+        const lastActive = parseInt(sess?.lastActive || localStorage.getItem("last_active_time") || "0", 10);
+        const isExpired = (sess?.expiresAt && now > sess.expiresAt) || (lastActive > 0 && (now - lastActive) >= timeoutSec * 1000);
+
+        if (isTimedOut || isExpired) {
+          localStorage.removeItem("aaryan_auth_session");
+          localStorage.removeItem("app_authenticated");
+          localStorage.setItem("app_locked", "true");
+        } else {
+          const sessEmail = (sess?.email || "").toLowerCase().trim();
+          const mainAdminNorm = (window.AUTHORIZED_LOGIN_EMAIL || "kandukurijagan99@gmail.com").toLowerCase().trim();
+          if (sessEmail === mainAdminNorm) {
+            sess.role = "super_admin";
+            sess.isMainAdmin = true;
+            sess.name = (sess.name || "Jagan Kandukuri").replace(/\s*\([^)]*\)/g, '').trim();
             localStorage.setItem("aaryan_auth_session", JSON.stringify(sess));
-            sessionStorage.setItem("is_main_admin", "false");
-            sessionStorage.setItem("current_user_role", "customer");
+            sessionStorage.setItem("is_main_admin", "true");
+            sessionStorage.setItem("current_user_role", "super_admin");
+            sessionStorage.setItem("current_user_name", sess.name);
+          } else if (sess) {
+            sess.isMainAdmin = false;
+            if (sess.role === "super_admin" || sess.role === "admin" || !sess.role) {
+              sess.role = "customer";
+              localStorage.setItem("aaryan_auth_session", JSON.stringify(sess));
+              sessionStorage.setItem("is_main_admin", "false");
+              sessionStorage.setItem("current_user_role", "customer");
+            }
           }
         }
       }
