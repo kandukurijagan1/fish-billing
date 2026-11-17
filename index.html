@@ -446,7 +446,7 @@
         }
       } catch(e) {}
     })();
-    window.__APP_BUILD_VERSION__ = "v61_unknown_view_access_v548";
+    window.__APP_BUILD_VERSION__ = "v62_google_only_view_access_v549";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -459,9 +459,9 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=5.4.8_20261117_unknown_view_access">
+  <link rel="stylesheet" href="index.css?v=5.4.9_20261117_google_only_view_access">
 
-  <script src="invoice_utils_v5.js?v=5.4.8_20261117_unknown_view_access"></script>
+  <script src="invoice_utils_v5.js?v=5.4.9_20261117_google_only_view_access"></script>
 
 </head>
 
@@ -548,14 +548,9 @@
           kandukurijagan99@gmail.com
         </div>
         <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">
-          Sign in with authorized Google account to unlock system
+          Sign in with Google account to access store data or explore demo
         </div>
       </div>
-
-      <!-- GUEST / UNKNOWN VIEWER ACCESS BUTTON -->
-      <button type="button" id="btn-explore-demo-view" onclick="window.unlockInDemoMode()" style="width: 100%; margin-top: 14px; font-size: 13px; font-weight: 700; padding: 11px 16px; border-radius: 10px; border: 1.5px dashed rgba(14, 165, 233, 0.45); color: #38bdf8; background: rgba(14, 165, 233, 0.08); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s ease;" onmouseover="this.style.background='rgba(14, 165, 233, 0.18)'; this.style.borderColor='#38bdf8';" onmouseout="this.style.background='rgba(14, 165, 233, 0.08)'; this.style.borderColor='rgba(14, 165, 233, 0.45)';">
-        <i class="fa-solid fa-eye" style="color: #0ea5e9;"></i> <span>Explore in Free View Mode (Read-Only)</span>
-      </button>
 
       <div class="login-footer" style="margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 11px; color: #64748b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
         <div style="display: flex; align-items: center; gap: 6px;">
@@ -721,7 +716,7 @@
 
           <span class="demo-banner-badge"><i class="fa-solid fa-eye"></i> FREE VIEW MODE</span>
 
-          <span class="demo-banner-text">You are exploring this software in Read-Only Preview. Full Billing &amp; Data Editing requires an authorized license from <strong>kandukurijagan99@gmail.com</strong>.</span>
+          <span class="demo-banner-text" id="demo-banner-text-msg">You are exploring this software in Read-Only Preview. Full Billing &amp; Data Editing requires an authorized license from <strong>kandukurijagan99@gmail.com</strong>.</span>
 
         </div>
 
@@ -11466,13 +11461,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=5.4.8_20261117_unknown_view_access"></script>
+<script src="supabase-adapter.js?v=5.4.9_20261117_google_only_view_access"></script>
 
-<script src="initial_db.js?v=5.4.8_20261117_unknown_view_access"></script>
+<script src="initial_db.js?v=5.4.9_20261117_google_only_view_access"></script>
 
-<script src="customer-timeline.js?v=5.4.8_20261117_unknown_view_access"></script>
+<script src="customer-timeline.js?v=5.4.9_20261117_google_only_view_access"></script>
 
-<script src="index_v5.js?v=5.4.8_20261117_unknown_view_access"></script>
+<script src="index_v5.js?v=5.4.9_20261117_google_only_view_access"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->

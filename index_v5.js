@@ -5053,7 +5053,7 @@ window.loginAsFreeViewer = function(customData = {}) {
     return;
   }
 
-  const name = customData.name || (customData.email ? customData.email.split("@")[0] : "Prospective Buyer");
+  const name = customData.name || (customData.email ? customData.email.split("@")[0] : "Viewer");
 
   sessionStorage.setItem("current_user_email", email);
   sessionStorage.setItem("current_user_name", name);
@@ -5061,6 +5061,11 @@ window.loginAsFreeViewer = function(customData = {}) {
   sessionStorage.setItem("is_main_admin", "false");
   sessionStorage.setItem("is_demo_mode", "true");
   localStorage.setItem("is_demo_mode", "true");
+  if (email && !email.includes("viewer.com") && !email.endsWith("@viewer")) {
+    localStorage.setItem("authenticated_user_email", email);
+    localStorage.setItem("last_logged_in_email", email);
+    localStorage.setItem("last_logged_in_name", name);
+  }
 
   // CRITICAL: Overwrite persistent auth session with viewer role
   // This prevents cached admin role from overriding view-only mode
@@ -5357,12 +5362,17 @@ window.openServiceInquiryModal = function(prefillService = "") {
       emailInput.readOnly = true;
       emailInput.classList.add("input-fixed-email");
     }
+    const nameInput = document.getElementById("inquiry-name");
+    const currentUserName = sessionStorage.getItem("current_user_name") || localStorage.getItem("last_logged_in_name") || "";
+    if (nameInput && !nameInput.value && currentUserName && currentUserName !== "Guest Viewer" && currentUserName !== "Prospective Buyer" && currentUserName !== "Viewer") {
+      nameInput.value = currentUserName;
+    }
     if (emailPill) {
       emailPill.className = "field-pill-note pill-fixed-email";
       emailPill.innerHTML = '<i class="fa-solid fa-lock"></i> Fixed Account Email (1-Time Send)';
     }
     if (emailHelper) {
-      emailHelper.innerHTML = `<span><i class="fa-solid fa-shield-halved"></i> Fixed to your sign-in email. 1 message limit per account.</span>`;
+      emailHelper.innerHTML = `<span><i class="fa-solid fa-shield-halved"></i> Fixed to your verified Google email (${escapeHtml(loginEmail)}). 1 message limit per account.</span>`;
     }
 
   } else {
@@ -6114,8 +6124,9 @@ function initializeApp() {
     return;
   }
 
-  // FREE VIEW MODE: If user logged in as a free viewer / demo mode, KEEP THEM UNLOCKED in view mode!
-  if (isDemoSession && !isCandidateAuthorized && !isManuallyLocked && !lockoutStatus.locked) {
+  // FREE VIEW MODE: If user logged in with their Google account into demo mode, KEEP THEM UNLOCKED across reloads!
+  const hasRealViewerEmail = candidateEmail && candidateEmail.includes("@") && !candidateEmail.includes("viewer.com") && !candidateEmail.endsWith("@viewer");
+  if (isDemoSession && hasRealViewerEmail && !isCandidateAuthorized && !isManuallyLocked && !lockoutStatus.locked) {
     canStayUnlocked = true;
     isLocked = false;
     localStorage.removeItem("app_locked");
@@ -6130,8 +6141,8 @@ function initializeApp() {
 
     if (typeof window.loginAsFreeViewer === 'function') {
       window.loginAsFreeViewer({
-        email: candidateEmail || "guest@viewer.com",
-        name: sessionStorage.getItem("current_user_name") || savedSession?.name || "Guest Viewer"
+        email: candidateEmail,
+        name: sessionStorage.getItem("current_user_name") || savedSession?.name || localStorage.getItem("last_logged_in_name") || candidateEmail.split("@")[0]
       });
     }
     return;
@@ -21930,11 +21941,20 @@ window.applyRolePermissions = function(role) {
   // 3. Sidebar profile (bottom-left)
   const sbName = document.getElementById("sidebar-user-name");
   const sbEmail = document.getElementById("sidebar-user-email");
-  if (sbName) sbName.textContent = isViewOnly ? "Prospective Buyer" : cleanName;
+  if (sbName) sbName.textContent = cleanName || (isViewOnly ? "Prospective Buyer" : "User");
   if (sbEmail) {
-    const dispEmail = isViewOnly ? (email && email !== "demo@viewer" ? email : "Free View Access") : email;
+    const dispEmail = isViewOnly ? (email && !email.includes("viewer.com") && !email.endsWith("@viewer") ? email : "Free View Access") : email;
     sbEmail.textContent = dispEmail;
     sbEmail.title = dispEmail;
+  }
+
+  // Top banner message update
+  const bannerTextEl = document.getElementById("demo-banner-text-msg");
+  if (bannerTextEl && isViewOnly) {
+    const userLabel = (email && !email.includes("viewer.com") && !email.endsWith("@viewer"))
+      ? `Logged in as: <strong style="color: #38bdf8;">${escapeHtml(cleanName || email.split('@')[0])}</strong> (${escapeHtml(email)})`
+      : `Free View Mode`;
+    bannerTextEl.innerHTML = `${userLabel} • Exploring in Read-Only Preview. Full Billing &amp; Data Editing requires an authorized license from <strong>kandukurijagan99@gmail.com</strong>.`;
   }
 
   // 4. Dashboard Hero greeting & metadata
@@ -22771,16 +22791,28 @@ window.submitPasswordLogin = function(e) {
 };
 
 window.unlockInDemoMode = function() {
+  const email = (sessionStorage.getItem("current_user_email") || localStorage.getItem("authenticated_user_email") || localStorage.getItem("last_logged_in_email") || "").toLowerCase().trim();
+  if (!email || email.includes("viewer.com") || email.endsWith("@viewer") || email === "guest@viewer.com") {
+    if (typeof showFloatingToast === 'function') {
+      showFloatingToast("🔑 Please Sign in with Google to explore the Demo preview.", "info", 4000);
+    }
+    if (typeof window.triggerDirectGoogleAuth === 'function') {
+      window.triggerDirectGoogleAuth();
+    }
+    return;
+  }
+
+  const name = sessionStorage.getItem("current_user_name") || localStorage.getItem("last_logged_in_name") || email.split("@")[0];
   if (typeof window.loginAsFreeViewer === 'function') {
     window.loginAsFreeViewer({
-      email: "guest@viewer.com",
-      name: "Guest Viewer"
+      email: email,
+      name: name
     });
   } else {
     sessionStorage.setItem("is_demo_mode", "true");
     localStorage.setItem("is_demo_mode", "true");
-    sessionStorage.setItem("current_user_email", "guest@viewer.com");
-    sessionStorage.setItem("current_user_name", "Guest Viewer");
+    sessionStorage.setItem("current_user_email", email);
+    sessionStorage.setItem("current_user_name", name);
     sessionStorage.setItem("current_user_role", "viewer");
     sessionStorage.setItem("is_main_admin", "false");
     sessionStorage.setItem("manual_locked", "false");
@@ -22796,7 +22828,7 @@ window.unlockInDemoMode = function() {
   }
 
   if (typeof showFloatingToast === 'function') {
-    showFloatingToast("👁️ Opened in View-Only Demo Mode. Free preview active.", 3500);
+    showFloatingToast("👁️ Opened in View-Only Demo Mode with account: " + escapeHtml(email), 4000);
   }
 };
 
