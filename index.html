@@ -446,7 +446,7 @@
         }
       } catch(e) {}
     })();
-    window.__APP_BUILD_VERSION__ = "v63_session_timeout_security_v550";
+    window.__APP_BUILD_VERSION__ = "v64_hide_session_pill_v551";
     try {
       const storedBuild = localStorage.getItem("aaryan_app_build_version");
       if (storedBuild !== window.__APP_BUILD_VERSION__) {
@@ -459,9 +459,9 @@
 
   <!-- Custom CSS -->
 
-  <link rel="stylesheet" href="index.css?v=5.5.0_20261117_session_timeout_security">
+  <link rel="stylesheet" href="index.css?v=5.5.1_20261117_hide_session_pill">
 
-  <script src="invoice_utils_v5.js?v=5.5.0_20261117_session_timeout_security"></script>
+  <script src="invoice_utils_v5.js?v=5.5.1_20261117_hide_session_pill"></script>
 
 </head>
 
@@ -815,7 +815,7 @@
 
             <div id="header-user-badge-slot" style="display: inline-flex; align-items: center; margin-left: 4px;"></div>
 
-            <div id="live-session-timer-pill" class="session-timer-pill cursor-pointer" onclick="renewUserSession()" title="Active Session Timing (Click to Reset/Extend Inactivity Auto-Lock)" style="margin-left: 4px; display: inline-flex;">
+            <div id="live-session-timer-pill" class="session-timer-pill cursor-pointer" onclick="renewUserSession()" title="Active Session Timing (Click to Reset/Extend Inactivity Auto-Lock)" style="display: none !important;">
 
               <i class="fa-solid fa-hourglass-start" id="session-timer-icon"></i>
 
@@ -11461,13 +11461,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<script src="supabase-adapter.js?v=5.5.0_20261117_session_timeout_security"></script>
+<script src="supabase-adapter.js?v=5.5.1_20261117_hide_session_pill"></script>
 
-<script src="initial_db.js?v=5.5.0_20261117_session_timeout_security"></script>
+<script src="initial_db.js?v=5.5.1_20261117_hide_session_pill"></script>
 
-<script src="customer-timeline.js?v=5.5.0_20261117_session_timeout_security"></script>
+<script src="customer-timeline.js?v=5.5.1_20261117_hide_session_pill"></script>
 
-<script src="index_v5.js?v=5.5.0_20261117_session_timeout_security"></script>
+<script src="index_v5.js?v=5.5.1_20261117_hide_session_pill"></script>
 
 
   <!-- FLOATING QUICK MESSAGE BOX IN DEMO ACCOUNT -->

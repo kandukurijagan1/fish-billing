@@ -1096,24 +1096,10 @@ body {
   transform: translateY(-1px) !important;
 }
 
-/* Live Active Session Timing Pill */
+/* Live Active Session Timing Pill (Hidden per user preference) */
 .session-timer-pill,
 #live-session-timer-pill {
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 5px !important;
-  height: 28px !important;
-  padding: 0 9px !important;
-  border-radius: 14px !important;
-  font-size: 11px !important;
-  font-weight: 700 !important;
-  background: rgba(13, 148, 136, 0.1) !important;
-  border: 1px solid rgba(13, 148, 136, 0.25) !important;
-  color: #0f766e !important;
-  cursor: pointer !important;
-  transition: all 0.2s ease !important;
-  white-space: nowrap !important;
-  flex-shrink: 0 !important;
+  display: none !important;
 }
 
 .session-timer-pill:hover {

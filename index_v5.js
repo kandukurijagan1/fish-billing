@@ -20426,20 +20426,16 @@ function formatSessionDuration(seconds) {
 function updateSessionTimerUI() {
   const pill = document.getElementById("live-session-timer-pill");
   const textEl = document.getElementById("session-timer-text");
-  const iconEl = document.getElementById("session-timer-icon");
+
+  if (pill) {
+    pill.style.display = "none";
+  }
 
   if (isLocked) {
-    if (pill) pill.style.display = "none";
     return;
   }
 
   if (!lockTimerSeconds || lockTimerSeconds <= 0) {
-    if (pill) {
-      pill.style.display = "inline-flex";
-      pill.classList.remove("warning", "critical");
-      if (textEl) textEl.textContent = "Session: Active";
-      if (iconEl) iconEl.className = "fa-solid fa-infinity";
-    }
     return;
   }
 
@@ -20448,25 +20444,10 @@ function updateSessionTimerUI() {
   const elapsedSec = Math.floor((now - lastActive) / 1000);
   const remainingSec = Math.max(0, lockTimerSeconds - elapsedSec);
 
-  if (pill) {
-    pill.style.display = "inline-flex";
-    if (textEl) {
-      const mins = Math.floor(remainingSec / 60);
-      const secs = remainingSec % 60;
-      textEl.textContent = `Session: ${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
-    }
-    if (remainingSec <= 30) {
-      pill.classList.add("critical");
-      pill.classList.remove("warning");
-      if (iconEl) iconEl.className = "fa-solid fa-triangle-exclamation";
-    } else if (remainingSec <= 120) {
-      pill.classList.add("warning");
-      pill.classList.remove("critical");
-      if (iconEl) iconEl.className = "fa-solid fa-hourglass-half";
-    } else {
-      pill.classList.remove("warning", "critical");
-      if (iconEl) iconEl.className = "fa-solid fa-hourglass-start";
-    }
+  if (textEl) {
+    const mins = Math.floor(remainingSec / 60);
+    const secs = remainingSec % 60;
+    textEl.textContent = `Session: ${mins < 10 ? '0' : ''}${mins}:${secs < 10 ? '0' : ''}${secs}`;
   }
 
   // Trigger silent background security auto-lock strictly if session timing exhausted
